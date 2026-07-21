@@ -1,15 +1,5 @@
 {
   "appId": "com.nextext.app",
   "appName": "NexText",
-  "webDir": "dist",
-  "plugins": {
-    "SplashScreen": {
-      "launchAutoHide": true,
-      "launchShowDuration": 3000,
-      "backgroundColor": "#121212",
-      "androidScaleType": "CENTER_CROP",
-      "splashImmersive": true,
-      "showSpinner": false
-    }
-  }
+  "webDir": "dist"
 }

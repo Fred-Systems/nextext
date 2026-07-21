@@ -19,13 +19,19 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 // Capacitor-compatible auth: use indexedDBLocalPersistence on native platforms
-// to prevent blank screen crash from unsupported browser storage in WebView
+// to prevent blank screen crash from unsupported browser storage in WebView.
+// Wrap in try-catch so a failed auth init never kills the entire React tree.
 let auth;
-if (Capacitor.isNativePlatform()) {
-  auth = initializeAuth(app, {
-    persistence: indexedDBLocalPersistence,
-  });
-} else {
+try {
+  if (Capacitor.isNativePlatform()) {
+    auth = initializeAuth(app, {
+      persistence: indexedDBLocalPersistence,
+    });
+  } else {
+    auth = getAuth(app);
+  }
+} catch (e) {
+  console.error("[firebase/config] Auth init failed, falling back to getAuth:", e);
   auth = getAuth(app);
 }
 

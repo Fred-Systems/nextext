@@ -21,18 +21,29 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        const ref = doc(db, "users", firebaseUser.uid);
-        const snap = await getDoc(ref);
-        setUserDoc(snap.exists() ? snap.data() : null);
-      } else {
-        setUserDoc(null);
-      }
+    let unsub;
+    try {
+      unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+        setUser(firebaseUser);
+        if (firebaseUser) {
+          try {
+            const ref = doc(db, "users", firebaseUser.uid);
+            const snap = await getDoc(ref);
+            setUserDoc(snap.exists() ? snap.data() : null);
+          } catch (e) {
+            console.error("[useAuth] Failed to fetch user doc:", e);
+            setUserDoc(null);
+          }
+        } else {
+          setUserDoc(null);
+        }
+        setLoading(false);
+      });
+    } catch (e) {
+      console.error("[useAuth] onAuthStateChanged failed:", e);
       setLoading(false);
-    });
-    return unsub;
+    }
+    return () => unsub && unsub();
   }, []);
 
   async function signUpWithEmail(email, password, username, displayName) {
