@@ -1,0 +1,47 @@
+name: Build NexText Android App
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # Allows you to manually trigger a build inside your browser anytime
+
+jobs:
+  build:
+    runs-on: ubuntu-latest # Forces compilation on a fast, virtual cloud Intel server
+    steps:
+      - name: Checkout Source Code Repository
+        uses: actions/checkout@v4
+
+      - name: Initialize Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Initialize Java Development Kit (JDK 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Install Project Dependencies
+        run: npm ci
+
+      - name: Compile Production Web Interface Layout
+        run: npm run build
+
+      - name: Sync Frontend Code into Android Native Subtree
+        run: npx cap sync android
+
+      - name: Grant Gradle Execution Permissions
+        run: chmod +x android/gradlew
+
+      - name: Compile Production NexText APK Package
+        run: |
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Upload Finished APK Artifact to Browser
+        uses: actions/upload-artifact@v4
+        with:
+          name: NexText-Smartphone-Installer
+          path: android/app/build/outputs/apk/debug/app-debug.apk

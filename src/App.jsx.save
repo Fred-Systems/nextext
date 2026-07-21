@@ -1,0 +1,805 @@
+mport React, { useState, useEffect, useRef } from "react";
+import { ThemeProvider, useTheme, themes, ROTATE_INTERVALS } from "./theme/ThemeContext";
+import { useAuth } from "./firebase/useAuth";
+import { usePresenceHeartbeat } from "./firebase/presence";
+import { purgeExpiredStatuses, useStatuses } from "./firebase/status";
+import { useContacts } from "./firebase/contacts";
+import { useChats } from "./firebase/chats";
+import { setGlobalWallpaper, fileToWallpaperDataUrl } from "./theme/wallpaper";
+import { ChevronLeft, Palette, Shield, Lock, MessageSquare, X, ShieldCheck, Phone, Image as ImageIcon, Users, CircleDot, RotateCcw, Camera, Settings as SettingsIcon, Bot, Sparkles } from "lucide-react";
+import { FONTS } from "./theme/ThemeContext";
+import Avatar from "./components/Avatar";
+import { uploadChatFile } from "./supabase/media";
+import { doc, updateDoc, onSnapshot } from "firebase/firestore";
+import { db } from "./firebase/config";
+import AuthScreen from "./screens/AuthScreen";
+import ChatListScreen from "./screens/ChatListScreen";
+import ConversationScreen from "./screens/ConversationScreen";
+import PrivacyScreen from "./screens/PrivacyScreen";
+import ParentalControlsScreen from "./screens/ParentalControlsScreen";
+import FeedbackScreen from "./screens/FeedbackScreen";
+import ContactProfileScreen from "./screens/ContactProfileScreen";
+import AdminDashboard from "./screens/AdminDashboard";
+import AIChatScreen from "./screens/AIChatScreen";
+import AISidebarWidget from "./components/AISidebarWidget";
+import { useSystemConfigHook, requestAIAccess, setAIPersonality, PERSONALITIES } from "./firebase/ai";
+import AppLockScreen from "./screens/AppLockScreen";
+import StatusScreen from "./screens/StatusScreen";
+
+const UI_SCALE_KEY = "nextext_ui_scale";
+const SCROLL_DOWN_KEY = "nextext_show_scrolldown";
+
+function ThemeSheet({ current, onSelect, onClose }) {
+  const { t, customTheme, setCustomThemeColors, rotateDays, setRotateDays } = useTheme();
+  const [tab, setTab] = useState("presets");
+  const base = customTheme || t;
+  const [colors, setColors] = useState({
+    primary: base.primary, bg: base.bg, surface: base.surface, bubbleMe: base.bubbleMe,
+    bubbleMeText: base.bubbleMeText, bubbleThem: base.bubbleThem, bubbleThemText: base.bubbleThemText,
+    text: base.text, accent: base.accent,
+  });
+
+  const ColorRow = ({ label, field }) => (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0" }}>
+      <span style={{ fontSize: 13.5, color: t.text }}>{label}</span>
+      <input type="color" value={colors[field]} onChange={(e) => setColors((c) => ({ ...c, [field]: e.target.value }))} style={{ width: 40, height: 30, border: "none", borderRadius: 6, cursor: "pointer" }} />
+    </div>
+  );
+
+  return (
+    <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
+      <div style={{ background: t.surface, width: "100%", borderRadius: "20px 20px 0 0", padding: 20, maxHeight: "78%", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+          <h3 style={{ margin: 0, color: t.text, fontSize: 18 }}>Theme</h3>
+          <X size={20} color={t.textMuted} onClick={onClose} style={{ cursor: "pointer" }} />
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          {[["presets", "Presets"], ["custom", "Custom colors"], ["rotate", "Auto-switch"]].map(([key, label]) => (
+            <div key={key} onClick={() => setTab(key)} style={{ padding: "6px 14px", borderRadius: 16, background: tab === key ? t.primary : t.primaryLight, color: tab === key ? t.bubbleMeText : t.primary, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{label}</div>
+          ))}
+        </div>
+
+        {tab === "presets" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            {Object.entries(themes).map(([key, th]) => (
+              <div key={key} onClick={() => onSelect(key)} style={{ border: `2px solid ${current === key ? t.primary : t.border}`, borderRadius: 14, padding: 12, cursor: "pointer", background: th.bg }}>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
+                  <div style={{ background: th.bubbleMe, color: th.bubbleMeText, fontSize: 10, padding: "4px 8px", borderRadius: 8 }}>Hey!</div>
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: th.text }}>{th.name}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab === "custom" && (
+          <div>
+            <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 10 }}>Pick your own colors for everything.</div>
+            <ColorRow label="Primary / header" field="primary" />
+            <ColorRow label="Accent" field="accent" />
+            <ColorRow label="Background" field="bg" />
+            <ColorRow label="Surface (cards, bars)" field="surface" />
+            <ColorRow label="Your message bubbles" field="bubbleMe" />
+            <ColorRow label="Your message text" field="bubbleMeText" />
+            <ColorRow label="Their message bubbles" field="bubbleThem" />
+            <ColorRow label="Their message text" field="bubbleThemText" />
+            <ColorRow label="Regular text" field="text" />
+            <button onClick={() => { setCustomThemeColors({ ...colors, primaryLight: colors.primary + "22", textMuted: colors.text + "99", border: colors.surface === colors.bg ? colors.text + "22" : colors.bg }); onSelect("custom"); }} style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 15, cursor: "pointer", marginTop: 14 }}>
+              Apply custom theme
+            </button>
+          </div>
+        )}
+
+        {tab === "rotate" && (
+          <div>
+            <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 14, lineHeight: 1.5 }}>
+              Automatically switch to a random theme on this schedule.
+            </div>
+            {ROTATE_INTERVALS.map((opt) => (
+              <div key={opt.label} onClick={() => setRotateDays(opt.days)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 4px", cursor: "pointer" }}>
+                <div style={{ width: 18, height: 18, borderRadius: "50%", border: `2px solid ${t.primary}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {rotateDays === opt.days && <div style={{ width: 10, height: 10, borderRadius: "50%", background: t.primary }} />}
+                </div>
+                <span style={{ fontSize: 14, color: t.text }}>{opt.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function formatPhoneInput(raw) {
+  // Keeps a leading "+" if present, strips everything else non-numeric, then
+  // groups digits with spaces for readability as the user types. Not
+  // country-specific (international numbers vary too much for one fixed
+  // pattern) -- just numeric input with simple, readable grouping.
+  const hasPlus = raw.trim().startsWith("+");
+  const digits = raw.replace(/[^\d]/g, "");
+  if (!digits) return hasPlus ? "+" : "";
+  const groups = digits.match(/.{1,3}/g) || [];
+  return (hasPlus ? "+" : "") + groups.join(" ");
+}
+
+function PhoneNumberSetting({ myUid }) {
+  const { t } = useTheme();
+  const [phone, setPhone] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "users", myUid), (snap) => setPhone(snap.data()?.phoneNumber || ""));
+    return unsub;
+  }, [myUid]);
+
+  const save = async () => {
+    const trimmed = phone.trim();
+    const normalized = trimmed.replace(/[^\d+]/g, "") || null;
+    await updateDoc(doc(db, "users", myUid), { phoneNumber: trimmed || null, phoneNumberNormalized: normalized });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1800);
+  };
+
+  return (
+    <div style={{ marginTop: 20, marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <Phone size={16} color={t.primary} />
+        <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>Phone number (optional)</div>
+      </div>
+      <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
+        Adding your real phone number helps friends and family find you automatically
+        once their contacts are checked against the app. This is entirely optional —
+        it's better to leave this blank than to enter a fake or made-up number, since a
+        fake number could mistakenly connect you with someone else's real contact, or
+        prevent people from finding you correctly at all.
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          value={phone}
+          onChange={(e) => setPhone(formatPhoneInput(e.target.value))}
+          inputMode="tel"
+          placeholder="+1 555 123 4567"
+          style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 14, boxSizing: "border-box" }}
+        />
+        <button onClick={save} style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, cursor: "pointer" }}>
+          {saved ? "Saved ✓" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiScale, showScrollDown, setShowScrollDown, animatedScrollEntry, setAnimatedScrollEntry, compactList, setCompactList, onBack, onNavigate, onLogout, userDoc, navConfig, setNavConfig, aiSidebarOn, setAiSidebarOn }) {
+  const { t, hideNav, setHideNav, chatTextScale, setChatTextScale, appFontId, setAppFontId } = useTheme();
+  const wallpaperInputRef = useRef(null);
+  const profilePhotoRef = useRef(null);
+  const [wallpaperSaved, setWallpaperSaved] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [lockedChatsPass, setLockedChatsPass] = useState(() => localStorage.getItem("nextext_locked_chats_password") || "");
+  const [lockedChatsPassSaved, setLockedChatsPassSaved] = useState(false);
+  const [appLockEnabled, setAppLockEnabled] = useState(() => localStorage.getItem("nextext_app_lock") === "true");
+  const [appLockPass, setAppLockPass] = useState("");
+  const [appLockPassSaved, setAppLockPassSaved] = useState(false);
+  const [linkPreviewsOn, setLinkPreviewsOn] = useState(() => localStorage.getItem("nextext_link_previews") !== "off");
+  const sysConfig = useSystemConfigHook();
+  const [aiRequestStatus, setAiRequestStatus] = useState("");
+
+  const userRestrictions = userDoc?.restrictions || null;
+  const customStatusInputRef = useRef(null);
+  const [customStatusSaved, setCustomStatusSaved] = useState(false);
+  const [aiContextOn, setAiContextOn] = useState(() => localStorage.getItem("nextext_ai_context") === "true");
+  const [openSections, setOpenSections] = useState({ account: true });
+
+  const toggleSection = (key) => setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  const handleGlobalWallpaper = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const dataUrl = await fileToWallpaperDataUrl(file);
+    setGlobalWallpaper(dataUrl);
+    setWallpaperSaved(true);
+    setTimeout(() => setWallpaperSaved(false), 1800);
+  };
+
+  const handleProfilePhoto = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setPhotoUploading(true);
+    try {
+      const result = await uploadChatFile(`profile-${myUid}`, myUid, file, { compress: true });
+      await updateDoc(doc(db, "users", myUid), { photoURL: result.url });
+    } catch { /* silent */ }
+    setPhotoUploading(false);
+  };
+
+  const saveCustomStatus = async () => {
+    try {
+      const textVal = customStatusInputRef.current?.value || "";
+      const expiryEl = document.getElementById("custom-status-expiry");
+      const expiryVal = expiryEl?.value || "forever";
+      await updateDoc(doc(db, "users", myUid), {
+        customStatusText: textVal.trim() || null,
+        customStatusExpiry: expiryVal,
+      });
+      setCustomStatusSaved(true);
+      setTimeout(() => setCustomStatusSaved(false), 1800);
+    } catch { /* silent */ }
+  };
+
+  const Toggle = ({ on, onClick }) => (
+    <div onClick={onClick} style={{ width: 46, height: 26, borderRadius: 13, background: on ? t.primary : t.border, position: "relative", cursor: "pointer", flexShrink: 0 }}>
+      <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: on ? 23 : 3, transition: "left 0.15s" }} />
+    </div>
+  );
+
+  const Row = ({ icon, label, sub, onClick, right }) => (
+    <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 0", cursor: onClick ? "pointer" : "default", borderBottom: `1px solid ${t.border}` }}>
+      <div style={{ width: 36, height: 36, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{icon}</div>
+      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600, color: t.text, fontSize: 15 }}>{label}</div>{sub && <div style={{ fontSize: 12.5, color: t.textMuted, marginTop: 1 }}>{sub}</div>}</div>
+      {right}
+    </div>
+  );
+
+  const SectionCard = ({ title, emoji, children, sectionKey }) => {
+    const isOpen = sectionKey ? (openSections[sectionKey] ?? false) : true;
+    return (
+      <div style={{ marginBottom: 18 }}>
+        <div onClick={sectionKey ? () => toggleSection(sectionKey) : undefined} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, cursor: sectionKey ? "pointer" : "default" }}>
+          <span style={{ fontSize: 14 }}>{emoji}</span>
+          <span style={{ fontWeight: 700, fontSize: 14, color: t.text, flex: 1 }}>{title}</span>
+          {sectionKey && <span style={{ fontSize: 11, color: t.textMuted, transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>}
+        </div>
+        {isOpen && (
+          <div style={{ background: t.surface, borderRadius: 14, padding: "4px 14px", border: `1px solid ${t.border}` }}>
+            {children}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ── Bottom bar customizer helpers ──
+  const ALL_TABS = [
+    { key: "chats", label: "Chats", mandatory: true },
+    { key: "status", label: "Status" },
+    { key: "groups", label: "Groups" },
+    { key: "settings", label: "Settings" },
+  ];
+
+  const moveTab = (idx, dir) => {
+    const next = [...navConfig];
+    const swap = idx + dir;
+    if (swap < 0 || swap >= next.length) return;
+    [next[idx], next[swap]] = [next[swap], next[idx]];
+    setNavConfig(next);
+  };
+
+  const toggleTab = (key) => {
+    const isActive = navConfig.some((t) => t.key === key);
+    if (isActive) {
+      // Can't deactivate if only 2 active
+      if (navConfig.length <= 2) return;
+      // Can't deactivate chats (mandatory)
+      if (key === "chats") return;
+      setNavConfig(navConfig.filter((t) => t.key !== key));
+    } else {
+      setNavConfig([...navConfig, { key }]);
+    }
+  };
+
+  return (
+    <div style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 25, display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary }}>
+        <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
+        <span style={{ color: "#fff", fontWeight: 700, fontSize: 18 }}>Settings</span>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
+
+        {/* ═══ ACCOUNT & PROFILE ═══ */}
+        <SectionCard title="Account & Profile" emoji="👤" sectionKey="account">
+          <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 0", cursor: "pointer" }} onClick={() => profilePhotoRef.current?.click()}>
+            <input ref={profilePhotoRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleProfilePhoto} />
+            <Avatar photoURL={userDoc?.photoURL} name={userDoc?.username || userDoc?.displayName} uid={myUid} size={52} />
+            <div>
+              <div style={{ fontWeight: 600, color: t.text, fontSize: 15 }}>{userDoc?.displayName || userDoc?.username || "Your name"}</div>
+              <div style={{ fontSize: 12.5, color: t.textMuted, marginTop: 1, display: "flex", alignItems: "center", gap: 4 }}>
+                <Camera size={12} />
+                {photoUploading ? "Uploading…" : "Tap to change profile photo"}
+              </div>
+            </div>
+          </div>
+          <PhoneNumberSetting myUid={myUid} />
+        </SectionCard>
+
+        {/* ═══ CUSTOM STATUS / ABOUT ME ═══ */}
+        <SectionCard title="About Me" emoji="💬" sectionKey="about">
+          <div style={{ padding: "13px 0" }}>
+            <div style={{ fontWeight: 600, color: t.text, fontSize: 15, marginBottom: 6 }}>Custom status</div>
+            <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 8 }}>Set a status message shown on your profile.</div>
+            <input
+              ref={customStatusInputRef}
+              key={userDoc?.customStatusText || ""}
+              defaultValue={userDoc?.customStatusText || ""}
+              placeholder="Hey, I am using NexText"
+              maxLength={140}
+              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 14, boxSizing: "border-box", marginBottom: 8, background: t.bg, color: t.text }}
+            />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <span style={{ fontSize: 12.5, color: t.textMuted }}>Self-destruct after</span>
+              <select
+                id="custom-status-expiry"
+                key={userDoc?.customStatusExpiry || "forever"}
+                defaultValue={userDoc?.customStatusExpiry || "forever"}
+                style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${t.border}`, fontSize: 13, background: t.bg, color: t.text, cursor: "pointer", boxSizing: "border-box", maxWidth: 130 }}
+              >
+                <option value="forever">Forever</option>
+                <option value="1">1 day</option>
+                <option value="7">7 days</option>
+                <option value="14">14 days</option>
+                <option value="30">30 days</option>
+              </select>
+            </div>
+            <button onClick={saveCustomStatus} style={{ width: "100%", padding: 11, borderRadius: 10, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+              {customStatusSaved ? "Saved ✓" : "Save Status"}
+            </button>
+          </div>
+        </SectionCard>
+
+        {/* ═══ PRIVACY & SECURITY ═══ */}
+        <SectionCard title="Privacy & Security" emoji="🔒" sectionKey="privacy">
+          <Row icon={<Shield size={18} color={t.primary} />} label="Parental Controls" sub="Manage restrictions" onClick={() => onNavigate("parental")} />
+          <Row icon={<Lock size={18} color={t.primary} />} label="Privacy" sub="Last seen, read receipts, status" onClick={() => onNavigate("privacy")} />
+
+          {/* App protection lock */}
+          <div style={{ padding: "13px 0", borderBottom: `1px solid ${t.border}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={18} color={t.primary} /></div>
+              <div style={{ flex: 1 }}><div style={{ fontWeight: 600, color: t.text, fontSize: 15 }}>App protection lock</div><div style={{ fontSize: 12.5, color: t.textMuted, marginTop: 1 }}>Require password when opening the app</div></div>
+              <Toggle on={appLockEnabled} onClick={() => {
+                if (appLockEnabled) { setAppLockEnabled(false); localStorage.setItem("nextext_app_lock", "false"); localStorage.removeItem("nextext_app_lock_pass"); }
+                else { setAppLockEnabled(true); localStorage.setItem("nextext_app_lock", "pending"); }
+              }} />
+            </div>
+            {appLockEnabled && !appLockPassSaved && (
+              <div style={{ display: "flex", gap: 8, marginTop: 10, paddingLeft: 50 }}>
+                <input type="password" value={appLockPass} onChange={(e) => setAppLockPass(e.target.value)} placeholder="Set PIN or password…" style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 13, boxSizing: "border-box" }} />
+                <button onClick={() => { if (!appLockPass.trim()) return; localStorage.setItem("nextext_app_lock", "true"); localStorage.setItem("nextext_app_lock_pass", appLockPass); setAppLockPassSaved(true); setAppLockPass(""); }} disabled={!appLockPass.trim()} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: appLockPass.trim() ? t.primary : t.border, color: appLockPass.trim() ? t.bubbleMeText : t.textMuted, fontWeight: 700, fontSize: 13, cursor: appLockPass.trim() ? "pointer" : "not-allowed" }}>Save</button>
+              </div>
+            )}
+            {appLockEnabled && appLockPassSaved && <div style={{ fontSize: 12, color: t.primary, fontWeight: 600, marginTop: 6, paddingLeft: 50 }}>Password saved &bull;&bull;&bull;&bull;&bull;</div>}
+          </div>
+
+          {/* Locked chats password */}
+          <div style={{ padding: "13px 0" }}>
+            <div style={{ fontWeight: 600, color: t.text, fontSize: 15, marginBottom: 4 }}>Locked chats password</div>
+            <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 8 }}>Set a password to hide chats. Type it in the search bar to reveal them.</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input type="password" value={lockedChatsPass} onChange={(e) => setLockedChatsPass(e.target.value)} placeholder="Set password…" style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 13, boxSizing: "border-box" }} />
+              <button onClick={() => { localStorage.setItem("nextext_locked_chats_password", lockedChatsPass); setLockedChatsPassSaved(true); setTimeout(() => setLockedChatsPassSaved(false), 1800); }} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{lockedChatsPassSaved ? "Saved ✓" : "Save"}</button>
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* ═══ APPEARANCE & INTERFACE ═══ */}
+        <SectionCard title="Appearance & Interface" emoji="🎨" sectionKey="appearance">
+          <Row icon={<Palette size={18} color={t.primary} />} label="Theme" sub={themes[themeKey]?.name || "Default Theme"} onClick={onOpenTheme} />
+          <Row icon={<ImageIcon size={18} color={t.primary} />} label="Default chat background" sub={wallpaperSaved ? "Saved ✓" : "Applies to chats without their own background"} onClick={() => wallpaperInputRef.current?.click()} />
+          <input ref={wallpaperInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleGlobalWallpaper} />
+
+          {/* Font */}
+          <div style={{ padding: "13px 0" }}>
+            <div style={{ fontWeight: 600, color: t.text, fontSize: 15, marginBottom: 6 }}>Font</div>
+            <select value={appFontId} onChange={(e) => setAppFontId(e.target.value)} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 14, background: t.bg, color: t.text, cursor: "pointer" }}>
+              {FONTS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select>
+          </div>
+
+          {/* App-wide text scaling */}
+          <div style={{ padding: "13px 0" }}>
+            <div style={{ fontWeight: 600, color: t.text, fontSize: 15, marginBottom: 4 }}>App size</div>
+            <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 8 }}>Adjust if things look too small or too large.</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <input type="range" min="0.6" max="1.6" step="0.05" value={uiScale} onChange={(e) => setUiScale(Number(e.target.value))} style={{ flex: 1, accentColor: t.primary }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: t.primary, minWidth: 44 }}>{Math.round(uiScale * 100)}%</span>
+            </div>
+          </div>
+
+          {/* Chat text scaling */}
+          <div style={{ padding: "13px 0" }}>
+            <div style={{ fontWeight: 600, color: t.text, fontSize: 15, marginBottom: 4 }}>Chat text size</div>
+            <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 8 }}>Scale text inside chat bubbles.</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <input type="range" min="0.75" max="1.5" step="0.05" value={chatTextScale} onChange={(e) => setChatTextScale(Number(e.target.value))} style={{ flex: 1, accentColor: t.primary }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: t.primary, minWidth: 44 }}>{Math.round(chatTextScale * 100)}%</span>
+            </div>
+          </div>
+
+          {/* Bottom bar customizer */}
+          <div style={{ padding: "13px 0" }}>
+            <div style={{ fontWeight: 600, color: t.text, fontSize: 15, marginBottom: 4 }}>Bottom bar layout</div>
+            <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 10 }}>Toggle and reorder tabs on the bottom navigation bar. Chats is always on.</div>
+            {ALL_TABS.map((tabDef) => {
+              const activeIdx = navConfig.findIndex((n) => n.key === tabDef.key);
+              const isActive = activeIdx !== -1;
+              return (
+                <div key={tabDef.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${t.border}` }}>
+                  <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: isActive ? t.text : t.textMuted, opacity: isActive ? 1 : 0.5 }}>{tabDef.label}{tabDef.mandatory ? " (always on)" : ""}</span>
+                  {!tabDef.mandatory && <Toggle on={isActive} onClick={() => toggleTab(tabDef.key)} />}
+                  {tabDef.mandatory && <div style={{ width: 46 }} />}
+                  {isActive && (
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <div onClick={() => moveTab(activeIdx, -1)} style={{ width: 26, height: 26, borderRadius: 6, background: activeIdx > 0 ? t.primaryLight : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: activeIdx > 0 ? "pointer" : "default", fontSize: 14, color: activeIdx > 0 ? t.primary : t.textMuted }}>↑</div>
+                      <div onClick={() => moveTab(activeIdx, 1)} style={{ width: 26, height: 26, borderRadius: 6, background: activeIdx < navConfig.length - 1 ? t.primaryLight : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: activeIdx < navConfig.length - 1 ? "pointer" : "default", fontSize: 14, color: activeIdx < navConfig.length - 1 ? t.primary : t.textMuted }}>↓</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <Row icon={<MessageSquare size={18} color={t.primary} />} label="Link previews" sub={linkPreviewsOn ? "On" : "Off"} right={<Toggle on={linkPreviewsOn} onClick={() => { const next = !linkPreviewsOn; setLinkPreviewsOn(next); localStorage.setItem("nextext_link_previews", next ? "on" : "off"); }} />} />
+          <Row icon={<CircleDot size={18} color={t.primary} />} label="Scroll-to-bottom button" sub={showScrollDown ? "On" : "Off"} right={<Toggle on={showScrollDown} onClick={() => setShowScrollDown(!showScrollDown)} />} />
+          <Row icon={<CircleDot size={18} color={t.primary} />} label="Animated scroll entry" sub={animatedScrollEntry ? "Smooth jump" : "Instant mount"} right={<Toggle on={animatedScrollEntry} onClick={() => { const next = !animatedScrollEntry; setAnimatedScrollEntry(next); localStorage.setItem("nextext_animated_scroll_entry", next ? "true" : "false"); }} />} />
+          <Row icon={<Users size={18} color={t.primary} />} label="Compact chat list" sub={compactList ? "Denser rows" : "Standard spacing"} right={<Toggle on={compactList} onClick={() => { const next = !compactList; setCompactList(next); localStorage.setItem("nextext_compact_list", next ? "true" : "false"); }} />} />
+          <Row icon={<Users size={18} color={t.primary} />} label="Hide bottom navigation" sub={hideNav ? "Hidden" : "Visible"} right={<Toggle on={hideNav} onClick={() => setHideNav(!hideNav)} />} />
+        </SectionCard>
+
+        {/* ═══ AI CONTROLS ═══ */}
+        {userRestrictions?.blockAI !== true && !sysConfig?.hideAiEverywhere && (
+          <SectionCard title="AI Controls" emoji="🤖" sectionKey="ai">
+            {sysConfig?.aiGloballyDisabled ? (
+              <div style={{ padding: "12px 0", textAlign: "center" }}>
+                <div style={{ fontSize: 13, color: "#FF3B30", fontWeight: 600 }}>NexText AI is currently disabled by the administrator.</div>
+              </div>
+            ) : userDoc?.aiApproved ? (
+              <>
+                <div style={{ padding: "12px 0", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${t.border}` }}>
+                  <Bot size={20} color={t.primary} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, color: t.text, fontSize: 15 }}>NexText AI Access</div>
+                    <div style={{ fontSize: 12.5, color: "#28A745", fontWeight: 600 }}>Approved ✓</div>
+                  </div>
+                </div>
+                <div style={{ padding: "12px 0" }}>
+                  <div style={{ fontWeight: 600, color: t.text, fontSize: 14, marginBottom: 8 }}>AI Personality</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {Object.entries(PERSONALITIES).map(([key, p]) => (
+                      <div key={key} onClick={() => setAIPersonality(myUid, key)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: userDoc?.aiPersonality === key ? t.primaryLight : t.bg, border: `1px solid ${userDoc?.aiPersonality === key ? t.primary : t.border}`, cursor: "pointer" }}>
+                        <span style={{ fontSize: 18 }}>{p.icon}</span>
+                        <span style={{ fontWeight: 600, fontSize: 14, color: userDoc?.aiPersonality === key ? t.primary : t.text }}>{p.label}</span>
+                        {userDoc?.aiPersonality === key && <span style={{ marginLeft: "auto", color: t.primary, fontWeight: 700 }}>✓</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div style={{ padding: "12px 0", textAlign: "center" }}>
+                <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 10, lineHeight: 1.5 }}>Request access to NexText AI, your intelligent chat companion powered by Groq.</div>
+                {aiRequestStatus === "requested" || aiRequestStatus === "submitted" || aiRequestStatus === "frozen" ? (
+                  <div style={{ fontSize: 13, color: "#856404", fontWeight: 600, padding: "10px 14px", background: "#FFF3CD", borderRadius: 10, lineHeight: 1.5, border: "1px solid #FFEEBA" }}>Request Pending Admin Approval...</div>
+                ) : aiRequestStatus === "already_approved" ? (
+                  <div style={{ fontSize: 13, color: "#28A745", fontWeight: 600 }}>Already approved! Refresh to see AI features.</div>
+                ) : (
+                   <button onClick={async () => { if (aiRequestStatus === "frozen") return; setAiRequestStatus("frozen"); try { await requestAIAccess(myUid, userDoc?.username); } catch { /* already submitted */ } }} style={{ width: "100%", padding: 11, borderRadius: 10, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 14, cursor: "pointer", display: "block", position: "relative", zIndex: 99999, pointerEvents: "auto !important", textAlign: "center" }}>
+                    <Sparkles size={16} /> Request AI Access
+                  </button>
+                )}
+              </div>
+            )}
+
+            {userDoc?.aiApproved && (
+              <>
+                <div style={{ padding: "12px 0", borderTop: `1px solid ${t.border}` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, color: t.text, fontSize: 15 }}>AI Sidebar Widget</div>
+                      <div style={{ fontSize: 12.5, color: t.textMuted, marginTop: 1 }}>Floating AI shortcut on chat list</div>
+                    </div>
+                    <div onClick={() => { const next = !aiSidebarOn; setAiSidebarOn(next); localStorage.setItem("nextext_ai_sidebar", next ? "on" : "off"); }} style={{ width: 46, height: 26, borderRadius: 13, background: aiSidebarOn ? t.primary : t.border, position: "relative", cursor: "pointer", flexShrink: 0 }}>
+                      <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: aiSidebarOn ? 23 : 3, transition: "left 0.15s" }} />
+                    </div>
+                  </div>
+                </div>
+                <div style={{ padding: "12px 0", borderTop: `1px solid ${t.border}` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, color: t.text, fontSize: 15 }}>Grant Transcript Context Reader Access</div>
+                  </div>
+                  <div onClick={() => { const next = !aiContextOn; setAiContextOn(next); localStorage.setItem("nextext_ai_context", next ? "true" : "false"); }} style={{ width: 46, height: 26, borderRadius: 13, background: aiContextOn ? t.primary : t.border, position: "relative", cursor: "pointer", flexShrink: 0 }}>
+                    <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: aiContextOn ? 23 : 3, transition: "left 0.15s" }} />
+                  </div>
+                </div>
+                <div style={{ marginTop: 8, padding: "10px 12px", borderRadius: 8, background: "#FFF3CD", border: "1px solid #FFEEBA", fontSize: 11.5, color: "#856404", lineHeight: 1.5 }}>
+                  WARNING: Enabling this switch grants the AI engine permission to read your private text conversation data history across all rooms strictly to generate summaries, offer chat reflections, or compile advisory reports. Disable at any time to restrict access.
+                </div>
+              </div>
+              </>
+            )}
+          </SectionCard>
+        )}
+
+        {/* ═══ ACCOUNT ACTIONS ═══ */}
+        <SectionCard title="Account" emoji="⚙️" sectionKey="accountActions">
+          <Row icon={<MessageSquare size={18} color={t.primary} />} label="Send Feedback" sub="Message the admin directly" onClick={() => onNavigate("feedback")} />
+          {isAdmin && <Row icon={<ShieldCheck size={18} color={t.primary} />} label="Admin Dashboard" sub="Users, reports, broadcasts" onClick={() => onNavigate("admin")} />}
+          <div style={{ padding: "13px 0" }}>
+            <button onClick={() => { const keys = Object.keys(localStorage).filter((k) => k.startsWith("nextext_")); keys.forEach((k) => localStorage.removeItem(k)); window.location.reload(); }} style={{ width: "100%", padding: "11px 16px", borderRadius: 10, border: "none", background: t.primaryLight, color: t.primary, fontWeight: 700, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <RotateCcw size={15} /> Reset all settings
+            </button>
+          </div>
+          <div style={{ padding: "13px 0" }}>
+            <button onClick={onLogout} style={{ width: "100%", padding: "11px 16px", borderRadius: 10, border: "none", background: "#FF3B30", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Sign Out</button>
+          </div>
+        </SectionCard>
+
+        <div style={{ textAlign: "center", color: t.textMuted, fontSize: 11.5, marginTop: 10, paddingBottom: 10 }}>
+          Developed by Fred-Systems
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const DEFAULT_NAV_CONFIG = [{ key: "chats" }, { key: "status" }, { key: "groups" }];
+
+function AppShell() {
+  const { t, themeKey, setThemeKey, hideNav, appFont } = useTheme();
+  const auth = useAuth();
+  const [screen, setScreen] = useState("list");
+  const [activeChat, setActiveChat] = useState(null);
+  const [uiScale, setUiScale] = useState(() => Number(localStorage.getItem(UI_SCALE_KEY)) || 1);
+  const [showScrollDown, setShowScrollDown] = useState(() => localStorage.getItem(SCROLL_DOWN_KEY) !== "false");
+  const [animatedScrollEntry, setAnimatedScrollEntry] = useState(() => localStorage.getItem("nextext_animated_scroll_entry") === "true");
+  const [compactList, setCompactList] = useState(() => localStorage.getItem("nextext_compact_list") === "true");
+  const [showThemeSheet, setShowThemeSheet] = useState(false);
+  const [activeNavTab, setActiveNavTab] = useState("chats");
+  const [userRestrictions, setUserRestrictions] = useState(null);
+  const [navConfig, setNavConfig] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("nextext_nav_config"));
+      if (Array.isArray(stored) && stored.length >= 2) return stored;
+    } catch { /* ignore */ }
+    return DEFAULT_NAV_CONFIG;
+  });
+  const [appLocked, setAppLocked] = useState(() => {
+    const enabled = localStorage.getItem("nextext_app_lock") === "true";
+    const pass = localStorage.getItem("nextext_app_lock_pass");
+    return enabled && !!pass;
+  });
+  const [storyViewerOpen, setStoryViewerOpen] = useState(false);
+  const [aiSidebarOn, setAiSidebarOn] = useState(() => localStorage.getItem("nextext_ai_sidebar") !== "off");
+  const swipeStartRef = useRef({ x: 0, y: 0 });
+
+  const myUid = auth.user?.uid;
+  usePresenceHeartbeat(myUid);
+
+  const { contacts } = useContacts(myUid);
+  const { chats: myChats } = useChats(myUid);
+  const totalUnreadChats = (myChats || []).reduce((sum, c) => sum + (c.unreadCount?.[myUid] || 0), 0);
+  const contactUids = (contacts || []).filter((c) => c.status === "accepted").map((c) => c.uid);
+  const allStatusUids = [myUid, ...contactUids];
+  const allStatuses = useStatuses(myUid ? allStatusUids : []);
+
+  const VIEWED_KEY = "nextext_status_viewed";
+  let unreadStatusCount = 0;
+  if (myUid) {
+    try {
+      const raw = localStorage.getItem(VIEWED_KEY);
+      const viewedMap = raw ? JSON.parse(raw) : {};
+      const now = Date.now();
+      const activeOwnerUids = new Set(allStatuses.filter((s) => s.ownerId !== myUid).map((s) => s.ownerId));
+      for (const uid of activeOwnerUids) {
+        const viewedTs = viewedMap[uid];
+        if (!viewedTs || (now - viewedTs) > 24 * 60 * 60 * 1000) unreadStatusCount++;
+      }
+    } catch { unreadStatusCount = 0; }
+  }
+
+  useEffect(() => { localStorage.setItem("nextext_nav_config", JSON.stringify(navConfig)); }, [navConfig]);
+
+  useEffect(() => {
+    if (!myUid) return;
+    purgeExpiredStatuses(myUid);
+  }, [myUid]);
+
+  useEffect(() => {
+    if (!auth.user?.uid) return;
+    const unsub = onSnapshot(doc(db, "users", auth.user.uid), (snap) => {
+      setUserRestrictions(snap.data()?.restrictions || null);
+    });
+    return unsub;
+  }, [auth.user?.uid]);
+
+  useEffect(() => { localStorage.setItem(UI_SCALE_KEY, String(uiScale)); }, [uiScale]);
+  useEffect(() => { localStorage.setItem(SCROLL_DOWN_KEY, String(showScrollDown)); }, [showScrollDown]);
+
+  // Re-evaluate app lock state whenever the user returns to the list screen
+  // (this catches toggles made in Settings without needing a cross-tab event).
+  useEffect(() => {
+    if (screen === "list" || screen === "settings") {
+      const enabled = localStorage.getItem("nextext_app_lock") === "true";
+      const pass = localStorage.getItem("nextext_app_lock_pass");
+      const shouldLock = enabled && !!pass;
+      setAppLocked(shouldLock);
+    }
+  }, [screen]);
+
+  const [initialViewStatuses, setInitialViewStatuses] = useState(null);
+
+  const openChat = (chatDoc, otherUid, contact, options) => {
+    if (options?.isAI) {
+      setScreen("aiChat");
+      return;
+    }
+    if (options?.openProfile) {
+      setActiveChat({ chatId: chatDoc?.id || null, otherUid, contact, origin: "list" });
+      setScreen("contactProfile");
+      return;
+    }
+    if (options?.openStatus) {
+      setInitialViewStatuses({ statuses: options.openStatus, ownerUid: otherUid });
+      setScreen("status");
+      return;
+    }
+    setActiveChat({ chatId: chatDoc?.id || null, otherUid, contact, origin: "chat" });
+    setScreen("chat");
+  };
+
+  const containerStyle = {
+    width: "100%", maxWidth: 390, height: 720, margin: "0 auto", position: "relative",
+    borderRadius: 28, overflow: "hidden", boxShadow: "0 8px 40px rgba(0,0,0,0.25)",
+    fontFamily: appFont,
+  };
+
+  if (auth.loading) {
+    return <div style={{ ...containerStyle, display: "flex", alignItems: "center", justifyContent: "center", background: t.bg }}><span style={{ color: t.textMuted, fontSize: 14 }}>Loading…</span></div>;
+  }
+  if (!auth.user) {
+    return <div style={containerStyle}><AuthScreen auth={auth} /></div>;
+  }
+  if (appLocked) {
+    return <div style={containerStyle}><AppLockScreen onUnlock={() => setAppLocked(false)} /></div>;
+  }
+
+  const isAdmin = auth.userDoc?.role === "admin";
+
+  return (
+    <div
+      style={{ ...containerStyle, transform: `scale(${uiScale})`, transformOrigin: "top center" }}
+      onTouchStart={(e) => { swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
+      onTouchEnd={(e) => {
+        if (screen !== "list" || storyViewerOpen) return;
+        const dx = e.changedTouches[0].clientX - swipeStartRef.current.x;
+        const dy = e.changedTouches[0].clientY - swipeStartRef.current.y;
+        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 60) {
+          const tabs = navConfig.map((n) => n.key);
+          const currentIdx = tabs.indexOf(activeNavTab);
+          if (dx < 0 && currentIdx < tabs.length - 1) {
+            setActiveNavTab(tabs[currentIdx + 1]);
+          } else if (dx > 0 && currentIdx > 0) {
+            setActiveNavTab(tabs[currentIdx - 1]);
+          }
+        }
+      }}
+    >
+      <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab={activeNavTab} compactList={compactList} />
+
+      {screen === "chat" && activeChat && (
+        <ConversationScreen
+          myUid={myUid}
+          chatId={activeChat.chatId}
+          otherUid={activeChat.otherUid}
+          contact={activeChat.contact}
+          onBack={() => setScreen("list")}
+          onOpenProfile={() => setScreen("contactProfile")}
+          showScrollDownSetting={showScrollDown}
+          animatedScrollEntry={animatedScrollEntry}
+        />
+      )}
+      {screen === "contactProfile" && activeChat && (
+        <ContactProfileScreen
+          myUid={myUid}
+          otherUid={activeChat.otherUid}
+          contact={activeChat.contact}
+          onBack={() => {
+            if (activeChat.origin === "list") setScreen("list");
+            else setScreen("chat");
+          }}
+        />
+      )}
+      {screen === "status" && (
+        <StatusScreen myUid={myUid} myName={auth.userDoc?.displayName || auth.userDoc?.username} onBack={() => { setScreen("list"); setActiveNavTab("chats"); setStoryViewerOpen(false); }} onStoryViewerChange={setStoryViewerOpen} initialViewStatuses={initialViewStatuses} />
+      )}
+      {screen === "settings" && (
+        <SettingsScreen
+          myUid={myUid}
+          isAdmin={isAdmin}
+          themeKey={themeKey}
+          onOpenTheme={() => setShowThemeSheet(true)}
+          uiScale={uiScale}
+          setUiScale={setUiScale}
+          showScrollDown={showScrollDown}
+          setShowScrollDown={setShowScrollDown}
+          animatedScrollEntry={animatedScrollEntry}
+          setAnimatedScrollEntry={setAnimatedScrollEntry}
+          compactList={compactList}
+          setCompactList={setCompactList}
+          onBack={() => setScreen("list")}
+          onNavigate={setScreen}
+          onLogout={() => auth.logOut()}
+          userDoc={auth.userDoc}
+          navConfig={navConfig}
+          setNavConfig={setNavConfig}
+          aiSidebarOn={aiSidebarOn}
+          setAiSidebarOn={setAiSidebarOn}
+        />
+      )}
+      {screen === "privacy" && <PrivacyScreen myUid={myUid} onBack={() => setScreen("settings")} />}
+      {screen === "parental" && <ParentalControlsScreen myUid={myUid} onBack={() => setScreen("settings")} />}
+      {screen === "feedback" && <FeedbackScreen myUid={myUid} myUsername={auth.userDoc?.username} onBack={() => setScreen("settings")} />}
+      {screen === "admin" && isAdmin && <AdminDashboard myUid={myUid} onBack={() => setScreen("settings")} />}
+      {screen === "aiChat" && (
+        <AIChatScreen myUid={myUid} onBack={() => setScreen("list")} />
+      )}
+
+      {aiSidebarOn && !storyViewerOpen && screen === "list" && (
+        <AISidebarWidget myUid={myUid} userDoc={auth.userDoc} onOpenAI={() => setScreen("aiChat")} />
+      )}
+
+      {showThemeSheet && (
+        <ThemeSheet current={themeKey} onSelect={(k) => { setThemeKey(k); setShowThemeSheet(false); }} onClose={() => setShowThemeSheet(false)} />
+      )}
+
+
+
+      {!hideNav && !storyViewerOpen && (screen === "list" || screen === "status") && (() => {
+        const ALL_TABS = {
+          chats: { icon: MessageSquare, label: "Chats" },
+          status: { icon: CircleDot, label: "Status" },
+          groups: { icon: Users, label: "Groups" },
+          settings: { icon: SettingsIcon, label: "Settings" },
+        };
+        const navTabs = navConfig
+          .filter(({ key }) => {
+            if (key === "status" && userRestrictions?.blockStatus === true) return false;
+            if (key === "groups" && userRestrictions?.blockGroups === true) return false;
+            return ALL_TABS[key];
+          })
+          .map(({ key }) => ({ key, ...ALL_TABS[key] }));
+        if (!navTabs.length) return null;
+        return (
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", background: t.surface, borderTop: `1px solid ${t.border}`, zIndex: screen === "status" ? 45 : 15 }}>
+            {navTabs.map(({ key, icon: Icon, label }) => {
+              const isActive = key === "settings" ? screen === "settings" : key === "status" ? screen === "status" : (screen === "list" && activeNavTab === key);
+              return (
+              <div key={key} onClick={() => { if (key === "settings") setScreen("settings"); else if (key === "status") setScreen("status"); else { setActiveNavTab(key); setScreen("list"); } }} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "10px 0 12px", cursor: "pointer", color: isActive ? t.primary : t.textMuted, position: "relative" }}>
+                <div style={{ position: "relative" }}>
+                  <Icon size={20} />
+                  {key === "chats" && totalUnreadChats > 0 && (
+                    <div style={{ position: "absolute", top: -4, right: -8, minWidth: 16, height: 16, borderRadius: 8, background: "#FF3B30", color: "#fff", fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px", border: `2px solid ${t.surface}` }}>{totalUnreadChats > 99 ? "99+" : totalUnreadChats}</div>
+                  )}
+                  {key === "status" && unreadStatusCount > 0 && (
+                    <div style={{ position: "absolute", top: -2, right: -4, width: 8, height: 8, borderRadius: "50%", background: t.accent, border: `2px solid ${t.surface}` }} />
+                  )}
+                </div>
+                <span style={{ fontSize: 11, fontWeight: isActive ? 700 : 500 }}>{label}</span>
+              </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppShell />
+    </ThemeProvider>
+  );
+}
+

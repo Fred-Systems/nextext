@@ -1,0 +1,164 @@
+import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { X, Eye, User, Image as ImageIcon, Info } from "lucide-react";
+import { getAvatarColor, getAvatarInitial } from "../utils/avatarColors";
+
+const LOCAL_OVERRIDE_KEY = "nextext_contact_photo_overrides";
+function getLocalPhotoOverride(uid) {
+  if (!uid) return null;
+  try {
+    const raw = localStorage.getItem(LOCAL_OVERRIDE_KEY);
+    if (!raw) return null;
+    const overrides = JSON.parse(raw);
+    return overrides[uid] || null;
+  } catch { return null; }
+}
+
+// Global avatar-menu coordination: only one 3-button menu may be open at a
+// time anywhere in the app. Opening any avatar broadcasts its uid so every
+// other open menu clears instantly (auto-dismiss).
+let activeAvatarMenuUid = null;
+const avatarMenuListeners = new Set();
+function broadcastAvatarMenu(openUid) {
+  activeAvatarMenuUid = openUid;
+  avatarMenuListeners.forEach((fn) => fn(openUid));
+}
+
+export default function Avatar({ photoURL, name, uid, size = 52, style = {}, hasActiveStatus = false, statusViewed = false, onStatusView, onViewProfile, onViewPicture, onViewGroupInfo, hideLocalOverride = false, blockStatus = false }) {
+  const [showMenu, setShowMenu] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const avatarRef = useRef(null);
+  const uidRef = useRef(uid);
+  uidRef.current = uid;
+  const localOverride = hideLocalOverride ? null : getLocalPhotoOverride(uid);
+  const effectivePhotoURL = localOverride || photoURL;
+  const bg = getAvatarColor(uid || name || "");
+  const initial = getAvatarInitial(name);
+  const fontSize = Math.round(size * 0.38);
+  const ringPad = hasActiveStatus ? 3 : 0;
+  const outerSize = size + ringPad * 2;
+  const hasPhoto = !!effectivePhotoURL;
+  const ringColor = statusViewed ? "rgba(0,168,132,0.35)" : "#00A884";
+
+  // Auto-dismiss: when another avatar opens its menu, close this one.
+  useEffect(() => {
+    const fn = (openUid) => { if (openUid && openUid !== uidRef.current) setShowMenu(false); };
+    avatarMenuListeners.add(fn);
+    return () => avatarMenuListeners.delete(fn);
+  }, []);
+
+  const handleClick = (e) => {
+    e.stopPropagation();
+    broadcastAvatarMenu(uid);
+    setShowMenu(true);
+  };
+
+  const closeMenu = () => {
+    if (activeAvatarMenuUid === uid) broadcastAvatarMenu(null);
+    setShowMenu(false);
+  };
+
+  const handleMenuStatus = (e) => {
+    e.stopPropagation();
+    closeMenu();
+    if (onStatusView) onStatusView();
+  };
+
+  const handleMenuProfile = (e) => {
+    e.stopPropagation();
+    closeMenu();
+    if (onViewProfile) onViewProfile();
+  };
+
+  const handleMenuGroupInfo = (e) => {
+    e.stopPropagation();
+    closeMenu();
+    if (onViewGroupInfo) onViewGroupInfo();
+  };
+
+  const handleMenuPicture = (e) => {
+    e.stopPropagation();
+    closeMenu();
+    if (onViewPicture) {
+      onViewPicture();
+    } else {
+      setFullscreen(true);
+    }
+  };
+
+  const avatarNode = (
+    <div
+      ref={avatarRef}
+      onClick={handleClick}
+      style={{
+        width: outerSize, height: outerSize, borderRadius: "50%",
+        background: hasActiveStatus ? ringColor : "transparent",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        flexShrink: 0, cursor: "pointer", position: "relative", ...style,
+      }}
+    >
+      {effectivePhotoURL ? (
+        <img src={effectivePhotoURL} alt={name || "avatar"} style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover" }} />
+      ) : (
+        <div style={{ width: size, height: size, borderRadius: "50%", background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize, fontWeight: 700, color: "#fff", userSelect: "none" }}>
+          {initial}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      {avatarNode}
+      {showMenu && createPortal(
+        <div onClick={closeMenu} style={{ position: "fixed", inset: 0, zIndex: 99998 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -40%)", background: "rgba(30,30,30,0.97)", borderRadius: 12, overflow: "hidden", overflowY: "auto", maxHeight: 220, zIndex: 99999, boxShadow: "0 8px 30px rgba(0,0,0,0.5)", minWidth: 200, whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>
+            {hasActiveStatus && onStatusView && !blockStatus && (
+              <div onClick={handleMenuStatus} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer" }}>
+                <Eye size={16} color="#00A884" />
+                <span style={{ color: "#fff", fontSize: 14, fontWeight: 600 }}>View Status</span>
+              </div>
+            )}
+            {onViewGroupInfo && (
+              <div onClick={handleMenuGroupInfo} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer", borderTop: (hasActiveStatus && onStatusView && !blockStatus) ? "1px solid rgba(255,255,255,0.1)" : "none" }}>
+                <Info size={16} color="#8E8E93" />
+                <span style={{ color: "#fff", fontSize: 14, fontWeight: 600 }}>View Group Info</span>
+              </div>
+            )}
+            {!onViewGroupInfo && onViewProfile && (
+              <div onClick={handleMenuProfile} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer", borderTop: (hasActiveStatus && onStatusView && !blockStatus) ? "1px solid rgba(255,255,255,0.1)" : "none" }}>
+                <User size={16} color="#8E8E93" />
+                <span style={{ color: "#fff", fontSize: 14, fontWeight: 600 }}>View Profile</span>
+              </div>
+            )}
+            <div onClick={handleMenuPicture} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer", borderTop: (hasActiveStatus && onStatusView && !blockStatus) || onViewProfile || onViewGroupInfo ? "1px solid rgba(255,255,255,0.1)" : "none" }}>
+              <ImageIcon size={16} color="#8E8E93" />
+              <span style={{ color: "#fff", fontSize: 14, fontWeight: 600 }}>{hasPhoto ? "View Profile Picture" : (onViewGroupInfo ? "View Group Picture" : "View Avatar")}</span>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      {fullscreen && createPortal(
+        <div onClick={() => setFullscreen(false)} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.95)", zIndex: 999999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+          {effectivePhotoURL ? (
+            <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", padding: 16 }}>
+              <img src={effectivePhotoURL} alt={name || "avatar"} style={{ maxWidth: "100%", maxHeight: "80%", borderRadius: 12, objectFit: "contain", display: "block" }} />
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", background: "#111b21" }}>
+              <span style={{ fontSize: "min(200px, 40vw)", fontWeight: 700, color: "#fff", userSelect: "none" }}>{initial}</span>
+            </div>
+          )}
+          {name && (
+            <div style={{ position: "absolute", bottom: 40, left: 0, right: 0, color: "#fff", fontSize: 16, fontWeight: 600, textAlign: "center", maxWidth: "90%", margin: "0 auto" }}>{name}</div>
+          )}
+          <div onClick={() => setFullscreen(false)} style={{ position: "absolute", top: 16, right: 16, width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,0.25)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 1000000 }}>
+            <X size={24} color="#fff" strokeWidth={3} />
+          </div>
+        </div>,
+        (typeof document !== "undefined" && document.getElementById("nextext-app-shell")) || document.body
+      )}
+    </>
+  );
+}

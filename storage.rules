@@ -1,0 +1,61 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Hard server-side cap: 100MB. This mirrors and backstops the frontend's
+    // own 100MB block (in mediaCompression.js) -- the frontend check gives
+    // users a friendly warning before wasting upload time/bandwidth, but a
+    // client can be modified or bypassed, so this is the real limit that
+    // actually gets enforced no matter what the client does.
+    function underSizeLimit() {
+      return request.resource.size < 100 * 1024 * 1024;
+    }
+
+    // Restricts media/file writes to users who are actual participants of
+    // the chat this file belongs to -- requires a Firestore lookup, which
+    // Storage rules support via firestore.get(). Adds a small amount of
+    // latency per upload/download, worth it for real access control instead
+    // of "any signed-in user can touch any chat's files."
+    function isChatParticipant(chatId) {
+      return isSignedIn() &&
+        request.auth.uid in firestore.get(
+          /databases/(default)/documents/chats/$(chatId)
+        ).data.participants;
+    }
+
+    match /users/{uid}/profile.jpg {
+      allow read: if isSignedIn();
+      allow write: if isSelf(uid) && underSizeLimit();
+    }
+
+    match /users/{uid}/contacts/{contactUid}/customPhoto.jpg {
+      allow read: if isSelf(uid);
+      allow write: if isSelf(uid) && underSizeLimit();
+    }
+
+    match /chats/{chatId}/media/{fileName} {
+      allow read, write: if isChatParticipant(chatId) && underSizeLimit();
+    }
+
+    match /chats/{chatId}/files/{fileName} {
+      allow read, write: if isChatParticipant(chatId) && underSizeLimit();
+    }
+
+    match /groups/{chatId}/group-photo.jpg {
+      allow read, write: if isChatParticipant(chatId) && underSizeLimit();
+    }
+
+    match /status/{uid}/{statusId} {
+      allow read: if isSignedIn();
+      allow write: if isSelf(uid) && underSizeLimit();
+    }
+  }
+}

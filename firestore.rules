@@ -1,0 +1,236 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    function notBanned() {
+      let m = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.moderation;
+      return m == null || m.banType == 'none';
+    }
+    function isChatParticipant(chatId) {
+      return isSignedIn() &&
+        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+    }
+    function areContacts(uidA, uidB) {
+      return exists(/databases/$(database)/documents/users/$(uidA)/contacts/$(uidB)) &&
+        get(/databases/$(database)/documents/users/$(uidA)/contacts/$(uidB)).data.status == 'accepted';
+    }
+    // Daily message send limit — checks a per-user rolling-window counter doc
+    // at messageLimits/{uid}. The client increments `count` and resets
+    // `windowStart` as part of sending each message (see messageLimits rule
+    // below). This blunts scripted abuse/runaway sends, not normal chatting —
+    // default cap here is generous (500/24h). Note: like the app's other
+    // client-reported counters (data usage, time limits), this relies on the
+    // client to update the counter honestly; it's a deterrent for a trusted
+    // friends-and-family app, not a cryptographically enforced hard limit.
+    function underDailyMessageLimit() {
+      let limitDoc = /databases/$(database)/documents/messageLimits/$(request.auth.uid);
+      return !exists(limitDoc) ||
+        (request.time - get(limitDoc).data.windowStart > duration.value(24, 'h')) ||
+        get(limitDoc).data.count < 500;
+    }
+
+    // Enforces the real time windows for editing (15 min) and delete-for-
+    // everyone (60 hours) server-side -- the UI hides these options once
+    // expired, but this is what actually prevents a modified client from
+    // bypassing that and editing/deleting old messages anyway.
+    function withinEditDeleteWindows() {
+      let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      let editingText = changedKeys.hasAny(['text', 'editedAt', 'editHistory']);
+      let deletingEveryone = changedKeys.hasAny(['deletedForEveryone']) &&
+        request.resource.data.deletedForEveryone == true;
+      let withinEditWindow = request.time < resource.data.sentAt + duration.value(15, 'm');
+      let withinDeleteWindow = request.time < resource.data.sentAt + duration.value(60, 'h');
+      return (!editingText || withinEditWindow) && (!deletingEveryone || withinDeleteWindow);
+    }
+
+    // Parental controls: checks the SENDER's own restrictions doc. If the
+    // sender isn't a restricted child account, restrictions is null and
+    // everything is allowed by default.
+    function myRestrictions() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.restrictions;
+    }
+    function mediaAllowed(msgType) {
+      let r = myRestrictions();
+      return r == null ||
+        !(((r.blockMedia == true || r.blockIncomingPhotos == true) && msgType == 'image') ||
+          ((r.blockMedia == true || r.blockIncomingVideos == true) && msgType == 'video') ||
+          (r.blockVoiceNotes == true && msgType == 'voice'));
+    }
+    function groupsAllowedFor(uid) {
+      let r = get(/databases/$(database)/documents/users/$(uid)).data.restrictions;
+      return r == null || r.blockGroups != true;
+    }
+    function statusAllowed() {
+      let r = myRestrictions();
+      return r == null || r.blockStatus != true;
+    }
+
+    // ── users ──────────────────────────────────────────────
+    match /users/{uid} {
+      allow read: if isSignedIn(); // profile fields are semi-public to any signed-in user;
+                                     // sensitive fields (restrictions, moderation) are only
+                                     // meaningfully USED by rules elsewhere, not exposed via UI
+      allow create: if isSelf(uid);
+      allow update: if isSelf(uid) || isAdmin();
+      allow delete: if isAdmin(); // admin can delete user docs (e.g. cleanup)
+
+      match /contacts/{contactUid} {
+        allow read: if isSelf(uid) || isSelf(contactUid);
+
+        // The owner (uid) can freely manage their own contacts doc: nickname,
+        // favorite, muted, blocked, accepting a request, etc.
+        allow write: if isSelf(uid);
+
+        // A contact REQUEST is special: the sender (contactUid, from this doc's
+        // perspective) needs to create a doc inside the RECIPIENT's (uid's)
+        // contacts subcollection so the recipient sees the incoming request.
+        // Only allow this as a fresh "pending" creation — not overwriting an
+        // existing doc, and not letting the sender set status to "accepted"
+        // themselves (that requires the owner's own write, above).
+        allow create: if isSelf(contactUid) &&
+          request.resource.data.status == 'pending' &&
+          !exists(/databases/$(database)/documents/users/$(uid)/contacts/$(contactUid));
+
+        // Accepting a request also needs to flip status on BOTH sides' docs.
+        // Allow the non-owner side (contactUid) to transition pending -> accepted
+        // on the owner's doc too — but only that exact transition, nothing else.
+        allow update: if isSelf(contactUid) &&
+          resource.data.status == 'pending' &&
+          request.resource.data.status == 'accepted' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      }
+    }
+
+    // ── chats ──────────────────────────────────────────────
+    match /chats/{chatId} {
+      // FIX: reading a chat that doesn't exist yet must succeed (returning
+      // "not found" to the client) rather than error out. Using the built-in
+      // `resource` variable (the doc this rule is actually guarding) with a
+      // null-check does this correctly. The earlier version called get() on
+      // this same path from inside a helper function — Firestore throws when
+      // get()'ing a nonexistent document, which surfaced as permission-denied
+      // and silently broke first-time chat creation.
+      allow read: if isSignedIn() &&
+        (resource == null || request.auth.uid in resource.data.participants);
+      allow create: if isSignedIn() && notBanned() &&
+        request.auth.uid in request.resource.data.participants &&
+        // Group-block check: Firestore rules can't loop over an arbitrary
+        // array to check every invited member's restrictions doc, so this
+        // enforces the rule for the CREATOR only (can't start a group if
+        // they themselves are blocked from groups). Checking every invited
+        // member the same way would need a Cloud Function trigger — not
+        // implemented here; for now that half relies on the invite UI only
+        // offering non-restricted contacts, same honest caveat as other
+        // client-reported/client-enforced limits in this app.
+        (request.resource.data.type != 'group' || groupsAllowedFor(request.auth.uid));
+      allow update: if isSignedIn() && notBanned() &&
+        request.auth.uid in resource.data.participants;
+      allow delete: if isSignedIn() && notBanned() &&
+        request.auth.uid in resource.data.participants;
+
+      match /messages/{messageId} {
+        allow read: if isChatParticipant(chatId);
+        allow create: if isChatParticipant(chatId) && notBanned() && underDailyMessageLimit() &&
+          (request.resource.data.senderId == request.auth.uid ||
+           request.resource.data.senderId == 'nextext-ai-system' ||
+           request.resource.data.recipientId == 'nextext-ai-system' ||
+           request.resource.data.type == 'group') &&
+          mediaAllowed(request.resource.data.type);
+        // Note: any participant can write the whole `poll` object (needed so
+        // votes can be cast by non-senders), which means a participant could
+        // in principle overwrite others' votes too — same trust-model
+        // tradeoff as other client-reported fields in this app (data usage,
+        // time limits). Not a concern for a friends-and-family deployment;
+        // would need per-key map validation or a Cloud Function to fully close.
+        allow update: if isChatParticipant(chatId) && (
+          (resource.data.senderId == request.auth.uid && withinEditDeleteWindows()) ||
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['reactions', 'readBy', 'deliveredTo', 'deletedForSelf', 'poll'])
+        );
+        allow delete: if isChatParticipant(chatId);
+      }
+    }
+
+    // ── message rate-limit counters (client-updated, self-only) ──
+    match /messageLimits/{uid} {
+      allow read: if isSelf(uid);
+      allow write: if isSelf(uid);
+    }
+
+    // ── status ─────────────────────────────────────────────
+    match /status/{statusId} {
+      allow read: if isSignedIn(); // visibility filtering (contacts-only, selected/excluded
+                                     // lists) happens client-side on top of this; tightening
+                                     // this further requires per-doc owner+viewer checks if
+                                     // stricter server-side enforcement is wanted later
+      allow create: if isSignedIn() && notBanned() && statusAllowed() &&
+        request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+
+      match /views/{viewerUid} {
+        // Any signed-in user can record that they viewed a status (idempotent).
+        allow create: if isSignedIn() && request.auth.uid == viewerUid;
+        allow update: if isSignedIn() && request.auth.uid == viewerUid;
+        allow read: if isSignedIn(); // owner checks who viewed; viewer checks own view
+      }
+    }
+
+    // ── reports & feedback (write-only for regular users) ───
+    match /reports/{reportId} {
+      allow create: if isSignedIn() &&
+        request.resource.data.reportedByUid == request.auth.uid;
+      allow read, update: if isAdmin();
+    }
+    match /feedback/{feedbackId} {
+      allow create: if isSignedIn() &&
+        request.resource.data.fromUid == request.auth.uid;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ── system messages (admin-only write, everyone reads) ──
+    match /systemMessages/{messageId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── broadcast lists (owner-only) ────────────────────────
+    match /broadcastLists/{listId} {
+      allow read, write: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
+    }
+
+    // ── global config (admin write, everyone reads to apply limits) ──
+    match /config/{doc} {
+      allow read: if isSignedIn();
+      // Bootstrap exception: any signed-in user can CREATE this doc only if
+      // it doesn't already exist yet (first app load ensures sane defaults
+      // exist) -- once created, only an admin can change it.
+      allow create: if isSignedIn() && !exists(/databases/$(database)/documents/config/$(doc));
+      allow update, delete: if isAdmin();
+    }
+
+    // ── AI access requests (user creates own, admin reads/writes all) ──
+    match /aiRequests/{docId} {
+      allow create: if isSignedIn();
+      allow read, write, delete: if isAdmin();
+    }
+
+    // ── AI injected in groups: allow the AI system UID to write messages
+    // into any group chat it has been added to as a participant ──
+    // (The existing chats/{chatId}/messages create rule already allows
+    //  senderId == 'nextext-ai-system'. Group chats are handled by the
+    //  normal participant check since AI gets added as a participant
+    //  via the Admin Dashboard Group Control Panel.)
+  }
+}

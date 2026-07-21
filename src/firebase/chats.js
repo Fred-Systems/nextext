@@ -1,0 +1,440 @@
+import { useState, useEffect } from "react";
+import {
+  collection, query, where, orderBy, onSnapshot, doc, setDoc, addDoc,
+  serverTimestamp, updateDoc, arrayUnion, arrayRemove, getDoc, getDocs, writeBatch, deleteField, deleteDoc,
+} from "firebase/firestore";
+import { db } from "./config";
+
+// Deterministic chat id for 1:1 chats -- group chat ids are random (see
+// createGroupChat below), direct chat ids are the two sorted uids joined.
+function directChatId(uidA, uidB) {
+  return [uidA, uidB].sort().join("_");
+}
+
+export async function getOrCreateDirectChat(myUid, theirUid) {
+  const chatId = directChatId(myUid, theirUid);
+  const ref = doc(db, "chats", chatId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    const participants = myUid === theirUid ? [myUid] : [myUid, theirUid];
+    const unreadCount = {};
+    participants.forEach((uid) => { unreadCount[uid] = 0; });
+    await setDoc(ref, {
+      type: "direct",
+      participants,
+      createdAt: serverTimestamp(),
+      createdBy: myUid,
+      groupName: null,
+      groupPhotoURL: null,
+      groupAdmins: null,
+      groupDescription: null,
+      lastMessage: null,
+      unreadCount,
+      archivedBy: [],
+      lockedBy: {},
+      deletedForSelf: {},
+      mutedBy: {},
+      favoritedBy: [],
+      typingUsers: {},
+    });
+  }
+  return chatId;
+}
+
+// Groups: random chat id, 2+ participants, only accepted contacts of the
+// creator can be added (enforced client-side by only offering accepted
+// contacts in the picker UI -- see NewGroupScreen).
+export async function createGroupChat(creatorUid, memberUids, groupName, options = {}) {
+  const allParticipants = [creatorUid, ...memberUids];
+  const ref = doc(collection(db, "chats"));
+  const unreadCount = {};
+  allParticipants.forEach((uid) => { unreadCount[uid] = 0; });
+  await setDoc(ref, {
+    type: "group",
+    participants: allParticipants,
+    createdAt: serverTimestamp(),
+    createdBy: creatorUid,
+    groupName,
+    groupPhotoURL: options.groupPhotoURL || null,
+    groupAdmins: [creatorUid],
+    groupDescription: "",
+    lastMessage: null,
+    unreadCount,
+    archivedBy: [],
+    lockedBy: {},
+    deletedForSelf: {},
+    mutedBy: {},
+    favoritedBy: [],
+    typingUsers: {},
+  });
+  return ref.id;
+}
+
+// Live list of all chats this user participates in, newest activity first.
+export function useChats(myUid) {
+  const [chats, setChats] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!myUid) return;
+    const q = query(collection(db, "chats"), where("participants", "array-contains", myUid));
+    const unsub = onSnapshot(q, (snap) => {
+      const rows = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.lastMessage?.sentAt?.toMillis?.() || 0) - (a.lastMessage?.sentAt?.toMillis?.() || 0));
+      setChats(rows);
+      setLoading(false);
+    });
+    return unsub;
+  }, [myUid]);
+
+  return { chats, loading };
+}
+
+// Live message stream for one chat, oldest first (for natural chat scroll order).
+// Filters out messages scheduled for the future that haven't fired yet, and
+// messages this user has individually deleted-for-self.
+export function useMessages(chatId, myUid) {
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!chatId) return;
+    const q = query(collection(db, "chats", chatId, "messages"), orderBy("sentAt", "asc"));
+    const unsub = onSnapshot(q, (snap) => {
+      const now = Date.now();
+      const rows = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((m) => {
+          if (m.deletedForSelf?.includes(myUid)) return false;
+          if (m.isScheduled && m.scheduledFor?.toMillis && m.scheduledFor.toMillis() > now) {
+            // Only the sender can see their own not-yet-due scheduled message
+            // (as a pending/preview state) -- everyone else simply doesn't
+            // see it until it's due.
+            return m.senderId === myUid;
+          }
+          return true;
+        });
+      setMessages(rows);
+      setLoading(false);
+    });
+    return unsub;
+  }, [chatId, myUid]);
+
+  return { messages, loading };
+}
+
+// Sends a text message and updates the chat's lastMessage preview + unread counts.
+export async function sendTextMessage(chatId, senderUid, text, otherParticipants, options = {}) {
+  const { replyTo = null, scheduledFor = null, statusRef = null } = options;
+
+  await addDoc(collection(db, "chats", chatId, "messages"), {
+    senderId: senderUid,
+    type: "text",
+    text,
+    mediaURL: null,
+    mediaThumbURL: null,
+    mediaDurationSeconds: null,
+    mediaSizeBytes: null,
+    mediaExpiresAt: null,
+    mediaExpired: false,
+    mediaSavedBy: [],
+    fileName: null,
+    fileExtension: null,
+    fileSizeBytes: null,
+    gifURL: null,
+    gifSourceProvider: null,
+    scheduledFor: scheduledFor,
+    isScheduled: !!scheduledFor,
+    sentAt: serverTimestamp(),
+    deliveredTo: [],
+    readBy: [],
+    deletedForEveryone: false,
+    deletedForSelf: [],
+    editedAt: null,
+    editHistory: [],
+    editWindowExpiresAt: null,
+    disappearing: null,
+    screenshotDetected: false,
+    replyTo,
+    reactions: {},
+    poll: null,
+    statusRef,
+  });
+
+  if (!scheduledFor) {
+    const chatRef = doc(db, "chats", chatId);
+    await updateDoc(chatRef, {
+      lastMessage: { text, senderId: senderUid, sentAt: serverTimestamp(), type: "text" },
+    });
+    await incrementUnreadCounts(chatId, otherParticipants);
+  }
+}
+
+async function incrementUnreadCounts(chatId, otherParticipants) {
+  const ref = doc(db, "chats", chatId);
+  const snap = await getDoc(ref);
+  const current = snap.data()?.unreadCount || {};
+  const updated = { ...current };
+  otherParticipants.forEach((uid) => {
+    updated[uid] = (updated[uid] || 0) + 1;
+  });
+  await updateDoc(ref, { unreadCount: updated });
+}
+
+export async function markChatRead(chatId, myUid) {
+  await updateDoc(doc(db, "chats", chatId), { [`unreadCount.${myUid}`]: 0 });
+}
+
+// Marks all not-mine messages as delivered to me -- called as soon as this
+// chat's message listener is active (approximates "my device received it").
+export async function markMessagesDelivered(chatId, myUid, messages) {
+  const toUpdate = messages.filter((m) => m.senderId !== myUid && !(m.deliveredTo || []).includes(myUid));
+  if (toUpdate.length === 0) return;
+  const batch = writeBatch(db);
+  toUpdate.forEach((m) => {
+    batch.update(doc(db, "chats", chatId, "messages", m.id), { deliveredTo: arrayUnion(myUid) });
+  });
+  await batch.commit();
+}
+
+// Marks all not-mine messages as read by me -- called when this chat is
+// actually visible/focused (see ConversationScreen's visibility handling),
+// so "read" genuinely reflects the recipient having looked at the chat,
+// not just having it open in the background.
+export async function markMessagesRead(chatId, myUid, messages) {
+  const toUpdate = messages.filter((m) => m.senderId !== myUid && !(m.readBy || []).includes(myUid));
+  if (toUpdate.length === 0) return;
+  const batch = writeBatch(db);
+  toUpdate.forEach((m) => {
+    batch.update(doc(db, "chats", chatId, "messages", m.id), { readBy: arrayUnion(myUid) });
+  });
+  await batch.commit();
+}
+
+export async function setTypingHeartbeat(chatId, myUid) {
+  await updateDoc(doc(db, "chats", chatId), {
+    [`typingUsers.${myUid}`]: serverTimestamp(),
+  });
+}
+
+export async function reactToMessage(chatId, messageId, myUid, emoji) {
+  await updateDoc(doc(db, "chats", chatId, "messages", messageId), {
+    [`reactions.${myUid}`]: emoji,
+  });
+}
+
+// Sends an image, video, file, or voice note message -- the actual bytes
+// already live in Supabase Storage by the time this is called (see
+// src/supabase/media.js); this just records the message doc pointing at it.
+export async function sendMediaMessage(chatId, senderUid, type, uploadResult, otherParticipants, options = {}) {
+  const { replyTo = null, durationSeconds = null, statusRef = null } = options;
+  await addDoc(collection(db, "chats", chatId, "messages"), {
+    senderId: senderUid,
+    type, // "image" | "video" | "file" | "voice"
+    text: null,
+    mediaURL: uploadResult.url,
+    mediaThumbURL: null,
+    mediaDurationSeconds: durationSeconds,
+    mediaSizeBytes: uploadResult.sizeBytes,
+    mediaPath: uploadResult.path, // Supabase storage path, needed to delete later
+    mediaExpiresAt: null,
+    mediaExpired: false,
+    mediaSavedBy: [],
+    fileName: uploadResult.fileName || null,
+    fileExtension: uploadResult.fileName?.split(".").pop() || null,
+    fileSizeBytes: uploadResult.sizeBytes,
+    gifURL: null,
+    gifSourceProvider: null,
+    scheduledFor: null,
+    isScheduled: false,
+    sentAt: serverTimestamp(),
+    deliveredTo: [],
+    readBy: [],
+    deletedForEveryone: false,
+    deletedForSelf: [],
+    editedAt: null,
+    editHistory: [],
+    editWindowExpiresAt: null,
+    disappearing: null,
+    screenshotDetected: false,
+    replyTo,
+    reactions: {},
+    poll: null,
+    statusRef,
+  });
+  await updateDoc(doc(db, "chats", chatId), {
+    lastMessage: { text: mediaLabel(type), senderId: senderUid, sentAt: serverTimestamp(), type },
+  });
+  await incrementUnreadCounts(chatId, otherParticipants);
+}
+
+function mediaLabel(type) {
+  if (type === "image") return "📷 Photo";
+  if (type === "video") return "🎥 Video";
+  if (type === "voice") return "🎤 Voice note";
+  if (type === "file") return "📄 File";
+  return "Message";
+}
+
+export async function sendPollMessage(chatId, senderUid, question, options) {
+  await addDoc(collection(db, "chats", chatId, "messages"), {
+    senderId: senderUid,
+    type: "poll",
+    text: null,
+    sentAt: serverTimestamp(),
+    deliveredTo: [],
+    readBy: [],
+    deletedForEveryone: false,
+    deletedForSelf: [],
+    reactions: {},
+    replyTo: null,
+    poll: {
+      question,
+      options: options.map((text, i) => ({ id: String(i), text })),
+      votes: {},
+      allowMultipleAnswers: false,
+      createdBy: senderUid,
+    },
+    isScheduled: false,
+    scheduledFor: null,
+    statusRef: null,
+  });
+  await updateDoc(doc(db, "chats", chatId), {
+    lastMessage: { text: `📊 ${question}`, senderId: senderUid, sentAt: serverTimestamp(), type: "poll" },
+  });
+}
+
+export async function voteOnPoll(chatId, messageId, myUid, optionId) {
+  const ref = doc(db, "chats", chatId, "messages", messageId);
+  const snap = await getDoc(ref);
+  const poll = snap.data()?.poll;
+  if (!poll) return;
+  const votes = { ...poll.votes, [myUid]: optionId };
+  await updateDoc(ref, { poll: { ...poll, votes } });
+}
+
+export async function editMessage(chatId, messageId, newText, previousText) {
+  await updateDoc(doc(db, "chats", chatId, "messages", messageId), {
+    text: newText,
+    editedAt: serverTimestamp(),
+    editHistory: arrayUnion(previousText),
+  });
+}
+
+export async function deleteMessageForSelf(chatId, messageId, myUid) {
+  await updateDoc(doc(db, "chats", chatId, "messages", messageId), {
+    deletedForSelf: arrayUnion(myUid),
+  });
+}
+
+export async function deleteMessageForEveryone(chatId, messageId) {
+  await updateDoc(doc(db, "chats", chatId, "messages", messageId), {
+    deletedForEveryone: true,
+    text: "",
+  });
+}
+
+// ── Chat-level relationship actions: archive, mute, favorite ──────────────
+export async function toggleArchive(chatId, myUid, currentlyArchived) {
+  const update = {
+    archivedBy: currentlyArchived ? arrayRemove(myUid) : arrayUnion(myUid),
+  };
+  if (currentlyArchived) update.status = "active";
+  await updateDoc(doc(db, "chats", chatId), update);
+}
+export async function toggleFavorite(chatId, myUid, currentlyFavorite) {
+  await updateDoc(doc(db, "chats", chatId), {
+    favoritedBy: currentlyFavorite ? arrayRemove(myUid) : arrayUnion(myUid),
+  });
+}
+export async function setMute(chatId, myUid, until) {
+  await updateDoc(doc(db, "chats", chatId), { [`mutedBy.${myUid}`]: until });
+}
+export async function clearMute(chatId, myUid) {
+  await updateDoc(doc(db, "chats", chatId), { [`mutedBy.${myUid}`]: deleteField() });
+}
+export async function toggleLocked(chatId, myUid, currentlyLocked) {
+  await updateDoc(doc(db, "chats", chatId), {
+    [`lockedBy.${myUid}`]: currentlyLocked ? deleteField() : true,
+  });
+}
+export async function deleteChatForUser(chatId, myUid) {
+  await updateDoc(doc(db, "chats", chatId), {
+    archivedBy: arrayRemove(myUid),
+    favoritedBy: arrayRemove(myUid),
+    [`lockedBy.${myUid}`]: deleteField(),
+    [`mutedBy.${myUid}`]: deleteField(),
+    [`deletedForSelf.${myUid}`]: true,
+  });
+}
+
+export async function deleteChatCompletely(chatId) {
+  try {
+    const msgSnap = await getDocs(collection(db, "chats", chatId, "messages"));
+    const batch = writeBatch(db);
+    msgSnap.docs.forEach((d) => batch.delete(d.ref));
+    batch.delete(doc(db, "chats", chatId));
+    await batch.commit();
+  } catch {
+    await deleteDoc(doc(db, "chats", chatId));
+  }
+}
+
+// ── Group administration helpers ──
+
+// True when the given user is a group admin: the original creator
+// (createdBy) or any uid listed in the groupAdmins array.
+export function isGroupAdmin(groupDoc, uid) {
+  if (!groupDoc || !uid) return false;
+  if (groupDoc.createdBy === uid) return true;
+  return (groupDoc.groupAdmins || []).includes(uid);
+}
+
+// Update mutable group profile fields (groupName, groupPhotoURL, etc.).
+export async function updateGroupProfile(chatId, fields) {
+  await updateDoc(doc(db, "chats", chatId), fields);
+}
+
+// Append new members to a group's participants array. Skips anyone already
+// present and initialises their unread counter.
+export async function addMembersToGroup(chatId, newUids) {
+  if (!newUids || newUids.length === 0) return;
+  const ref = doc(db, "chats", chatId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const existing = snap.data()?.participants || [];
+  const unread = snap.data()?.unreadCount || {};
+  const additions = [];
+  newUids.forEach((uid) => {
+    if (uid && !existing.includes(uid)) {
+      additions.push(uid);
+      unread[uid] = 0;
+    }
+  });
+  if (additions.length === 0) return;
+  await updateDoc(ref, {
+    participants: arrayUnion(...additions),
+    unreadCount: unread,
+  });
+}
+
+// Fetch the profile docs for a list of user uids in parallel. Returns
+// [{ uid, profile }] with whatever data the users collection holds.
+export async function getUsersByUids(uids) {
+  if (!uids || uids.length === 0) return [];
+  const refs = uids.map((uid) => doc(db, "users", uid));
+  const snaps = await Promise.all(refs.map((r) => getDoc(r)));
+  return snaps
+    .map((s, i) => ({ uid: uids[i], profile: s.exists() ? s.data() : null }))
+    .filter((u) => u.profile);
+}
+
+// Save a per-user override nickname for a specific group. Stored on the
+// user document so it only affects that user's own view.
+export async function setGroupNickname(myUid, chatId, nickname) {
+  await updateDoc(doc(db, "users", myUid), {
+    [`groupNicknames.${chatId}`]: nickname || deleteField(),
+  });
+}
+

@@ -1,0 +1,728 @@
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { Search, Settings, Camera, Plus, Users, Star, Archive, BellOff, X, Smartphone, Lock, Trash2, CheckCheck, MessageCircle, Info, Image as ImageIcon } from "lucide-react";
+import { useTheme } from "../theme/ThemeContext";
+import { useChats, toggleArchive, toggleFavorite, toggleLocked, deleteChatCompletely } from "../firebase/chats";
+import { useContacts, searchUsersByUsername, sendContactRequest, acceptContactRequest } from "../firebase/contacts";
+import { sendMediaMessage, getOrCreateDirectChat } from "../firebase/chats";
+import { usePresence, formatLastSeen } from "../firebase/presence";
+import { useStatuses } from "../firebase/status";
+import { useSystemConfigHook, getAIContact, AI_CONTACT_UID } from "../firebase/ai";
+
+const VIEWED_KEY = "nextext_status_viewed";
+function getStoredViewed() {
+  try { const raw = localStorage.getItem(VIEWED_KEY); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+}
+import { uploadChatFile } from "../supabase/media";
+import Avatar from "../components/Avatar";
+import NewGroupScreen from "./NewGroupScreen";
+import FindFriendsScreen from "./FindFriendsScreen";
+import { doc, onSnapshot, updateDoc } from "firebase/firestore";
+import { db } from "../firebase/config";
+
+function ChatRowMeta({ myUid, otherUid, chatId, t, compact }) {
+  const presence = usePresence(otherUid, myUid);
+  const [theyTyping, setTheyTyping] = useState(false);
+
+  useEffect(() => {
+    if (!chatId) return;
+    const unsub = onSnapshot(doc(db, "chats", chatId), (snap) => {
+      const map = snap.data()?.typingUsers || {};
+      const others = Object.entries(map).filter(([uid]) => uid !== myUid);
+      if (others.length > 0) {
+        const mostRecent = others.reduce((a, b) => (a[1]?.toMillis?.() || 0) > (b[1]?.toMillis?.() || 0) ? a : b);
+        const age = Date.now() - (mostRecent[1]?.toMillis?.() || 0);
+        if (age < 5000) {
+          setTheyTyping(true);
+          const timer = setTimeout(() => setTheyTyping(false), 5000 - age);
+          return () => clearTimeout(timer);
+        }
+      }
+      setTheyTyping(false);
+    });
+    return unsub;
+  }, [chatId, myUid]);
+
+  const statusText = theyTyping ? "typing…" : presence.visible ? (presence.isOnline ? "online" : formatLastSeen(presence.lastSeen)) : "";
+  if (!statusText) return null;
+  return <div style={{ fontSize: compact ? 11 : 12, color: t.textMuted, marginTop: compact ? 0 : 1 }}>{statusText}</div>;
+}
+
+export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroupInfo, onOpenSettings, hideNav, navTab, compactList }) {
+  const { t } = useTheme();
+  const { chats } = useChats(myUid);
+  const { contacts } = useContacts(myUid);
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [showNewGroup, setShowNewGroup] = useState(false);
+  const [showFab, setShowFab] = useState(false);
+  const [showFindFriends, setShowFindFriends] = useState(false);
+  const [activeTab, setActiveTab] = useState("all");
+  const effectiveTab = navTab === "groups" ? "groups" : navTab === "status" ? "all" : activeTab;
+  const [showArchived, setShowArchived] = useState(false);
+  const [acceptError, setAcceptError] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [swipedChatId, setSwipedChatId] = useState(null);
+  const [contextMenuChat, setContextMenuChat] = useState(null);
+  const [groupMenu, setGroupMenu] = useState(null);
+  const [groupPictureFullscreen, setGroupPictureFullscreen] = useState(null);
+  const [showGlobalCamera, setShowGlobalCamera] = useState(false);
+  const [globalCameraError, setGlobalCameraError] = useState("");
+  const [capturedPhoto, setCapturedPhoto] = useState(null);
+  const [customLists, setCustomLists] = useState(() => {
+    try { const raw = localStorage.getItem("nextext_custom_lists"); return raw ? JSON.parse(raw) : []; } catch { return []; }
+  });
+  const [showNewListModal, setShowNewListModal] = useState(false);
+  const [newListName, setNewListName] = useState("");
+  const globalCameraVideoRef = useRef(null);
+  const globalCameraStreamRef = useRef(null);
+  const swipeRef = useRef({});
+  const longPressRef = useRef(null);
+  const sysConfig = useSystemConfigHook();
+
+  const acceptedContacts = contacts.filter((c) => c.status === "accepted");
+  const pendingContacts = contacts.filter((c) => c.status === "pending");
+  const contactUids = acceptedContacts.map((c) => c.uid);
+  const allStatusUids = [myUid, ...contactUids];
+  const allStatuses = useStatuses(allStatusUids);
+  const activeStatusUids = new Set(allStatuses.map((s) => s.ownerId));
+  const viewedMap = getStoredViewed();
+
+  const handleAccept = async (theirUid) => {
+    setAcceptError("");
+    try { await acceptContactRequest(myUid, theirUid); }
+    catch (e) { setAcceptError("Couldn't accept: " + e.message); }
+  };
+
+  const handleMarkAllRead = async () => {
+    const unreadChats = notArchived.filter((c) => c.unreadCount?.[myUid] > 0);
+    await Promise.all(unreadChats.map((c) => updateDoc(doc(db, "chats", c.id), { [`unreadCount.${myUid}`]: 0 })));
+  };
+
+  const selfContact = userDoc ? {
+    uid: myUid,
+    profile: {
+      displayName: (userDoc.displayName || "Me") + " (You)",
+      photoURL: userDoc.photoURL || null,
+    },
+  } : null;
+
+  const saveCustomLists = (lists) => {
+    setCustomLists(lists);
+    localStorage.setItem("nextext_custom_lists", JSON.stringify(lists));
+  };
+
+  const handleCreateCustomList = () => {
+    const name = newListName.trim();
+    if (!name) return;
+    const updated = [...customLists, { name, id: Date.now().toString() }];
+    saveCustomLists(updated);
+    setNewListName("");
+    setShowNewListModal(false);
+    setActiveTab(`custom_${updated[updated.length - 1].id}`);
+  };
+
+  const handleDeleteCustomList = (listId) => {
+    const updated = customLists.filter((l) => l.id !== listId);
+    saveCustomLists(updated);
+    if (activeTab === `custom_${listId}`) setActiveTab("all");
+  };
+
+  const isMutedNow = (chat) => {
+    const val = chat.mutedBy?.[myUid];
+    if (!val) return false;
+    if (val === "forever") return true;
+    return val?.toMillis?.() > Date.now();
+  };
+
+  const notArchived = chats.filter((c) => !(c.archivedBy || []).includes(myUid));
+  const archived = chats.filter((c) => (c.archivedBy || []).includes(myUid));
+
+  const chatDisplayName = (chat) => {
+    if (chat.id?.startsWith("ai_")) return "NexText AI";
+    if (chat.type === "group") return chat.groupName;
+    const participants = chat.participants || [myUid];
+    const otherUid = participants.find((p) => p !== myUid) || myUid;
+    if (otherUid === myUid) return selfContact?.profile?.displayName || "Me (You)";
+    const contact = acceptedContacts.find((ac) => ac.uid === otherUid);
+    return contact?.profile?.displayName || "Unknown";
+  };
+
+  const aiApproved = userDoc?.aiApproved && !sysConfig?.aiGloballyDisabled && !sysConfig?.hideAiEverywhere && userDoc?.restrictions?.blockAI !== true;
+
+  const [lockedChatsUnlocked, setLockedChatsUnlocked] = useState(false);
+  const lockedChatsPassword = localStorage.getItem("nextext_locked_chats_password") || "";
+
+  const tabFiltered = (() => {
+    let base = notArchived.filter((c) => !c.lockedBy?.[myUid] || lockedChatsUnlocked);
+    if (effectiveTab === "unread") base = base.filter((c) => c.unreadCount?.[myUid] > 0);
+    if (effectiveTab === "favorites") base = base.filter((c) => (c.favoritedBy || []).includes(myUid));
+    if (effectiveTab === "groups") base = base.filter((c) => c.type === "group");
+    if (searchQuery.trim()) {
+      if (lockedChatsPassword && searchQuery === lockedChatsPassword && !lockedChatsUnlocked) {
+        setLockedChatsUnlocked(true);
+        setSearchQuery("");
+      } else {
+        const q = searchQuery.toLowerCase();
+        base = base.filter((c) => chatDisplayName(c)?.toLowerCase().includes(q) || c.lastMessage?.text?.toLowerCase().includes(q));
+      }
+    }
+    return base;
+  })();
+
+  const openChatRow = (chat) => {
+    setLockedChatsUnlocked(false);
+    if (chat.id?.startsWith("ai_")) {
+      onOpenChat(chat, AI_CONTACT_UID, getAIContact(), { isAI: true });
+      return;
+    }
+    if (chat.type === "group") {
+      onOpenChat(chat, null, { isGroup: true, groupName: chat.groupName });
+    } else {
+      const participants = chat.participants || [myUid];
+      const otherUid = participants.find((p) => p !== myUid) || myUid;
+      if (otherUid === myUid) {
+        onOpenChat(chat, myUid, selfContact || { uid: myUid, profile: { displayName: "Me (You)", photoURL: null } });
+      } else {
+        const contact = acceptedContacts.find((ac) => ac.uid === otherUid);
+        onOpenChat(chat, otherUid, contact || { uid: otherUid, profile: { displayName: "Unknown" } });
+      }
+    }
+  };
+
+  // Open a group's detail/info card panel.
+  const openGroupInfo = (chat) => {
+    if (onOpenGroupInfo) onOpenGroupInfo(chat);
+    else onOpenChat(chat, null, { isGroup: true, groupName: chat.groupName });
+  };
+
+  const openGlobalCamera = async () => {
+    setGlobalCameraError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      globalCameraStreamRef.current = stream;
+      setShowGlobalCamera(true);
+      setTimeout(() => {
+        if (globalCameraVideoRef.current) {
+          globalCameraVideoRef.current.srcObject = stream;
+          globalCameraVideoRef.current.play().catch(() => {});
+        }
+      }, 100);
+    } catch {
+      setGlobalCameraError("Camera access denied or unavailable.");
+    }
+  };
+
+  const captureGlobalPhoto = () => {
+    if (!globalCameraVideoRef.current) return;
+    const video = globalCameraVideoRef.current;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      closeGlobalCamera();
+      setCapturedPhoto(blob);
+    }, "image/jpeg", 0.92);
+  };
+
+  const closeGlobalCamera = () => {
+    if (globalCameraStreamRef.current) {
+      globalCameraStreamRef.current.getTracks().forEach((tr) => tr.stop());
+      globalCameraStreamRef.current = null;
+    }
+    setShowGlobalCamera(false);
+  };
+
+  const sendCapturedPhotoTo = async (targetChat) => {
+    if (!capturedPhoto || !myUid) return;
+    setCapturedPhoto(null);
+    let chatId = targetChat.id;
+    if (targetChat.type !== "group") {
+      const otherUid = targetChat.participants?.find((p) => p !== myUid);
+      chatId = await getOrCreateDirectChat(myUid, otherUid);
+    }
+    const file = new File([capturedPhoto], `camera-${Date.now()}.jpg`, { type: "image/jpeg" });
+    try {
+      const result = await uploadChatFile(chatId, myUid, file, { compress: true });
+      const participants = targetChat.participants || [];
+      await sendMediaMessage(chatId, myUid, "image", result, participants);
+      openChatRow(targetChat);
+    } catch {
+      // silent
+    }
+  };
+
+  const formatTime = (ts) => {
+    if (!ts?.toDate) return "";
+    const d = ts.toDate();
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    if (sameDay) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const diffDays = Math.floor((now - d) / (1000 * 60 * 60 * 24));
+    if (diffDays < 7) return d.toLocaleDateString([], { weekday: "short" });
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  };
+
+  const handleTouchStart = useCallback((chat, e) => {
+    swipeRef.current[chat.id] = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, swiping: false };
+    longPressRef.current = setTimeout(() => setContextMenuChat(chat), 400);
+  }, []);
+
+  const handleTouchMove = useCallback((chat, e) => {
+    const ref = swipeRef.current[chat.id];
+    if (!ref) return;
+    const dx = e.touches[0].clientX - ref.startX;
+    const dy = e.touches[0].clientY - ref.startY;
+    if (Math.abs(dy) > 10) { clearTimeout(longPressRef.current); return; }
+    if (dx < -20) {
+      ref.swiping = true;
+      setSwipedChatId(chat.id);
+      clearTimeout(longPressRef.current);
+    } else if (dx > 20) {
+      setSwipedChatId(null);
+      clearTimeout(longPressRef.current);
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback((chatId) => {
+    clearTimeout(longPressRef.current);
+    const ref = swipeRef.current[chatId];
+    if (ref && !ref.swiping && swipedChatId === chatId) {
+      // Tap outside — close
+    }
+  }, [swipedChatId]);
+
+  const renderChatRow = (c) => {
+    const otherUid = c.participants?.find((p) => p !== myUid);
+    const otherContact = acceptedContacts.find((ac) => ac.uid === otherUid);
+    const isSwiped = swipedChatId === c.id;
+    const isLocked = c.lockedBy?.[myUid];
+    const isArchived = (c.archivedBy || []).includes(myUid);
+    const avatarSize = compactList ? 40 : 52;
+    const rowPadding = compactList ? "8px 16px" : "13px 16px";
+    const nameSize = compactList ? 14.5 : 15.5;
+    const msgSize = compactList ? 12.5 : 13.5;
+    const badgeSize = compactList ? 12 : 14;
+    const gap = compactList ? 10 : 13;
+    return (
+    <div key={c.id} style={{ position: "relative", overflow: "hidden", marginBottom: 1 }}>
+      <div
+        onTouchStart={(e) => handleTouchStart(c, e)}
+        onTouchMove={(e) => handleTouchMove(c, e)}
+        onTouchEnd={() => handleTouchEnd(c.id)}
+        onClick={() => { if (!isSwiped) openChatRow(c); else setSwipedChatId(null); }}
+        className="nextext-chat-row"
+        style={{ display: "flex", alignItems: "center", gap, padding: rowPadding, cursor: "pointer", background: t.bg, position: "relative", zIndex: 1, transform: isSwiped ? "translateX(-200px)" : "translateX(0)", transition: "transform 0.2s ease" }}
+      >
+      {c.type === "group" ? (
+        <div style={{ position: "relative", width: avatarSize, height: avatarSize, flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); setGroupMenu(c); }}>
+          {c.groupPhotoURL ? (
+            <img src={c.groupPhotoURL} alt="" style={{ width: avatarSize, height: avatarSize, borderRadius: "50%", objectFit: "cover", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }} />
+          ) : (
+            <div style={{ width: avatarSize, height: avatarSize, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
+              <Users size={compactList ? 18 : 22} color={t.primary} />
+            </div>
+          )}
+          {c.unreadCount?.[myUid] > 0 && (
+            <div style={{ position: "absolute", top: 0, right: 0, width: badgeSize, height: badgeSize, borderRadius: "50%", background: "#FF3B30", border: `2px solid ${t.bg}` }} />
+          )}
+        </div>
+      ) : (
+        <div style={{ position: "relative", flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+          <Avatar
+            photoURL={otherContact?.profile?.photoURL}
+            name={chatDisplayName(c)}
+            uid={otherUid}
+            size={avatarSize}
+            hasActiveStatus={activeStatusUids.has(otherUid)}
+            statusViewed={!!viewedMap[otherUid]}
+            blockStatus={!!userDoc?.restrictions?.blockStatus}
+            onStatusView={() => {
+              const items = allStatuses.filter((s) => s.ownerId === otherUid);
+              if (items.length > 0) onOpenChat(null, otherUid, otherContact, { openStatus: items });
+            }}
+            onViewProfile={() => onOpenChat(null, otherUid, otherContact, { openProfile: true })}
+            style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}
+          />
+          {c.unreadCount?.[myUid] > 0 && (
+            <div style={{ position: "absolute", top: 0, right: 0, width: badgeSize, height: badgeSize, borderRadius: "50%", background: "#FF3B30", border: `2px solid ${t.bg}` }} />
+          )}
+        </div>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: compactList ? 1 : 3 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+            <span style={{ fontWeight: 700, color: t.text, fontSize: nameSize, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{chatDisplayName(c)}</span>
+            {(c.favoritedBy || []).includes(myUid) && <Star size={12} fill={t.accent} color={t.accent} style={{ flexShrink: 0 }} />}
+            {isMutedNow(c) && <BellOff size={12} color={t.textMuted} style={{ flexShrink: 0 }} />}
+          </div>
+          <span style={{ fontSize: 11.5, color: c.unreadCount?.[myUid] > 0 ? t.accent : t.textMuted, fontWeight: c.unreadCount?.[myUid] > 0 ? 700 : 500, flexShrink: 0, marginLeft: 8 }}>
+            {formatTime(c.lastMessage?.sentAt)}
+          </span>
+        </div>
+        {c.type !== "group" && <ChatRowMeta myUid={myUid} otherUid={otherUid} chatId={c.id} t={t} compact={compactList} />}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <span style={{ fontSize: msgSize, color: t.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+            {c.lastMessage?.text || "No messages yet"}
+          </span>
+          {c.unreadCount?.[myUid] > 0 && (
+            <span style={{ background: t.accent, color: "#fff", fontSize: 11, fontWeight: 700, borderRadius: 10, minWidth: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 6px", flexShrink: 0 }}>
+              {c.unreadCount[myUid]}
+            </span>
+          )}
+        </div>
+      </div>
+      </div>
+      <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, display: "flex", alignItems: "stretch", zIndex: 0 }}>
+        <div onClick={(e) => { e.stopPropagation(); toggleLocked(c.id, myUid, isLocked); setSwipedChatId(null); }} style={{ width: 64, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: isLocked ? "#FF9500" : "#5856D6", color: "#fff", gap: 4, cursor: "pointer" }}>
+          <Lock size={18} /><span style={{ fontSize: 10, fontWeight: 600 }}>{isLocked ? "Unlock" : "Lock"}</span>
+        </div>
+        <div onClick={(e) => { e.stopPropagation(); toggleArchive(c.id, myUid, isArchived); setSwipedChatId(null); }} style={{ width: 64, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#FF9500", color: "#fff", gap: 4, cursor: "pointer" }}>
+          <Archive size={18} /><span style={{ fontSize: 10, fontWeight: 600 }}>{isArchived ? "Unarchive" : "Archive"}</span>
+        </div>
+        <div onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete this chat permanently?")) { deleteChatCompletely(c.id).catch(() => {}); } setSwipedChatId(null); }} style={{ width: 64, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#FF3B30", color: "#fff", gap: 4, cursor: "pointer" }}>
+          <Trash2 size={18} /><span style={{ fontSize: 10, fontWeight: 600 }}>Delete</span>
+        </div>
+      </div>
+    </div>
+    );
+  };
+
+  return (
+    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: "18px 16px 12px", background: t.primary, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ color: "#fff", fontWeight: 800, fontSize: 22 }}>NexText</span>
+        <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
+          <Camera size={20} color="#fff" style={{ cursor: "pointer" }} onClick={openGlobalCamera} />
+          <Search size={20} color="#fff" style={{ cursor: "pointer" }} onClick={() => setShowSearch(!showSearch)} />
+          <Settings size={20} color="#fff" style={{ cursor: "pointer" }} onClick={onOpenSettings} />
+        </div>
+      </div>
+
+      {showSearch && (
+        <div style={{ padding: "10px 16px 6px", background: t.surface, borderBottom: `1px solid ${t.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", background: t.bg, borderRadius: 12, padding: "9px 12px", gap: 8 }}>
+            <Search size={15} color={t.textMuted} />
+            <input autoFocus value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search chats and messages…" style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 13.5, color: t.text }} />
+            {searchQuery && <X size={15} color={t.textMuted} onClick={() => setSearchQuery("")} style={{ cursor: "pointer" }} />}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", overflowX: "auto", borderBottom: `1px solid ${t.border}` }}>
+        <div style={{ display: "flex", gap: 8, flex: 1, overflowX: "auto" }}>
+          {[["all", "All"], ["unread", "Unread"], ["favorites", "Favorites"], ["groups", "Groups"], ...customLists.map((l) => [`custom_${l.id}`, l.name])].map(([key, label]) => (
+            <div key={key} onClick={() => setActiveTab(key)} style={{ padding: "6px 14px", borderRadius: 16, background: activeTab === key ? t.primary : t.primaryLight, color: activeTab === key ? t.bubbleMeText : t.primary, fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}>
+              {label}
+              {key.startsWith("custom_") && (
+                <X size={12} onClick={(e) => { e.stopPropagation(); handleDeleteCustomList(key.replace("custom_", "")); }} style={{ cursor: "pointer", opacity: 0.6 }} />
+              )}
+            </div>
+          ))}
+        </div>
+        <div onClick={() => setShowNewListModal(true)} style={{ width: 30, height: 30, borderRadius: "50%", background: t.primary, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+          <Plus size={16} color="#fff" />
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        {notArchived.some((c) => c.unreadCount?.[myUid] > 0) && (
+          <div onClick={handleMarkAllRead} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 16px", cursor: "pointer", borderBottom: `1px solid ${t.border}` }}>
+            <CheckCheck size={15} color={t.primary} />
+            <span style={{ fontSize: 12.5, color: t.primary, fontWeight: 600 }}>Mark all as read</span>
+          </div>
+        )}
+        {tabFiltered.length === 0 && !(aiApproved && effectiveTab === "all") && (
+          <div style={{ padding: 30, textAlign: "center", color: t.textMuted, fontSize: 13.5, lineHeight: 1.6 }}>
+            {effectiveTab === "all" ? "No chats here yet." : `No ${effectiveTab} chats.`}
+          </div>
+        )}
+        {tabFiltered.map(renderChatRow)}
+        {aiApproved && effectiveTab === "all" && (
+          <div
+            onClick={() => onOpenChat({ id: `ai_${myUid}`, type: "direct", participants: [myUid, AI_CONTACT_UID] }, AI_CONTACT_UID, getAIContact(), { isAI: true })}
+            style={{ display: "flex", alignItems: "center", gap: compactList ? 10 : 13, padding: compactList ? "8px 16px" : "13px 16px", cursor: "pointer", borderBottom: `1px solid ${t.border}`, background: t.bg }}
+          >
+            <div style={{ position: "relative", flexShrink: 0 }}>
+              <div style={{ width: compactList ? 40 : 52, height: compactList ? 40 : 52, borderRadius: "50%", background: "linear-gradient(135deg, #7C5CFF, #53BDEB)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
+                <span style={{ fontSize: compactList ? 18 : 22 }}>🤖</span>
+              </div>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: compactList ? 1 : 3 }}>
+                <span style={{ fontWeight: 700, color: t.text, fontSize: compactList ? 14.5 : 15.5 }}>NexText AI</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#000", background: "linear-gradient(135deg, #00E676, #00C853)", borderRadius: 6, padding: "1px 6px", marginLeft: 4, letterSpacing: 0.5 }}>NEX-AI</span>
+              </div>
+              <span style={{ fontSize: 13.5, color: t.textMuted }}>Ask me anything!</span>
+            </div>
+          </div>
+        )}
+
+        {effectiveTab === "all" && archived.length > 0 && (
+          <div onClick={() => setShowArchived(!showArchived)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
+            <div style={{ width: 50, height: 50, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center" }}><Archive size={22} color={t.primary} /></div>
+            <span style={{ fontWeight: 600, color: t.textMuted, fontSize: 14 }}>Archived ({archived.length})</span>
+          </div>
+        )}
+        {showArchived && archived.map((c) => (
+          <div key={c.id} style={{ position: "relative", overflow: "hidden", marginBottom: 1 }}>
+            <div style={{ opacity: 0.7 }}>
+              {renderChatRow(c)}
+            </div>
+            <div
+              onClick={async () => { await toggleArchive(c.id, myUid, (c.archivedBy || []).includes(myUid)); }}
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px 16px", cursor: "pointer", borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}`, background: t.primaryLight }}
+            >
+              <Archive size={15} color={t.primary} />
+              <span style={{ fontSize: 13.5, fontWeight: 700, color: t.primary }}>Unarchive Chat</span>
+            </div>
+          </div>
+        ))}
+
+        <div style={{ padding: "16px", borderTop: `1px solid ${t.border}`, marginTop: 8 }}>
+          {pendingContacts.length > 0 && (
+            <>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: t.textMuted, marginBottom: 8 }}>PENDING REQUESTS</div>
+              {acceptError && <div style={{ color: "#FF3B30", fontSize: 12, marginBottom: 8 }}>{acceptError}</div>}
+              {pendingContacts.map((c) => (
+                <div key={c.uid} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
+                  <Avatar photoURL={c.profile?.photoURL} name={c.profile?.displayName} uid={c.uid} size={36} />
+                  <span style={{ fontSize: 14, color: t.text, fontWeight: 600, flex: 1 }}>{c.profile?.displayName || "Unknown"}</span>
+                  <button onClick={() => handleAccept(c.uid)} style={{ padding: "6px 14px", borderRadius: 16, border: "none", background: t.primary, color: t.bubbleMeText, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+                    Accept
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: t.textMuted, marginBottom: 8, marginTop: pendingContacts.length > 0 ? 16 : 0 }}>YOUR CONTACTS</div>
+          {selfContact && (
+            <div onClick={() => onOpenChat(null, myUid, selfContact, { openProfile: true })} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", cursor: "pointer" }}>
+              <Avatar photoURL={selfContact.profile?.photoURL} name={selfContact.profile?.displayName} uid={myUid} size={36} onViewProfile={() => onOpenChat(null, myUid, selfContact, { openProfile: true })} />
+              <span style={{ fontSize: 14, color: t.text, fontWeight: 600 }}>{selfContact.profile?.displayName} <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 500 }}>(You)</span></span>
+            </div>
+          )}
+          {acceptedContacts.length === 0 && !aiApproved && <div style={{ fontSize: 13, color: t.textMuted }}>No contacts yet.</div>}
+          {acceptedContacts.length === 0 && aiApproved && <div style={{ fontSize: 13, color: t.textMuted }}>No contacts yet. Try NexText AI below!</div>}
+          {aiApproved && !notArchived.some((c) => c.id?.startsWith("ai_")) && (
+            <div onClick={() => onOpenChat({ id: `ai_${myUid}`, type: "direct", participants: [myUid, AI_CONTACT_UID] }, AI_CONTACT_UID, getAIContact(), { isAI: true })} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", cursor: "pointer" }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, #7C5CFF, #53BDEB)", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 18 }}>🤖</span></div>
+              <span style={{ fontSize: 14, color: t.text, fontWeight: 600 }}>NexText AI</span>
+            </div>
+          )}
+          {acceptedContacts.map((c) => (
+            <div key={c.uid} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
+              <div onClick={() => onOpenChat(null, c.uid, c, { openProfile: true })} style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, cursor: "pointer", minWidth: 0 }}>
+                <Avatar photoURL={c.profile?.photoURL} name={c.profile?.displayName} uid={c.uid} size={36} onViewProfile={() => onOpenChat(null, c.uid, c, { openProfile: true })} />
+                <span style={{ fontSize: 14, color: t.text, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.profile?.displayName}</span>
+              </div>
+              <div onClick={() => onOpenChat(null, c.uid, c)} style={{ width: 34, height: 34, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }} title="Start Chat">
+                <MessageCircle size={16} color={t.primary} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {showFab && (
+        <div style={{ position: "absolute", bottom: hideNav ? 84 : 148, right: 20, background: t.surface, borderRadius: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", overflow: "hidden" }}>
+          <div onClick={() => { setShowFab(false); setShowNewGroup(true); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", whiteSpace: "nowrap" }}>
+            <Users size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>New group</span>
+          </div>
+          <div onClick={() => { setShowFab(false); setShowAddContact(true); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", whiteSpace: "nowrap", borderTop: `1px solid ${t.border}` }}>
+            <Plus size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Add contact</span>
+          </div>
+          <div onClick={() => { setShowFab(false); setShowFindFriends(true); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", whiteSpace: "nowrap", borderTop: `1px solid ${t.border}` }}>
+            <Smartphone size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Find friends from contacts</span>
+          </div>
+        </div>
+      )}
+      <button onClick={() => setShowFab(!showFab)} style={{ position: "absolute", bottom: hideNav ? 20 : 84, right: 20, width: 54, height: 54, borderRadius: "50%", background: t.accent, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 12px rgba(0,0,0,0.25)", cursor: "pointer" }}>
+        <Plus size={26} color="#fff" style={{ transform: showFab ? "rotate(45deg)" : "none", transition: "transform 0.2s" }} />
+      </button>
+
+      {showAddContact && <AddContactSheet myUid={myUid} onClose={() => setShowAddContact(false)} />}
+      {showFindFriends && <FindFriendsScreen myUid={myUid} onBack={() => setShowFindFriends(false)} />}
+      {showNewGroup && (
+        <NewGroupScreen
+          myUid={myUid}
+          contacts={acceptedContacts}
+          onBack={() => setShowNewGroup(false)}
+          onCreated={(chatId) => { setShowNewGroup(false); onOpenChat({ id: chatId, type: "group" }, null, { isGroup: true }); }}
+        />
+      )}
+
+      {showGlobalCamera && (
+        <div style={{ position: "absolute", inset: 0, background: "#000", zIndex: 60, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
+            <span onClick={closeGlobalCamera} style={{ color: "#fff", fontSize: 15, cursor: "pointer" }}>Cancel</span>
+            <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>Camera</span>
+            <span style={{ width: 50 }} />
+          </div>
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+            <video ref={globalCameraVideoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          </div>
+          {globalCameraError && <div style={{ color: "#FF3B30", fontSize: 13, textAlign: "center", padding: 8 }}>{globalCameraError}</div>}
+          <div style={{ display: "flex", justifyContent: "center", padding: "20px 0 30px" }}>
+            <div onClick={captureGlobalPhoto} style={{ width: 64, height: 64, borderRadius: "50%", border: "4px solid #fff", background: "rgba(255,255,255,0.3)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ width: 52, height: 52, borderRadius: "50%", background: "#fff" }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {capturedPhoto && (
+        <div style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 60, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", background: t.primary }}>
+            <span onClick={() => setCapturedPhoto(null)} style={{ color: "#fff", fontSize: 15, cursor: "pointer" }}>Cancel</span>
+            <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>Send to…</span>
+            <span style={{ width: 50 }} />
+          </div>
+          <div style={{ padding: 16, borderBottom: `1px solid ${t.border}` }}>
+            <img src={URL.createObjectURL(capturedPhoto)} alt="Captured" style={{ width: 60, height: 60, borderRadius: 10, objectFit: "cover" }} />
+          </div>
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            {acceptedContacts.length === 0 && <div style={{ padding: 20, textAlign: "center", color: t.textMuted, fontSize: 13 }}>No contacts to send to.</div>}
+            {acceptedContacts.map((c) => {
+              const otherUid = c.uid;
+              const chatForContact = chats.find((ch) => ch.type !== "group" && ch.participants?.includes(myUid) && ch.participants?.includes(otherUid));
+              return (
+                <div key={c.uid} onClick={() => sendCapturedPhotoTo(chatForContact || { id: null, type: "direct", participants: [myUid, otherUid] })} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", cursor: "pointer", borderBottom: `1px solid ${t.border}` }}>
+                  <Avatar photoURL={c.profile?.photoURL} name={c.profile?.displayName} uid={c.uid} size={42} />
+                  <span style={{ fontSize: 15, fontWeight: 600, color: t.text }}>{c.profile?.displayName}</span>
+                </div>
+              );
+            })}
+            {chats.filter((c) => c.type === "group").map((c) => (
+              <div key={c.id} onClick={() => sendCapturedPhotoTo(c)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", cursor: "pointer", borderBottom: `1px solid ${t.border}` }}>
+                <div style={{ width: 42, height: 42, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center" }}><Users size={20} color={t.primary} /></div>
+                <span style={{ fontSize: 15, fontWeight: 600, color: t.text }}>{c.groupName}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {contextMenuChat && (
+        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setContextMenuChat(null)}>
+          <div style={{ background: t.surface, borderRadius: 14, overflow: "hidden", minWidth: 200, boxShadow: "0 4px 20px rgba(0,0,0,0.25)" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ padding: "14px 18px 8px", borderBottom: `1px solid ${t.border}` }}>
+              <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{chatDisplayName(contextMenuChat)}</div>
+            </div>
+            <div onClick={() => { toggleLocked(contextMenuChat.id, myUid, !!contextMenuChat.lockedBy?.[myUid]); setContextMenuChat(null); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", cursor: "pointer" }}>
+              <Lock size={17} color={contextMenuChat.lockedBy?.[myUid] ? t.accent : t.text} />
+              <span style={{ fontSize: 14.5, color: contextMenuChat.lockedBy?.[myUid] ? t.accent : t.text }}>{contextMenuChat.lockedBy?.[myUid] ? "Unlock chat" : "Lock chat"}</span>
+            </div>
+            <div onClick={() => { toggleArchive(contextMenuChat.id, myUid, (contextMenuChat.archivedBy || []).includes(myUid)); setContextMenuChat(null); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
+              <Archive size={17} color={t.text} />
+              <span style={{ fontSize: 14.5, color: t.text }}>{(contextMenuChat.archivedBy || []).includes(myUid) ? "Unarchive" : "Archive"}</span>
+            </div>
+            <div onClick={() => { toggleFavorite(contextMenuChat.id, myUid, (contextMenuChat.favoritedBy || []).includes(myUid)); setContextMenuChat(null); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
+              <Star size={17} fill={(contextMenuChat.favoritedBy || []).includes(myUid) ? t.accent : "none"} color={(contextMenuChat.favoritedBy || []).includes(myUid) ? t.accent : t.text} />
+              <span style={{ fontSize: 14.5, color: t.text }}>{(contextMenuChat.favoritedBy || []).includes(myUid) ? "Unfavorite" : "Favorite"}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showNewListModal && (
+        <div onClick={() => { setShowNewListModal(false); setNewListName(""); }} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: t.surface, borderRadius: 16, padding: 20, width: "80%", maxWidth: 300, boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
+            <div style={{ fontWeight: 700, fontSize: 16, color: t.text, marginBottom: 12 }}>Create Custom List Filter</div>
+            <input
+              autoFocus
+              value={newListName}
+              onChange={(e) => setNewListName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleCreateCustomList(); }}
+              placeholder="List name (e.g. Friends)"
+              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 14, boxSizing: "border-box", marginBottom: 14, background: t.bg, color: t.text }}
+            />
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <div onClick={() => { setShowNewListModal(false); setNewListName(""); }} style={{ padding: "8px 16px", borderRadius: 10, cursor: "pointer", fontSize: 13.5, fontWeight: 600, color: t.textMuted }}>Cancel</div>
+              <div onClick={handleCreateCustomList} style={{ padding: "8px 16px", borderRadius: 10, background: t.primary, color: t.bubbleMeText, cursor: "pointer", fontSize: 13.5, fontWeight: 700 }}>Save</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Group avatar tap context menu */}
+      {groupMenu && (
+        <div onClick={() => setGroupMenu(null)} style={{ position: "absolute", inset: 0, zIndex: 9998 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -40%)", background: "rgba(30,30,30,0.97)", borderRadius: 12, overflow: "hidden", overflowY: "auto", maxHeight: 220, zIndex: 9999, boxShadow: "0 8px 30px rgba(0,0,0,0.5)", minWidth: 210, whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>
+            <div onClick={() => { setGroupMenu(null); openGroupInfo(groupMenu); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer" }}>
+              <Info size={16} color="#00A884" />
+              <span style={{ color: "#fff", fontSize: 14, fontWeight: 600 }}>View Group Info</span>
+            </div>
+            <div onClick={() => { const photo = groupMenu.groupPhotoURL; setGroupMenu(null); if (photo) setGroupPictureFullscreen(photo); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: groupMenu.groupPhotoURL ? "pointer" : "default", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+              <ImageIcon size={16} color="#8E8E93" />
+              <span style={{ color: "#fff", fontSize: 14, fontWeight: 600 }}>View Profile Picture</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Group picture fullscreen */}
+      {groupPictureFullscreen && (
+        <div onClick={() => setGroupPictureFullscreen(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", zIndex: 999999, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+          <img src={groupPictureFullscreen} alt="" style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 12, objectFit: "contain" }} />
+          <div onClick={() => setGroupPictureFullscreen(null)} style={{ position: "fixed", top: 16, right: 16, width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,0.25)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 1000000 }}>
+            <X size={24} color="#fff" strokeWidth={3} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddContactSheet({ myUid, onClose }) {
+  const { t } = useTheme();
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [sentTo, setSentTo] = useState([]);
+  const [error, setError] = useState("");
+
+  const runSearch = async (val) => {
+    setQuery(val);
+    if (val.trim().length < 2) { setResults([]); return; }
+    try {
+      const r = await searchUsersByUsername(val);
+      setResults(r.filter((u) => u.uid !== myUid));
+    } catch (e) {
+      setError("Search failed: " + e.message);
+    }
+  };
+
+  const handleAdd = async (uid) => {
+    setError("");
+    try {
+      await sendContactRequest(myUid, uid);
+      setSentTo((s) => [...s, uid]);
+    } catch (e) {
+      setError("Couldn't send request: " + e.message);
+    }
+  };
+
+  return (
+    <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
+      <div style={{ background: t.surface, width: "100%", borderRadius: "20px 20px 0 0", padding: 20, maxHeight: "70%", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontWeight: 700, fontSize: 17, color: t.text, marginBottom: 14 }}>Add contact</div>
+        <input value={query} onChange={(e) => runSearch(e.target.value)} placeholder="Search by username…" style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 14, boxSizing: "border-box", marginBottom: 14 }} />
+        {error && <div style={{ color: "#FF3B30", fontSize: 12.5, marginBottom: 10 }}>{error}</div>}
+        {results.map((u) => (
+          <div key={u.uid} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 4px" }}>
+            <Avatar photoURL={u.photoURL} name={u.displayName} uid={u.uid} size={38} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, color: t.text, fontSize: 14.5 }}>{u.displayName}</div>
+              <div style={{ fontSize: 12, color: t.textMuted }}>@{u.username}</div>
+            </div>
+            <button disabled={sentTo.includes(u.uid)} onClick={() => handleAdd(u.uid)} style={{ padding: "7px 14px", borderRadius: 16, border: "none", background: sentTo.includes(u.uid) ? t.border : t.primary, color: sentTo.includes(u.uid) ? t.textMuted : t.bubbleMeText, fontSize: 12.5, fontWeight: 700, cursor: sentTo.includes(u.uid) ? "default" : "pointer" }}>
+              {sentTo.includes(u.uid) ? "Sent" : "Add"}
+            </button>
+          </div>
+        ))}
+        {query.trim().length >= 2 && results.length === 0 && <div style={{ fontSize: 13, color: t.textMuted, padding: "8px 4px" }}>No users found.</div>}
+      </div>
+    </div>
+  );
+}
