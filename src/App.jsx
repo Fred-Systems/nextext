@@ -679,6 +679,7 @@ function AppShell() {
   }, [screen]);
 
   const [initialViewStatuses, setInitialViewStatuses] = useState(null);
+  const [statusOrigin, setStatusOrigin] = useState("status");
 
   const openChat = (chatDoc, otherUid, contact, options) => {
     if (options?.isAI) {
@@ -691,6 +692,7 @@ function AppShell() {
       return;
     }
     if (options?.openStatus) {
+      setStatusOrigin("chat");
       setInitialViewStatuses({ statuses: options.openStatus, ownerUid: otherUid });
       setScreen("status");
       return;
@@ -725,7 +727,7 @@ function AppShell() {
     return <div style={containerStyle}><AppLockScreen onUnlock={() => setAppLocked(false)} /></div>;
   }
 
-  const isAdmin = auth.userDoc?.role === "admin";
+  const isAdmin = auth.userDoc?.role === "admin" || auth.userDoc?.isAdmin === true;
 
   return (
     <>
@@ -777,7 +779,7 @@ function AppShell() {
         />
       )}
       {screen === "status" && (
-        <StatusScreen myUid={myUid} myName={auth.userDoc?.displayName || auth.userDoc?.username} onBack={() => { setScreen("list"); setActiveNavTab("chats"); setStoryViewerOpen(false); }} onStoryViewerChange={setStoryViewerOpen} initialViewStatuses={initialViewStatuses} />
+        <StatusScreen myUid={myUid} myName={auth.userDoc?.displayName || auth.userDoc?.username} onBack={() => { setScreen("list"); setActiveNavTab("chats"); setStoryViewerOpen(false); }} onStoryViewerChange={setStoryViewerOpen} initialViewStatuses={initialViewStatuses} statusOrigin={statusOrigin} />
       )}
       {screen === "groupInfo" && activeGroup && (
         <GroupInfoScreen
@@ -852,7 +854,7 @@ function AppShell() {
             {navTabs.map(({ key, icon: Icon, label }) => {
               const isActive = key === "settings" ? screen === "settings" : key === "status" ? screen === "status" : (screen === "list" && activeNavTab === key);
               return (
-              <div key={key} onClick={() => { if (key === "settings") setScreen("settings"); else if (key === "status") setScreen("status"); else { setActiveNavTab(key); setScreen("list"); } }} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "10px 0 12px", cursor: "pointer", color: isActive ? t.primary : t.textMuted, position: "relative" }}>
+              <div key={key} onClick={() => { if (key === "settings") setScreen("settings"); else if (key === "status") { setStatusOrigin("status"); setScreen("status"); } else { setActiveNavTab(key); setScreen("list"); } }} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "10px 0 12px", cursor: "pointer", color: isActive ? t.primary : t.textMuted, position: "relative" }}>
                 <div style={{ position: "relative" }}>
                   <Icon size={20} />
                   {key === "chats" && totalUnreadChats > 0 && (

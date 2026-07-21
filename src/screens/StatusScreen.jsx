@@ -135,7 +135,7 @@ function StatusViewerModal({ statusId, contacts, onClose, t }) {
   );
 }
 
-export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChange, initialViewStatuses }) {
+export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChange, initialViewStatuses, statusOrigin }) {
   const { t } = useTheme();
   const { contacts } = useContacts(myUid);
   const [blockStatus, setBlockStatus] = useState(false);
@@ -521,7 +521,7 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
           ownerUid={viewStoryOwner.ownerUid}
           contacts={acceptedContacts}
           onClose={() => { setViewStoryOwner(null); onStoryViewerChange?.(false); }}
-          onExit={() => { setViewStoryOwner(null); onStoryViewerChange?.(false); onBack?.(); }}
+          onExit={() => { setViewStoryOwner(null); onStoryViewerChange?.(false); if (statusOrigin !== "status") onBack?.(); }}
           onViewStory={handleStoryViewed}
         />
       )}
