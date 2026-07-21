@@ -90,6 +90,7 @@ export default function StatusStoryViewer({ statuses, initialIndex = 0, myUid, o
   const advanceRef = useRef(null);
   const videoRef = useRef(null);
   const bgAudioRef = useRef(null);
+  const initialAnimDoneRef = useRef(false);
 
   const isOwner = myUid && ownerUid && myUid === ownerUid;
   const current = statuses[idx];
@@ -202,6 +203,7 @@ export default function StatusStoryViewer({ statuses, initialIndex = 0, myUid, o
     progressRef.current = 0;
     setPaused(false);
     setShowViewers(false);
+    initialAnimDoneRef.current = false;
 
     if (barRef.current) {
       barRef.current.style.transition = "none";
@@ -212,6 +214,7 @@ export default function StatusStoryViewer({ statuses, initialIndex = 0, myUid, o
         if (barRef.current) {
           barRef.current.style.transition = `width ${duration}ms linear`;
           barRef.current.style.width = "100%";
+          initialAnimDoneRef.current = true;
         }
       });
     });
@@ -228,7 +231,7 @@ export default function StatusStoryViewer({ statuses, initialIndex = 0, myUid, o
   }, [idx, duration, current?.mediaType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!barRef.current) return;
+    if (!barRef.current || !initialAnimDoneRef.current) return;
     if (paused) {
       barRef.current.style.transition = "none";
       barRef.current.style.width = `${progressRef.current}%`;

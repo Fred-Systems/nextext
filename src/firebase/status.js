@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   collection, query, where, onSnapshot, addDoc,
   deleteDoc, doc, serverTimestamp, getDocs, setDoc,
 } from "firebase/firestore";
 import { db } from "./config";
+import { deleteChatFile } from "../supabase/media";
 
 const STATUS_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -40,7 +41,31 @@ export async function deleteStatus(statusId) {
   await deleteDoc(doc(db, "status", statusId));
 }
 
+// Extract the Supabase storage path from a public media URL so we can
+// delete the actual file (not just the Firestore document).
+function extractStoragePath(url) {
+  if (!url || typeof url !== "string") return null;
+  const marker = "/object/public/chat-media/";
+  const idx = url.indexOf(marker);
+  if (idx === -1) return null;
+  return url.substring(idx + marker.length);
+}
+
+// Delete a single expired status: wipe the Supabase media file (if any)
+// then remove the Firestore document.
+async function cleanupExpiredDoc(docSnap) {
+  const data = docSnap.data();
+  if (data?.mediaURL) {
+    try {
+      const path = extractStoragePath(data.mediaURL);
+      if (path) await deleteChatFile(path);
+    } catch { /* storage already gone or RLS block — ignore */ }
+  }
+  await deleteDoc(docSnap.ref);
+}
+
 // Batch-delete all of a user's expired statuses (called on mount).
+// Also removes the associated media files from Supabase storage.
 export async function purgeExpiredStatuses(ownerId) {
   const q = query(
     collection(db, "status"),
@@ -48,8 +73,7 @@ export async function purgeExpiredStatuses(ownerId) {
     where("expiresAt", "<=", new Date()),
   );
   const snap = await getDocs(q);
-  const deletes = snap.docs.map((d) => deleteDoc(d.ref));
-  await Promise.all(deletes);
+  await Promise.all(snap.docs.map((d) => cleanupExpiredDoc(d)));
 }
 
 // Live stream of active (not-expired) statuses from a list of user UIDs.
@@ -58,6 +82,7 @@ export async function purgeExpiredStatuses(ownerId) {
 // ownerId-only query and filters expired docs client-side.
 export function useStatuses(uids) {
   const [statuses, setStatuses] = useState([]);
+  const deletingRef = useRef(new Set());
 
   useEffect(() => {
     if (!uids || uids.length === 0) { setStatuses([]); return; }
@@ -81,7 +106,14 @@ export function useStatuses(uids) {
             const data = d.data();
             // client-side expiry guard (always, but only matters for fallback)
             const expMs = data.expiresAt?.toMillis?.() || 0;
-            if (expMs && expMs < now) return;
+            if (expMs && expMs < now) {
+              // Fire-and-forget: delete the doc + its Supabase media file
+              if (!deletingRef.current.has(d.id)) {
+                deletingRef.current.add(d.id);
+                cleanupExpiredDoc(d).catch(() => {});
+              }
+              return;
+            }
             results.push({ id: d.id, ...data, ownerId: data.ownerId });
           });
           setStatuses((prev) => {
