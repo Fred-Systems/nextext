@@ -66,8 +66,7 @@ jobs:
 
       - name: Initialize Fresh Android Framework
         run: |
-          rm -rf android/
-          npx cap add android
+          npx cap sync android
 
       - name: Cloud Generate Custom Icons and Dark Splash Screens
         run: |
