@@ -29,8 +29,12 @@ jobs:
       - name: Compile Production Web Interface Layout
         run: npm run build
 
-      - name: Sync Frontend Code into Android Native Subtree
-        run: npx cap sync android
+            - name: Rebuild Android Native Framework from Scratch
+        run: |
+          rm -rf android/
+          npx cap add android
+          npx cap sync android
+
 
       - name: Grant Gradle Execution Permissions
         run: chmod +x android/gradlew
