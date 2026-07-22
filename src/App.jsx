@@ -6,7 +6,7 @@ import { purgeExpiredStatuses, useStatuses } from "./firebase/status";
 import { useContacts } from "./firebase/contacts";
 import { useChats } from "./firebase/chats";
 import { setGlobalWallpaper, fileToWallpaperDataUrl } from "./theme/wallpaper";
-import { ChevronLeft, Palette, Shield, Lock, MessageSquare, X, ShieldCheck, Phone, Image as ImageIcon, Users, CircleDot, RotateCcw, Camera, Settings as SettingsIcon, Bot, Sparkles } from "lucide-react";
+import { ChevronLeft, Palette, Shield, Lock, MessageSquare, X, ShieldCheck, Phone, Image as ImageIcon, Users, CircleDot, RotateCcw, Camera, Settings as SettingsIcon, Bot, Sparkles, RefreshCw } from "lucide-react";
 import { FONTS } from "./theme/ThemeContext";
 import Avatar from "./components/Avatar";
 import { uploadChatFile } from "./supabase/media";
@@ -26,6 +26,8 @@ import { useSystemConfigHook, requestAIAccess, setAIPersonality, PERSONALITIES }
 import AppLockScreen from "./screens/AppLockScreen";
 import StatusScreen from "./screens/StatusScreen";
 import GroupInfoScreen from "./screens/GroupInfoScreen";
+import UpdatePrompt from "./components/UpdatePrompt";
+import { checkForUpdate, openDownloadUrl, setLastSeenRelease } from "./updater/updateChecker";
 
 const UI_SCALE_KEY = "nextext_ui_scale";
 const SCROLL_DOWN_KEY = "nextext_show_scrolldown";
@@ -170,7 +172,7 @@ function PhoneNumberSetting({ myUid }) {
   );
 }
 
-function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiScale, showScrollDown, setShowScrollDown, animatedScrollEntry, setAnimatedScrollEntry, compactList, setCompactList, onBack, onNavigate, onLogout, userDoc, navConfig, setNavConfig, aiSidebarOn, setAiSidebarOn, showSplash, setShowSplash }) {
+function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiScale, showScrollDown, setShowScrollDown, animatedScrollEntry, setAnimatedScrollEntry, compactList, setCompactList, onBack, onNavigate, onLogout, userDoc, navConfig, setNavConfig, aiSidebarOn, setAiSidebarOn, showSplash, setShowSplash, onCheckUpdate, checkingUpdate, updateStatus }) {
   const { t, hideNav, setHideNav, chatTextScale, setChatTextScale, appFontId, setAppFontId } = useTheme();
   const wallpaperInputRef = useRef(null);
   const profilePhotoRef = useRef(null);
@@ -554,8 +556,29 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
         <SectionCard title="Account" emoji="⚙️" sectionKey="accountActions">
           <Row icon={<MessageSquare size={18} color={t.primary} />} label="Send Feedback" sub="Message the admin directly" onClick={() => onNavigate("feedback")} />
           {isAdmin && <Row icon={<ShieldCheck size={18} color={t.primary} />} label="Admin Dashboard" sub="Users, reports, broadcasts" onClick={() => onNavigate("admin")} />}
+
           <div style={{ padding: "13px 0" }}>
-            <button onClick={() => { const keys = Object.keys(localStorage).filter((k) => k.startsWith("nextext_")); keys.forEach((k) => localStorage.removeItem(k)); window.location.reload(); }} style={{ width: "100%", padding: "11px 16px", borderRadius: 10, border: "none", background: t.primaryLight, color: t.primary, fontWeight: 700, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <button
+              onClick={onCheckUpdate}
+              disabled={checkingUpdate}
+              style={{
+                width: "100%", padding: "11px 16px", border: "none",
+                background: t.primaryLight, color: t.primary,
+                fontWeight: 700, fontSize: 14, cursor: checkingUpdate ? "wait" : "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                opacity: checkingUpdate ? 0.6 : 1,
+              }}
+            >
+              <RefreshCw size={15} style={checkingUpdate ? { animation: "nextext-spin 0.9s linear infinite" } : {}} />
+              {checkingUpdate ? "Checking…" : "Check for App Updates"}
+            </button>
+            {updateStatus && (
+              <div style={{ fontSize: 12.5, color: updateStatus.includes("up to date") ? t.primary : "#FF3B30", fontWeight: 600, marginTop: 6, textAlign: "center" }}>{updateStatus}</div>
+            )}
+          </div>
+
+          <div style={{ padding: "13px 0" }}>
+            <button onClick={() => { const keys = Object.keys(localStorage).filter((k) => k.startsWith("nextext_")); keys.forEach((k) => localStorage.removeItem(k)); window.location.reload(); }} style={{ width: "100%", padding: "11px 16px", border: "none", background: t.primaryLight, color: t.primary, fontWeight: 700, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <RotateCcw size={15} /> Reset all settings
             </button>
           </div>
@@ -607,6 +630,10 @@ function AppShell() {
   const [splashVisible, setSplashVisible] = useState(() => localStorage.getItem("nextext_splash_enabled") !== "off");
   const [splashFading, setSplashFading] = useState(false);
   const [aiSidebarOn, setAiSidebarOn] = useState(() => localStorage.getItem("nextext_ai_sidebar") !== "off");
+  const [pendingUpdate, setPendingUpdate] = useState(null);
+  const [showUpdatePrompt, setShowUpdatePrompt] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState("");
   const swipeStartRef = useRef({ x: 0, y: 0 });
 
   const myUid = auth.user?.uid;
@@ -651,18 +678,67 @@ function AppShell() {
     return unsub;
   }, [auth.user?.uid]);
 
-  // Native launch splash: show for exactly 2.5s (unless disabled by the user),
-  // then fade out smoothly.
+  // Native launch splash: show for 2s, fade out over 0.5s. Failsafe at 4s
+  // guarantees the splash ALWAYS dismisses even if onTransitionEnd misfires.
   useEffect(() => {
     if (!showSplash) {
       setSplashVisible(false);
-      setSplashFading(true);
       return;
     }
-    const t = setTimeout(() => setSplashFading(true), 2500);
-    return () => clearTimeout(t);
+    const fadeTimer = setTimeout(() => setSplashFading(true), 2000);
+    const failsafe = setTimeout(() => { setSplashFading(true); setSplashVisible(false); }, 4000);
+    return () => { clearTimeout(fadeTimer); clearTimeout(failsafe); };
   }, [showSplash]);
 
+  // Auto-check for app updates once after login (delayed 5s to not block load)
+  useEffect(() => {
+    if (!myUid) return;
+    const timer = setTimeout(async () => {
+      try {
+        const update = await checkForUpdate();
+        if (update) {
+          setPendingUpdate(update);
+          setShowUpdatePrompt(true);
+        }
+      } catch { /* silent */ }
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [myUid]);
+
+  const handleManualUpdateCheck = async () => {
+    setCheckingUpdate(true);
+    setUpdateStatus("");
+    try {
+      const update = await checkForUpdate();
+      if (update) {
+        setPendingUpdate(update);
+        setShowUpdatePrompt(true);
+        setUpdateStatus("");
+      } else {
+        setUpdateStatus("Your app is up to date!");
+        setTimeout(() => setUpdateStatus(""), 3000);
+      }
+    } catch {
+      setUpdateStatus("Could not check for updates.");
+      setTimeout(() => setUpdateStatus(""), 3000);
+    }
+    setCheckingUpdate(false);
+  };
+
+  const handleDownloadUpdate = () => {
+    if (pendingUpdate?.downloadUrl) {
+      openDownloadUrl(pendingUpdate.downloadUrl);
+    } else if (pendingUpdate?.releaseUrl) {
+      window.open(pendingUpdate.releaseUrl, "_system");
+    }
+    if (pendingUpdate?.version) setLastSeenRelease(pendingUpdate.version);
+    setShowUpdatePrompt(false);
+  };
+
+  const handleDismissUpdate = () => {
+    if (pendingUpdate?.version) setLastSeenRelease(pendingUpdate.version);
+    setShowUpdatePrompt(false);
+  };
 
   useEffect(() => { localStorage.setItem(UI_SCALE_KEY, String(uiScale)); }, [uiScale]);
   useEffect(() => { localStorage.setItem(SCROLL_DOWN_KEY, String(showScrollDown)); }, [showScrollDown]);
@@ -712,7 +788,7 @@ function AppShell() {
   };
 
   const containerStyle = {
-    width: "100%", height: "100dvh", margin: "0 auto", position: "relative",
+    width: "100%", height: "100vh", margin: "0 auto", position: "relative",
     overflow: "hidden",
     fontFamily: appFont,
   };
@@ -814,6 +890,9 @@ function AppShell() {
           setAiSidebarOn={setAiSidebarOn}
           showSplash={showSplash}
           setShowSplash={setShowSplash}
+          onCheckUpdate={handleManualUpdateCheck}
+          checkingUpdate={checkingUpdate}
+          updateStatus={updateStatus}
         />
       )}
       {screen === "privacy" && <PrivacyScreen myUid={myUid} onBack={() => setScreen("settings")} />}
@@ -871,28 +950,38 @@ function AppShell() {
           </div>
         );
       })()}
-    </div>
-    {splashVisible && (
-      <div
-        onTransitionEnd={() => setSplashVisible(false)}
-        style={{
-          position: "absolute", inset: 0, zIndex: 999999, background: "#121B22",
-          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 28,
-          opacity: splashFading ? 0 : 1, transition: "opacity 0.5s ease-out",
-        }}
-      >
-        <img src="/icon.png" alt="" style={{ width: 180, height: 180, objectFit: "contain" }} />
+
+      {splashVisible && (
         <div
+          onTransitionEnd={() => { if (splashFading) setSplashVisible(false); }}
           style={{
-            width: 34, height: 34, borderRadius: "50%",
-            border: "3px solid rgba(16, 185, 129, 0.25)",
-            borderTopColor: "#10B981",
-            animation: "nextext-spin 0.9s linear infinite",
+            position: "absolute", inset: 0, zIndex: 999999, background: "#121B22",
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 28,
+            opacity: splashFading ? 0 : 1, transition: "opacity 0.6s ease-out",
+            pointerEvents: splashFading ? "none" : "auto",
           }}
+        >
+          <img src="./icon.png" alt="" style={{ width: 180, height: 180, objectFit: "contain" }} />
+          <div
+            style={{
+              width: 34, height: 34,
+              border: "3px solid rgba(16, 185, 129, 0.25)",
+              borderTopColor: "#10B981",
+              animation: "nextext-spin 0.9s linear infinite",
+            }}
+          />
+          <style>{`@keyframes nextext-spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
+
+      {showUpdatePrompt && pendingUpdate && (
+        <UpdatePrompt
+          update={pendingUpdate}
+          onDownload={handleDownloadUpdate}
+          onDismiss={handleDismissUpdate}
         />
-        <style>{`@keyframes nextext-spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
-    )}
+      )}
+    </div>
     </>
   );
 }
