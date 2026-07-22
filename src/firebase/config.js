@@ -16,11 +16,13 @@ const firebaseConfig = {
   measurementId: "G-FEGWEPY4SX",
 };
 
-const app = initializeApp(firebaseConfig);
+let app;
+try {
+  app = initializeApp(firebaseConfig);
+} catch (e) {
+  console.error("[firebase/config] initializeApp failed:", e);
+}
 
-// Capacitor-compatible auth: use indexedDBLocalPersistence on native platforms
-// to prevent blank screen crash from unsupported browser storage in WebView.
-// Wrap in try-catch so a failed auth init never kills the entire React tree.
 let auth;
 try {
   if (Capacitor.isNativePlatform()) {
@@ -32,26 +34,38 @@ try {
   }
 } catch (e) {
   console.error("[firebase/config] Auth init failed, falling back to getAuth:", e);
-  auth = getAuth(app);
+  try { auth = getAuth(app); } catch (e2) { console.error("[firebase/config] getAuth fallback also failed:", e2); }
+}
+
+let db;
+try {
+  db = getFirestore(app);
+} catch (e) {
+  console.error("[firebase/config] getFirestore failed:", e);
+}
+
+let storage;
+try {
+  storage = getStorage(app);
+} catch (e) {
+  console.error("[firebase/config] getStorage failed:", e);
 }
 
 export { app, auth };
 export default app;
 
 export const googleProvider = new GoogleAuthProvider();
-export const db = getFirestore(app);
-export const storage = getStorage(app);
+export { db, storage };
 
-// App Check — verifies requests come from the real app, not bots/scripts.
-// IMPORTANT: this requires a reCAPTCHA v3 site key, generated from:
-// Firebase Console -> Build -> App Check -> Apps -> Register your web app
-// Leave the placeholder below until you've generated that key — App Check
-// will simply be inactive (not broken) until a real key is provided.
 const RECAPTCHA_SITE_KEY = "REPLACE_WITH_RECAPTCHA_SITE_KEY";
 
 if (RECAPTCHA_SITE_KEY !== "REPLACE_WITH_RECAPTCHA_SITE_KEY") {
-  initializeAppCheck(app, {
-    provider: new ReCaptchaV3Provider(RECAPTCHA_SITE_KEY),
-    isTokenAutoRefreshEnabled: true,
-  });
+  try {
+    initializeAppCheck(app, {
+      provider: new ReCaptchaV3Provider(RECAPTCHA_SITE_KEY),
+      isTokenAutoRefreshEnabled: true,
+    });
+  } catch (e) {
+    console.error("[firebase/config] App Check init failed:", e);
+  }
 }

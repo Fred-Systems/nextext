@@ -3,5 +3,13 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   base: './',
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: 'strip-crossorigin',
+      transformIndexHtml(html) {
+        return html.replace(/ crossorigin/g, '')
+      }
+    }
+  ],
 })
