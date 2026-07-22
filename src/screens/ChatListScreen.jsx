@@ -351,9 +351,9 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
         </div>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: compactList ? 1 : 3 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
-            <span style={{ fontWeight: 700, color: t.text, fontSize: nameSize, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{chatDisplayName(c)}</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: compactList ? 1 : 3, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, flex: 1 }}>
+            <span style={{ fontWeight: 700, color: t.text, fontSize: nameSize, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{chatDisplayName(c)}</span>
             {(c.favoritedBy || []).includes(myUid) && <Star size={12} fill={t.accent} color={t.accent} style={{ flexShrink: 0 }} />}
             {isMutedNow(c) && <BellOff size={12} color={t.textMuted} style={{ flexShrink: 0 }} />}
           </div>
@@ -362,7 +362,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
           </span>
         </div>
         {c.type !== "group" && <ChatRowMeta myUid={myUid} otherUid={otherUid} chatId={c.id} t={t} compact={compactList} />}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minWidth: 0 }}>
           <span style={{ fontSize: msgSize, color: t.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
             {c.lastMessage?.text || "No messages yet"}
           </span>
@@ -413,7 +413,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", overflowX: "auto", borderBottom: `1px solid ${t.border}` }}>
         <div style={{ display: "flex", gap: 8, flex: 1, overflowX: "auto" }}>
           {[["all", "All"], ["unread", "Unread"], ["favorites", "Favorites"], ["groups", "Groups"], ...customLists.map((l) => [`custom_${l.id}`, l.name])].map(([key, label]) => (
-            <div key={key} onClick={() => setActiveTab(key)} style={{ padding: "6px 14px", borderRadius: 16, background: activeTab === key ? t.primary : t.primaryLight, color: activeTab === key ? t.bubbleMeText : t.primary, fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}>
+            <div key={key} onClick={() => setActiveTab(key)} style={{ padding: "6px 14px", borderRadius: 16, background: activeTab === key ? t.primary : t.primaryLight, color: activeTab === key ? t.bubbleMeText : t.primary, fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
               {label}
               {key.startsWith("custom_") && (
                 <X size={12} onClick={(e) => { e.stopPropagation(); handleDeleteCustomList(key.replace("custom_", "")); }} style={{ cursor: "pointer", opacity: 0.6 }} />
@@ -582,7 +582,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
           <div style={{ padding: 16, borderBottom: `1px solid ${t.border}` }}>
             <img src={URL.createObjectURL(capturedPhoto)} alt="Captured" style={{ width: 60, height: 60, borderRadius: 10, objectFit: "cover" }} />
           </div>
-          <div style={{ flex: 1, overflowY: "auto" }}>
+      <div style={{ flex: 1, overflowY: "auto", paddingBottom: hideNav ? 80 : 140 }}>
             {acceptedContacts.length === 0 && <div style={{ padding: 20, textAlign: "center", color: t.textMuted, fontSize: 13 }}>No contacts to send to.</div>}
             {acceptedContacts.map((c) => {
               const otherUid = c.uid;

@@ -712,8 +712,8 @@ function AppShell() {
   };
 
   const containerStyle = {
-    width: "100%", maxWidth: 390, height: 720, margin: "0 auto", position: "relative",
-    borderRadius: 28, overflow: "hidden", boxShadow: "0 8px 40px rgba(0,0,0,0.25)",
+    width: "100%", height: "100dvh", margin: "0 auto", position: "relative",
+    overflow: "hidden",
     fontFamily: appFont,
   };
 

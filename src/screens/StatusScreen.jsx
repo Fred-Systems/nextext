@@ -428,7 +428,7 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 18 }}>Status</span>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", paddingBottom: 56 }}>
+      <div style={{ flex: 1, overflowY: "auto", paddingBottom: 70 }}>
         <SectionHeader label="My Status" />
         <div style={{ display: "flex", alignItems: "center", gap: 13, padding: "10px 16px", borderBottom: `1px solid ${t.border}` }}>
           <div style={{ position: "relative" }}>

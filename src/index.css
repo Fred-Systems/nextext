@@ -56,16 +56,22 @@ body {
 }
 
 #root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
+  width: 100%;
+  height: 100dvh;
+  margin: 0;
+  text-align: left;
+  border: none;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   background: #121212;
+  overflow: hidden;
+}
+
+/* Kill ALL border-radius globally — every corner must be square */
+*, *::before, *::after {
+  border-radius: 0 !important;
 }
 
 h1,
