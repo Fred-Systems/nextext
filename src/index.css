@@ -70,9 +70,20 @@ body {
   position: relative;
 }
 
-/* Kill ALL border-radius globally — every corner must be square */
-*, *::before, *::after {
+/* Squared-off containers, inputs, cards — but NOT avatars/images */
+.nx-card, .nx-input, .nx-btn, .nx-section,
+input, button, select, textarea {
   border-radius: 0 !important;
+}
+
+/* All profile pictures and avatars must be circular */
+img, .avatar, [class*="Avatar"], .avatar-img {
+  border-radius: 50% !important;
+}
+
+/* Status dots and badges stay circular */
+.status-dot, .badge-dot {
+  border-radius: 50% !important;
 }
 
 h1,
@@ -163,12 +174,15 @@ code {
   to   { height: 18px; }
 }
 
-/* NexText: app-wide scrolling for every primary page container.
-   Each screen root gets this class so touch scrolling works smoothly
-   across the chat dashboard, direct chats, status view, admin board,
-   and group info panel. */
+/* NexText: app-wide scrolling for page content containers.
+   The screen root uses this class for layout; the inner scroll
+   area uses .nx-scroll for touch scrolling between header and nav. */
 .nx-screen {
+  display: flex;
+  flex-direction: column;
+}
+
+.nx-scroll {
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch;
-  max-height: 100vh;
 }

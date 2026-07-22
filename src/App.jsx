@@ -312,7 +312,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
         <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 18 }}>Settings</span>
       </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
+      <div className="nx-scroll" style={{ flex: 1, padding: "12px 16px" }}>
 
         {/* ═══ ACCOUNT & PROFILE ═══ */}
         <SectionCard title="Account & Profile" emoji="👤" sectionKey="account">
@@ -809,7 +809,7 @@ function AppShell() {
     <>
     <div
       id="nextext-app-shell"
-      style={{ ...containerStyle, transform: `scale(${uiScale})`, transformOrigin: "top center" }}
+      style={{ ...containerStyle }}
       onTouchStart={(e) => { swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
       onTouchEnd={(e) => {
         if (screen !== "list" || storyViewerOpen) return;
@@ -955,7 +955,7 @@ function AppShell() {
         <div
           onTransitionEnd={() => { if (splashFading) setSplashVisible(false); }}
           style={{
-            position: "absolute", inset: 0, zIndex: 999999, background: "#121B22",
+            position: "fixed", inset: 0, zIndex: 999999, background: "#121B22",
             display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 28,
             opacity: splashFading ? 0 : 1, transition: "opacity 0.6s ease-out",
             pointerEvents: splashFading ? "none" : "auto",

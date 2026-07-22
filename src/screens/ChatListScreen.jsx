@@ -582,7 +582,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
           <div style={{ padding: 16, borderBottom: `1px solid ${t.border}` }}>
             <img src={URL.createObjectURL(capturedPhoto)} alt="Captured" style={{ width: 60, height: 60, borderRadius: 10, objectFit: "cover" }} />
           </div>
-      <div style={{ flex: 1, overflowY: "auto", paddingBottom: hideNav ? 80 : 140 }}>
+      <div className="nx-scroll" style={{ flex: 1, paddingBottom: hideNav ? 80 : 140 }}>
             {acceptedContacts.length === 0 && <div style={{ padding: 20, textAlign: "center", color: t.textMuted, fontSize: 13 }}>No contacts to send to.</div>}
             {acceptedContacts.map((c) => {
               const otherUid = c.uid;
