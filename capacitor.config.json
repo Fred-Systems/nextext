@@ -1,5 +1,6 @@
 {
   "appId": "com.nextext.app",
   "appName": "NexText",
-  "webDir": "dist"
+  "webDir": "dist",
+  "androidBackgroundColor": "#121212"
 }

@@ -29,37 +29,6 @@ jobs:
           npm ci || npm install --legacy-peer-deps
           npm install -g @capacitor/assets
 
-      - name: Force Fix Vite Relative Paths
-        run: |
-          cat << 'VITE_EOF' > vite.config.js
-          import { defineConfig } from 'vite'
-          import react from '@vitejs/plugin-react'
-          export default defineConfig({
-            base: './',
-            plugins: [react()],
-          })
-          VITE_EOF
-
-      - name: Force Fix Capacitor Config
-        run: |
-          cat << 'CAP_EOF' > capacitor.config.json
-          {
-            "appId": "com.nextext.app",
-            "appName": "NexText",
-            "webDir": "dist",
-            "plugins": {
-              "SplashScreen": {
-                "launchAutoHide": true,
-                "launchShowDuration": 3000,
-                "backgroundColor": "#121212",
-                "androidScaleType": "CENTER_CROP",
-                "splashImmersive": true,
-                "showSpinner": false
-              }
-            }
-          }
-          CAP_EOF
-
       - name: Compile Production Web Interface Layout
         run: |
           npm run build
