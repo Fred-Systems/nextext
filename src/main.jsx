@@ -15,8 +15,11 @@ window.onunhandledrejection = (e) => {
 import React from 'react'
 
 class ErrorBoundary extends React.Component {
-  state = { error: null }
-  static getDerivedStateFromError(error) { return { error } }
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) { return { error: error } }
   render() {
     if (this.state.error) {
       return <pre style={{ color: '#ff6b6b', padding: 16, fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
