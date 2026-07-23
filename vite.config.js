@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   base: './',
   build: {
-    target: 'es2020',
+    target: 'es2022',
   },
   plugins: [
     react(),
