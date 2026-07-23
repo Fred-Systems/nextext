@@ -842,19 +842,12 @@ function AppShell() {
     fontFamily: appFont,
   };
 
-  const [bootSeconds, setBootSeconds] = useState(0);
-  useEffect(() => {
-    if (!auth.loading) return;
-    const id = setInterval(() => setBootSeconds((s) => s + 1), 1000);
-    return () => clearInterval(id);
-  }, [auth.loading]);
-
   if (auth.loading) {
-    return <div style={{ ...containerStyle, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#0B141A" }}>
+    return <div style={{ ...containerStyle, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#1a2a32" }}>
       <img src="./icon.png" alt="" style={{ width: 100, height: 100, objectFit: "contain", marginBottom: 20 }} onError={(e) => { e.target.style.display = "none"; }} />
-      <div style={{ width: 28, height: 28, border: "3px solid rgba(16, 185, 129, 0.25)", borderTopColor: "#10B981", borderRadius: "50%", animation: "nextext-spin 0.9s linear infinite", marginBottom: 14 }} />
-      <span style={{ color: "#8696A0", fontSize: 13 }}>Loading… {bootSeconds}s</span>
-      {bootSeconds >= 9 && <span style={{ color: "#FF6B6B", fontSize: 11, marginTop: 8 }}>Auth timeout may have failed — see logcat</span>}
+      <div style={{ width: 36, height: 36, border: "4px solid rgba(16, 185, 129, 0.3)", borderTopColor: "#10B981", borderRadius: "50%", animation: "nextext-spin 0.9s linear infinite", marginBottom: 16 }} />
+      <span style={{ color: "#E8EDEF", fontSize: 16, fontWeight: 600 }}>Loading…</span>
+      <span style={{ color: "#8696A0", fontSize: 12, marginTop: 6 }}>Connecting to server</span>
       <style>{`@keyframes nextext-spin { to { transform: rotate(360deg); } }`}</style>
     </div>;
   }

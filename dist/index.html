@@ -7,12 +7,27 @@
     <title>nextext</title>
     <style>html,body,#root{background:#0B141A !important;margin:0;padding:0;height:100%;}</style>
     <script>
-    /* #nx-boot-error is OUTSIDE #root so React can never overwrite it.
-       addEventListener('error') catches module script errors;
-       window.onerror does NOT. */
+    /* Boot ticker — plain JS, always visible, never removed by React.
+       Shows elapsed time + root child count + splash state. */
+    var nxBootStart = Date.now();
+    var nxBticker = document.createElement('div');
+    nxBticker.id = 'nx-boot-ticker';
+    nxBticker.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999999;background:rgba(255,0,0,0.9);color:#fff;font:bold 14px monospace;padding:8px 12px;text-align:center;letter-spacing:1px;';
+    nxBticker.textContent = 'BOOT 0s';
+    document.body.appendChild(nxBticker);
+    setInterval(function(){
+      var s = Math.round((Date.now()-nxBootStart)/1000);
+      var root = document.getElementById('root');
+      var kids = root ? root.children.length : -1;
+      var splash = !!document.querySelector('[data-nx-splash]');
+      nxBticker.textContent = 'BOOT ' + s + 's  root:' + kids + '  splash:' + splash;
+    }, 500);
+
+    /* #nx-boot-error is OUTSIDE #root so React can never overwrite it. */
     function showBootError(html) {
       var el = document.getElementById('nx-boot-error');
       if (el) { el.style.display = 'block'; el.style.pointerEvents = 'auto'; el.innerHTML = html; }
+      if (nxBticker) { nxBticker.style.background = 'rgba(255,0,0,0.95)'; }
     }
     window.addEventListener('error', function(e) {
       showBootError('<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">' + (e.message||'Error') + '\n' + (e.filename||'') + ':' + (e.lineno||'') + '\n' + ((e.error&&e.error.stack)||'') + '</pre>');
@@ -20,7 +35,6 @@
     window.addEventListener('unhandledrejection', function(e) {
       showBootError('<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">Unhandled: ' + (e.reason && e.reason.stack || e.reason) + '</pre>');
     });
-    /* Safety: if the original splash is still in root after 12s, JS never loaded */
     setTimeout(function() {
       var root = document.getElementById('root');
       if (root && root.querySelector('[data-nx-splash]')) {
@@ -28,7 +42,7 @@
       }
     }, 12000);
     </script>
-    <script type="module" src="./assets/index-CNRzGuSO.js"></script>
+    <script type="module" src="./assets/index-Cr83pIHS.js"></script>
     <link rel="stylesheet" href="./assets/index-BIY2AUMy.css">
   </head>
   <body style="margin:0;background:#0B141A;">
