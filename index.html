@@ -20,11 +20,11 @@
     window.addEventListener('unhandledrejection', function(e) {
       showBootError('<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">Unhandled: ' + (e.reason && e.reason.stack || e.reason) + '</pre>');
     });
-    /* Safety: if nothing renders after 12s, show a diagnostic message */
+    /* Safety: if the original splash is still in root after 12s, JS never loaded */
     setTimeout(function() {
       var root = document.getElementById('root');
-      if (root && root.children.length <= 1) {
-        showBootError('<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">Boot timed out (12s). JavaScript may have crashed.\nRoot innerHTML length: ' + (root.innerHTML||'').length + '\nCheck Android Logcat for errors.</pre>');
+      if (root && root.querySelector('[data-nx-splash]')) {
+        showBootError('<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">Boot timed out (12s). JavaScript module did not execute.\nCheck Android Logcat for syntax errors.</pre>');
       }
     }, 12000);
     </script>
@@ -34,7 +34,7 @@
     <div id="root">
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0B141A;">
         <img src="./icon.png" alt="" style="width:120px;height:120px;object-fit:contain;margin-bottom:24px;" onerror="this.style.display='none'" />
-        <div style="width:30px;height:30px;border:3px solid rgba(16,185,129,0.25);border-top-color:#10B981;border-radius:50%;animation:nxspin 0.9s linear infinite;"></div>
+        <div data-nx-splash="1" style="width:30px;height:30px;border:3px solid rgba(16,185,129,0.25);border-top-color:#10B981;border-radius:50%;animation:nxspin 0.9s linear infinite;"></div>
         <div style="color:#8696A0;font-size:13px;margin-top:16px;">Loading…</div>
         <style>@keyframes nxspin{to{transform:rotate(360deg)}}</style>
       </div>

@@ -16,7 +16,7 @@ class ErrorBoundary extends React.Component {
       const msg = this.state.error.stack || String(this.state.error);
       /* Write to the external error div so it's always visible */
       const errEl = document.getElementById('nx-boot-error');
-      if (errEl) errEl.innerHTML = '<pre style="color:#ff6b6b;padding:16px;font-size:12px;white-space:pre-wrap;word-break:break-all;">' + msg + '</pre>';
+      if (errEl) { errEl.style.display = 'block'; errEl.style.pointerEvents = 'auto'; errEl.innerHTML = '<pre style="color:#ff6b6b;padding:16px;font-size:12px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">' + msg + '</pre>'; }
       return <pre style={{ color: '#ff6b6b', padding: 16, fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
         {msg}
       </pre>

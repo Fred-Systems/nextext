@@ -44,7 +44,9 @@ export function useAuth() {
       // Fallback: if auth never resolves in 8 seconds, stop loading
       // so the user at least sees the login screen instead of a blank screen.
       safetyTimer = setTimeout(() => {
-        console.warn("[useAuth] Auth timed out after 8s — showing login screen");
+        console.warn("[useAuth] ⚠️ Auth timed out after 8s — onAuthStateChanged never fired. Showing login screen.");
+        setUser(null);
+        setUserDoc(null);
         setLoading(false);
       }, 8000);
     } catch (e) {
