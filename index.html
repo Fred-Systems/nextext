@@ -7,11 +7,30 @@
     <title>nextext</title>
     <style>html,body,#root{background:#0B141A !important;margin:0;padding:0;height:100%;}</style>
     <script>
-    window.onerror=function(m,s,l,c,e){document.getElementById('root').innerHTML='<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;">'+m+'\n'+((e&&e.stack)||'')+'</pre>';};
-    window.onunhandledrejection=function(e){document.getElementById('root').innerHTML='<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;">Unhandled: '+(e.reason&&e.reason.stack||e.reason)+'</pre>';};
+    /* #nx-boot-error is OUTSIDE #root so React can never overwrite it.
+       addEventListener('error') catches module script errors;
+       window.onerror does NOT. */
+    function showBootError(html) {
+      var el = document.getElementById('nx-boot-error');
+      if (el) { el.style.display = 'block'; el.style.pointerEvents = 'auto'; el.innerHTML = html; }
+    }
+    window.addEventListener('error', function(e) {
+      showBootError('<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">' + (e.message||'Error') + '\n' + (e.filename||'') + ':' + (e.lineno||'') + '\n' + ((e.error&&e.error.stack)||'') + '</pre>');
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      showBootError('<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">Unhandled: ' + (e.reason && e.reason.stack || e.reason) + '</pre>');
+    });
+    /* Safety: if nothing renders after 12s, show a diagnostic message */
+    setTimeout(function() {
+      var root = document.getElementById('root');
+      if (root && root.children.length <= 1) {
+        showBootError('<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">Boot timed out (12s). JavaScript may have crashed.\nRoot innerHTML length: ' + (root.innerHTML||'').length + '\nCheck Android Logcat for errors.</pre>');
+      }
+    }, 12000);
     </script>
   </head>
   <body style="margin:0;background:#0B141A;">
+    <div id="nx-boot-error" style="position:fixed;inset:0;z-index:999999;pointer-events:none;overflow:auto;display:none;"></div>
     <div id="root">
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0B141A;">
         <img src="./icon.png" alt="" style="width:120px;height:120px;object-fit:contain;margin-bottom:24px;" onerror="this.style.display='none'" />

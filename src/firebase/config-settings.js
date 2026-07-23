@@ -21,8 +21,11 @@ export async function ensureGlobalSettingsExist() {
 export function useGlobalSettings() {
   const [settings, setSettings] = useState(null);
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, ...CONFIG_REF_PATH), (snap) => setSettings(snap.data()));
-    return unsub;
+    let unsub;
+    try {
+      unsub = onSnapshot(doc(db, ...CONFIG_REF_PATH), (snap) => setSettings(snap.data()), () => {});
+    } catch { /* Firestore may not be available */ }
+    return () => unsub && unsub();
   }, []);
   return settings;
 }
