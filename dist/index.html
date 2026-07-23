@@ -14,14 +14,13 @@
         if (!document.body) { setTimeout(tryShow, 50); return; }
         var e = document.createElement('div');
         e.style.cssText = 'position:fixed;inset:0;z-index:99999999;background:#FF3B30;color:#fff;font:bold 14px monospace;padding:24px;white-space:pre-wrap;word-break:break-all;overflow:auto;';
-        e.textContent = 'MODULE LOAD FAILED:\n' + msg;
+        e.textContent = 'SCRIPT LOAD FAILED:\n' + msg;
         document.body.appendChild(e);
       }
       tryShow();
     };
     </script>
-    <script type="module" src="./assets/index-r8zX1szQ.js"></script>
-    <link rel="stylesheet" href="./assets/index-BIY2AUMy.css">
+    <script src="./assets/index-DewbeiNl.js"></script>
   </head>
   <body style="margin:0;background:#0B141A;">
     <div id="nx-boot-error" style="position:fixed;inset:0;z-index:999999;pointer-events:none;overflow:auto;display:none;"></div>
@@ -39,7 +38,7 @@
       </div>
     </noscript>
     <script>
-    var NX_VER = 'modload-v1';
+    var NX_VER = 'iife-v1';
     var nxBootStart = Date.now();
     var nxBticker = document.createElement('div');
     nxBticker.id = 'nx-boot-ticker';
@@ -53,16 +52,6 @@
       var splash = !!document.querySelector('[data-nx-splash]');
       nxBticker.textContent = 'v' + NX_VER + ' ' + s + 's root:' + kids + ' splash:' + splash;
     }, 500);
-    var modEl = document.querySelector('script[type="module"]');
-    if (modEl) {
-      var modPath = modEl.getAttribute('src');
-      fetch(modPath, {method:'HEAD'}).then(function(r) {
-        if (!r.ok) { nxFail('Bundle file NOT FOUND: ' + modPath + ' (HTTP ' + r.status + ')'); }
-        else { window.__nxBundleExists = true; }
-      }).catch(function(e) { nxFail('Cannot fetch bundle: ' + modPath + ' — ' + e.message); });
-    } else {
-      nxFail('No module script element found in DOM');
-    }
     function showBootError(html) {
       var el = document.getElementById('nx-boot-error');
       if (el) { el.style.display = 'block'; el.style.pointerEvents = 'auto'; el.innerHTML = html; }
@@ -76,11 +65,12 @@
     setTimeout(function() {
       var root = document.getElementById('root');
       if (root && root.querySelector('[data-nx-splash]')) {
-        var modScript = document.querySelector('script[type="module"]');
-        var modSrc = modScript ? modScript.getAttribute('src') : 'unknown';
+        var allScripts = document.querySelectorAll('script[src]');
+        var srcs = [];
+        for (var i = 0; i < allScripts.length; i++) srcs.push(allScripts[i].getAttribute('src') + ' type=' + allScripts[i].type);
         var errCount = window.__nxModuleErrors ? window.__nxModuleErrors.length : 0;
         var errList = window.__nxModuleErrors ? window.__nxModuleErrors.join('\n') : 'none';
-        showBootError('<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">Boot timed out (12s). Module script did not execute.\nModule src: ' + modSrc + '\nModule load errors caught: ' + errCount + '\n' + errList + '\n\nThe .js bundle is likely missing from the APK assets.\nCheck that cap sync ran AFTER npm run build.</pre>');
+        showBootError('<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">Boot timed out (12s). App did not load.\nScripts found: ' + srcs.join('\n') + '\n\nLoad errors caught: ' + errCount + '\n' + errList + '\n\nIf script type=module: file:// protocol may block ESM.\nVite should have converted to classic script (IIFE).</pre>');
       }
     }, 12000);
     </script>

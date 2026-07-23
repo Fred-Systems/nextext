@@ -4,7 +4,13 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   base: './',
   build: {
-    target: 'es2022',
+    target: 'es2015',
+    rollupOptions: {
+      output: {
+        format: 'iife',
+        entryFileNames: 'assets/[name]-[hash].js',
+      },
+    },
   },
   plugins: [
     react(),
@@ -12,7 +18,16 @@ export default defineConfig({
       name: 'strip-crossorigin',
       transformIndexHtml(html) {
         return html.replace(/ crossorigin/g, '')
-      }
-    }
+      },
+    },
+    {
+      name: 'convert-module-to-classic',
+      transformIndexHtml(html) {
+        return html.replace(
+          /<script type="module" src="([^"]+)"><\/script>/,
+          '<script src="$1"></script>'
+        )
+      },
+    },
   ],
 })
