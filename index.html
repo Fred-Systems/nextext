@@ -8,13 +8,14 @@
     <style>html,body,#root{background:#0B141A !important;margin:0;padding:0;height:100%;}</style>
     <script>
     /* Boot ticker — plain JS, always visible, never removed by React.
-       Shows elapsed time + root child count + splash state. */
+       Runs in <head>, so we append to <html> (document.documentElement)
+       since <body> doesn't exist yet at script execution time. */
     var nxBootStart = Date.now();
     var nxBticker = document.createElement('div');
     nxBticker.id = 'nx-boot-ticker';
     nxBticker.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999999;background:rgba(255,0,0,0.9);color:#fff;font:bold 14px monospace;padding:8px 12px;text-align:center;letter-spacing:1px;';
     nxBticker.textContent = 'BOOT 0s';
-    document.body.appendChild(nxBticker);
+    document.documentElement.appendChild(nxBticker);
     setInterval(function(){
       var s = Math.round((Date.now()-nxBootStart)/1000);
       var root = document.getElementById('root');
