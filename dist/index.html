@@ -6,6 +6,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>nextext</title>
     <style>html,body,#root{background:#0B141A !important;margin:0;padding:0;height:100%;}</style>
+    <script>
+    window.__nxModuleErrors = [];
+    window.nxFail = function(msg) {
+      window.__nxModuleErrors.push(msg);
+      function tryShow() {
+        if (!document.body) { setTimeout(tryShow, 50); return; }
+        var e = document.createElement('div');
+        e.style.cssText = 'position:fixed;inset:0;z-index:99999999;background:#FF3B30;color:#fff;font:bold 14px monospace;padding:24px;white-space:pre-wrap;word-break:break-all;overflow:auto;';
+        e.textContent = 'MODULE LOAD FAILED:\n' + msg;
+        document.body.appendChild(e);
+      }
+      tryShow();
+    };
+    </script>
     <script type="module" src="./assets/index-r8zX1szQ.js"></script>
     <link rel="stylesheet" href="./assets/index-BIY2AUMy.css">
   </head>
@@ -25,11 +39,11 @@
       </div>
     </noscript>
     <script>
-    var NX_VER = 'body-v2';
+    var NX_VER = 'modload-v1';
     var nxBootStart = Date.now();
     var nxBticker = document.createElement('div');
     nxBticker.id = 'nx-boot-ticker';
-    nxBticker.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999999;background:rgba(255,0,0,0.9);color:#fff;font:bold 14px monospace;padding:8px 12px;text-align:center;letter-spacing:1px;';
+    nxBticker.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:99999999;background:rgba(255,0,0,0.9);color:#fff;font:bold 14px monospace;padding:8px 12px;text-align:center;letter-spacing:1px;';
     nxBticker.textContent = 'v' + NX_VER + ' BOOT 0s';
     document.body.appendChild(nxBticker);
     setInterval(function(){
@@ -39,6 +53,16 @@
       var splash = !!document.querySelector('[data-nx-splash]');
       nxBticker.textContent = 'v' + NX_VER + ' ' + s + 's root:' + kids + ' splash:' + splash;
     }, 500);
+    var modEl = document.querySelector('script[type="module"]');
+    if (modEl) {
+      var modPath = modEl.getAttribute('src');
+      fetch(modPath, {method:'HEAD'}).then(function(r) {
+        if (!r.ok) { nxFail('Bundle file NOT FOUND: ' + modPath + ' (HTTP ' + r.status + ')'); }
+        else { window.__nxBundleExists = true; }
+      }).catch(function(e) { nxFail('Cannot fetch bundle: ' + modPath + ' — ' + e.message); });
+    } else {
+      nxFail('No module script element found in DOM');
+    }
     function showBootError(html) {
       var el = document.getElementById('nx-boot-error');
       if (el) { el.style.display = 'block'; el.style.pointerEvents = 'auto'; el.innerHTML = html; }
@@ -52,7 +76,11 @@
     setTimeout(function() {
       var root = document.getElementById('root');
       if (root && root.querySelector('[data-nx-splash]')) {
-        showBootError('<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">Boot timed out (12s). JavaScript module did not execute.\nCheck Android Logcat for syntax errors.</pre>');
+        var modScript = document.querySelector('script[type="module"]');
+        var modSrc = modScript ? modScript.getAttribute('src') : 'unknown';
+        var errCount = window.__nxModuleErrors ? window.__nxModuleErrors.length : 0;
+        var errList = window.__nxModuleErrors ? window.__nxModuleErrors.join('\n') : 'none';
+        showBootError('<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">Boot timed out (12s). Module script did not execute.\nModule src: ' + modSrc + '\nModule load errors caught: ' + errCount + '\n' + errList + '\n\nThe .js bundle is likely missing from the APK assets.\nCheck that cap sync ran AFTER npm run build.</pre>');
       }
     }, 12000);
     </script>
