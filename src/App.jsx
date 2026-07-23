@@ -778,7 +778,7 @@ function AppShell() {
     if (pendingUpdate?.downloadUrl) {
       openDownloadUrl(pendingUpdate.downloadUrl);
     } else if (pendingUpdate?.releaseUrl) {
-      window.open(pendingUpdate.releaseUrl, "_system");
+      openDownloadUrl(pendingUpdate.releaseUrl);
     }
     if (pendingUpdate?.version) setLastSeenRelease(pendingUpdate.version);
     setShowUpdatePrompt(false);
@@ -843,7 +843,12 @@ function AppShell() {
   };
 
   if (auth.loading) {
-    return <div style={{ ...containerStyle, display: "flex", alignItems: "center", justifyContent: "center", background: t.bg }}><span style={{ color: t.textMuted, fontSize: 14 }}>Loading…</span></div>;
+    return <div style={{ ...containerStyle, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#0B141A" }}>
+      <img src="./icon.png" alt="" style={{ width: 100, height: 100, objectFit: "contain", marginBottom: 20 }} onError={(e) => { e.target.style.display = "none"; }} />
+      <div style={{ width: 28, height: 28, border: "3px solid rgba(16, 185, 129, 0.25)", borderTopColor: "#10B981", borderRadius: "50%", animation: "nextext-spin 0.9s linear infinite", marginBottom: 14 }} />
+      <span style={{ color: "#8696A0", fontSize: 13 }}>Loading…</span>
+      <style>{`@keyframes nextext-spin { to { transform: rotate(360deg); } }`}</style>
+    </div>;
   }
   if (!auth.user) {
     return <div style={containerStyle}><AuthScreen auth={auth} /></div>;

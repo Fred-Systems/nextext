@@ -1,7 +1,7 @@
 const GITHUB_REPO = "Fred-Systems/nextext";
 const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 const LAST_SEEN_KEY = "nextext_last_seen_release";
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.1.0";
 
 function compareVersions(a, b) {
   const pa = a.replace(/^v/, "").split(".").map(Number);
@@ -49,9 +49,18 @@ export async function checkForUpdate() {
 }
 
 export function openDownloadUrl(url) {
-  if (url) {
-    window.open(url, "_system");
-  }
+  if (!url) return;
+  // Try _system first (opens via Android intent / default handler).
+  // Fall back to _blank, then to direct navigation.
+  try {
+    const w = window.open(url, "_system");
+    if (w) return;
+  } catch { /* _system not supported */ }
+  try {
+    const w = window.open(url, "_blank");
+    if (w) return;
+  } catch { /* popup blocked */ }
+  window.location.href = url;
 }
 
 export function getLastSeenRelease() {

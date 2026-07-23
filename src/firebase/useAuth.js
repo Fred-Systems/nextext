@@ -22,8 +22,10 @@ export function useAuth() {
 
   useEffect(() => {
     let unsub;
+    let safetyTimer;
     try {
       unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+        clearTimeout(safetyTimer);
         setUser(firebaseUser);
         if (firebaseUser) {
           try {
@@ -39,11 +41,17 @@ export function useAuth() {
         }
         setLoading(false);
       });
+      // Fallback: if auth never resolves in 8 seconds, stop loading
+      // so the user at least sees the login screen instead of a blank screen.
+      safetyTimer = setTimeout(() => {
+        console.warn("[useAuth] Auth timed out after 8s — showing login screen");
+        setLoading(false);
+      }, 8000);
     } catch (e) {
       console.error("[useAuth] onAuthStateChanged failed:", e);
       setLoading(false);
     }
-    return () => unsub && unsub();
+    return () => { clearTimeout(safetyTimer); unsub && unsub(); };
   }, []);
 
   async function signUpWithEmail(email, password, username, displayName) {
