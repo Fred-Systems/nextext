@@ -273,9 +273,9 @@ export default function AIChatScreen({ myUid, onBack }) {
   const currentPersonality = userDoc?.aiPersonality || "default";
 
   return (
-    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column", zIndex: 20 }}>
+    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 20 }}>
       {/* Header with robot gradient badge */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 12px", background: "linear-gradient(135deg, #7C5CFF, #53BDEB)", position: "relative" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 12px", background: "linear-gradient(135deg, #7C5CFF, #53BDEB)", position: "relative", flexShrink: 0 }}>
         <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
         <div onClick={() => setShowProfile(true)} style={{ cursor: "pointer" }}>
           <div style={{ width: 38, height: 38, borderRadius: "50%", background: "linear-gradient(135deg, #7C5CFF, #53BDEB)", border: "2px solid rgba(255,255,255,0.35)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -344,7 +344,7 @@ export default function AIChatScreen({ myUid, onBack }) {
         </div>
       )}
 
-      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "14px 10px" }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "14px 10px" }}>
         {messages.length === 0 && (
           <div style={{ textAlign: "center", padding: 40, color: t.textMuted, fontSize: 13, lineHeight: 1.6 }}>
             <div style={{ fontSize: 40, marginBottom: 10 }}>🤖</div>
@@ -382,8 +382,8 @@ export default function AIChatScreen({ myUid, onBack }) {
             );
           }
           return (
-            <div key={m.id} style={{ display: "flex", justifyContent: isMine ? "flex-end" : "flex-start", marginTop: 8 }}>
-              <div style={{ maxWidth: "78%", padding: "10px 14px", borderRadius: isMine ? "14px 14px 4px 14px" : "14px 14px 14px 4px", background: isMine ? t.bubbleMe : t.bubbleThem, color: isMine ? t.bubbleMeText : t.bubbleThemText, fontSize: 14, lineHeight: 1.4, boxShadow: "0 1px 2px rgba(0,0,0,0.08)" }}>
+              <div key={m.id} style={{ display: "flex", justifyContent: isMine ? "flex-end" : "flex-start", marginTop: 8 }}>
+              <div style={{ maxWidth: "78%", padding: "10px 14px", borderRadius: isMine ? "14px 14px 4px 14px" : "14px 14px 14px 4px", background: isMine ? t.bubbleMe : t.bubbleThem, color: isMine ? t.bubbleMeText : t.bubbleThemText, fontSize: 14, lineHeight: 1.4, boxShadow: "0 1px 2px rgba(0,0,0,0.08)", wordBreak: "break-word", overflowWrap: "break-word", minWidth: 0 }}>
                 {m.text}
                 <div style={{ fontSize: 10.5, opacity: 0.55, marginTop: 4, textAlign: "right" }}>
                   {m.sentAt?.toDate ? m.sentAt.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}

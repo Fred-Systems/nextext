@@ -161,7 +161,7 @@ export default function ContactProfileScreen({ myUid, otherUid, contact, onBack,
   const isAIContact = otherUid === AI_CONTACT_UID;
 
   return (
-    <div style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column", zIndex: 40 }}>
+    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40 }}>
       {fullscreenImage && (
         <div onClick={() => setFullscreenImage(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", zIndex: 999999, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", padding: 16 }}>
@@ -172,11 +172,11 @@ export default function ContactProfileScreen({ myUid, otherUid, contact, onBack,
           </div>
         </div>
       )}
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: isAIContact ? "linear-gradient(135deg, #7C5CFF, #53BDEB)" : t.primary }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: isAIContact ? "linear-gradient(135deg, #7C5CFF, #53BDEB)" : t.primary, flexShrink: 0 }}>
         <ChevronLeft size={22} color="#fff" onClick={safeBack} style={{ cursor: "pointer" }} />
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>{isAIContact ? "AI Profile" : "Contact Info"}</span>
       </div>
-      <div style={{ overflowY: "auto", flex: 1 }}>
+      <div className="nx-scroll">
         {isAIContact ? (
           <div style={{ padding: "28px 16px", textAlign: "center", borderBottom: `1px solid ${t.border}` }}>
             <div style={{ width: 88, height: 88, borderRadius: "50%", background: "linear-gradient(135deg, #7C5CFF, #53BDEB)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>

@@ -28,7 +28,7 @@ export default function FeedbackScreen({ myUid, myUsername, onBack }) {
 
   if (sent) {
     return (
-      <div style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 40, padding: 30, textAlign: "center" }}>
+      <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, alignItems: "center", justifyContent: "center", zIndex: 40, padding: 30, textAlign: "center" }}>
         <div style={{ width: 64, height: 64, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}><Check size={30} color={t.primary} /></div>
         <div style={{ fontWeight: 700, fontSize: 17, color: t.text, marginBottom: 6 }}>Feedback sent</div>
         <button onClick={onBack} style={{ padding: "11px 24px", borderRadius: 10, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Done</button>
@@ -37,8 +37,8 @@ export default function FeedbackScreen({ myUid, myUsername, onBack }) {
   }
 
   return (
-    <div style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column", zIndex: 40 }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary }}>
+    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40 }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
         <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
         <MessageSquare size={18} color="#fff" />
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>Send Feedback</span>

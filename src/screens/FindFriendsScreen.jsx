@@ -65,13 +65,13 @@ export default function FindFriendsScreen({ myUid, onBack, onStartChat }) {
   };
 
   return (
-    <div style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column", zIndex: 40 }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary }}>
+    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40 }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
         <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
         <Users size={18} color="#fff" />
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>Find Friends</span>
       </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+      <div className="nx-scroll" style={{ padding: 16 }}>
         {!supported ? (
           <div style={{ textAlign: "center", padding: 30 }}>
             <Smartphone size={36} color={t.textMuted} style={{ marginBottom: 14 }} />

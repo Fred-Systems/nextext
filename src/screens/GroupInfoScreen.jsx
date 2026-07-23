@@ -61,8 +61,8 @@ export default function GroupInfoScreen({ myUid, chatId, onBack, onOpenChat, onO
 
   if (!group) {
     return (
-      <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column", zIndex: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 12px", background: t.primary }}>
+      <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 12px", background: t.primary, flexShrink: 0 }}>
           <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>Group Info</span>
         </div>
@@ -125,8 +125,8 @@ export default function GroupInfoScreen({ myUid, chatId, onBack, onOpenChat, onO
   };
 
   return (
-      <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column", zIndex: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 12px", background: t.primary }}>
+      <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 12px", background: t.primary, flexShrink: 0 }}>
           <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 16, flex: 1 }}>Group Info</span>
         {isAdmin && <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: 600 }}>Admin</span>}

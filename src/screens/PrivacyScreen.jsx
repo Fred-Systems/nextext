@@ -68,13 +68,13 @@ export default function PrivacyScreen({ myUid, onBack }) {
   const excludedList = privacy.presenceExcluded || [];
 
   return (
-    <div style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column", zIndex: 40 }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary }}>
+    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40 }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
         <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
         <Lock size={18} color="#fff" />
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>Privacy</span>
       </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+      <div className="nx-scroll" style={{ padding: 16 }}>
         {saveError && <div style={{ color: "#FF3B30", fontSize: 12.5, marginBottom: 10 }}>{saveError}</div>}
 
         <div style={{ fontWeight: 700, color: t.text, fontSize: 14, marginBottom: 8 }}>Last seen & online</div>

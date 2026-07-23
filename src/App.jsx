@@ -296,8 +296,8 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   // nested accordion properties against null (which whites out the screen).
   if (!userDoc) {
     return (
-      <div style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 25, display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary }}>
+      <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 25 }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
           <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 18 }}>Settings</span>
         </div>
@@ -307,12 +307,12 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   }
 
   return (
-    <div style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 25, display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary }}>
+    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 25 }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
         <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 18 }}>Settings</span>
       </div>
-      <div className="nx-scroll" style={{ flex: 1, padding: "12px 16px" }}>
+      <div className="nx-scroll" style={{ padding: "12px 16px" }}>
 
         {/* ═══ ACCOUNT & PROFILE ═══ */}
         <SectionCard title="Account & Profile" emoji="👤" sectionKey="account">
@@ -788,7 +788,7 @@ function AppShell() {
   };
 
   const containerStyle = {
-    width: "100%", height: "100vh", margin: "0 auto", position: "relative",
+    position: "absolute", inset: 0,
     overflow: "hidden",
     fontFamily: appFont,
   };

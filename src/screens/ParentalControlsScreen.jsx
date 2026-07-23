@@ -156,8 +156,8 @@ export default function ParentalControlsScreen({ myUid, onBack }) {
 
   if (!restrictions.pinHash && !settingUpPin) {
     return (
-      <div style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column", zIndex: 40 }}>
-        <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary }}>
+      <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40 }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
           <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
           <Shield size={18} color="#fff" />
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>Parental Controls</span>
@@ -178,8 +178,8 @@ export default function ParentalControlsScreen({ myUid, onBack }) {
 
   if (settingUpPin || (restrictions.pinHash && !unlocked)) {
     return (
-      <div style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column", zIndex: 40 }}>
-        <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary }}>
+      <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40 }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
           <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
           <Shield size={18} color="#fff" />
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>Parental Controls</span>
@@ -201,13 +201,13 @@ export default function ParentalControlsScreen({ myUid, onBack }) {
   );
 
   return (
-    <div style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column", zIndex: 40 }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary }}>
+    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40 }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
         <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
         <Shield size={18} color="#fff" />
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>Parental Controls</span>
       </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+      <div className="nx-scroll" style={{ padding: 16 }}>
         <div style={{ color: t.textMuted, fontSize: 13, marginBottom: 16, lineHeight: 1.5 }}>
           Media/voice/status blocks are enforced server-side. Unlocked with your PIN for this session.
         </div>

@@ -390,18 +390,18 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
   };
 
   return (
-    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column" }}>
-      <div style={{ padding: "18px 16px 12px", background: t.primary, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ color: "#fff", fontWeight: 800, fontSize: 22 }}>NexText</span>
-        <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
-          <Camera size={20} color="#fff" style={{ cursor: "pointer" }} onClick={openGlobalCamera} />
-          <Search size={20} color="#fff" style={{ cursor: "pointer" }} onClick={() => setShowSearch(!showSearch)} />
-          <Settings size={20} color="#fff" style={{ cursor: "pointer" }} onClick={onOpenSettings} />
+    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg }}>
+      <div style={{ padding: "18px 16px 12px", background: t.primary, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, position: "relative", zIndex: 1 }}>
+        <span style={{ color: "#fff", fontWeight: 800, fontSize: 22, flexShrink: 0 }}>NexText</span>
+        <div style={{ display: "flex", gap: 18, alignItems: "center", flexShrink: 0 }}>
+          <Camera size={20} color="#fff" style={{ cursor: "pointer", display: "block" }} onClick={openGlobalCamera} />
+          <Search size={20} color="#fff" style={{ cursor: "pointer", display: "block" }} onClick={() => setShowSearch(!showSearch)} />
+          <Settings size={20} color="#fff" style={{ cursor: "pointer", display: "block" }} onClick={onOpenSettings} />
         </div>
       </div>
 
       {showSearch && (
-        <div style={{ padding: "10px 16px 6px", background: t.surface, borderBottom: `1px solid ${t.border}` }}>
+        <div style={{ padding: "10px 16px 6px", background: t.surface, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", background: t.bg, borderRadius: 12, padding: "9px 12px", gap: 8 }}>
             <Search size={15} color={t.textMuted} />
             <input autoFocus value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search chats and messages…" style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 13.5, color: t.text }} />
@@ -410,7 +410,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", overflowX: "auto", borderBottom: `1px solid ${t.border}` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", overflowX: "auto", borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
         <div style={{ display: "flex", gap: 8, flex: 1, overflowX: "auto" }}>
           {[["all", "All"], ["unread", "Unread"], ["favorites", "Favorites"], ["groups", "Groups"], ...customLists.map((l) => [`custom_${l.id}`, l.name])].map(([key, label]) => (
             <div key={key} onClick={() => setActiveTab(key)} style={{ padding: "6px 14px", borderRadius: 16, background: activeTab === key ? t.primary : t.primaryLight, color: activeTab === key ? t.bubbleMeText : t.primary, fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
@@ -426,7 +426,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      <div className="nx-scroll" style={{ paddingBottom: hideNav ? 80 : 140 }}>
         {notArchived.some((c) => c.unreadCount?.[myUid] > 0) && (
           <div onClick={handleMarkAllRead} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 16px", cursor: "pointer", borderBottom: `1px solid ${t.border}` }}>
             <CheckCheck size={15} color={t.primary} />
@@ -648,8 +648,8 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
 
       {/* Group avatar tap context menu */}
       {groupMenu && (
-        <div onClick={() => setGroupMenu(null)} style={{ position: "absolute", inset: 0, zIndex: 9998 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -40%)", background: "rgba(30,30,30,0.97)", borderRadius: 12, overflow: "hidden", overflowY: "auto", maxHeight: 220, zIndex: 9999, boxShadow: "0 8px 30px rgba(0,0,0,0.5)", minWidth: 210, whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>
+        <div onClick={() => setGroupMenu(null)} style={{ position: "fixed", inset: 0, zIndex: 9998 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "rgba(30,30,30,0.97)", borderRadius: 12, overflow: "hidden", overflowY: "auto", maxHeight: "70vh", zIndex: 9999, boxShadow: "0 8px 30px rgba(0,0,0,0.5)", minWidth: 210, whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>
             <div onClick={() => { setGroupMenu(null); openGroupInfo(groupMenu); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer" }}>
               <Info size={16} color="#00A884" />
               <span style={{ color: "#fff", fontSize: 14, fontWeight: 600 }}>View Group Info</span>

@@ -122,7 +122,7 @@ export default function AuthScreen({ auth }) {
   };
 
   return (
-    <div style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column", zIndex: 65 }}>
+    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 65 }}>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "30px 28px", overflowY: "auto" }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ width: 64, height: 64, borderRadius: 18, background: t.primary, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>

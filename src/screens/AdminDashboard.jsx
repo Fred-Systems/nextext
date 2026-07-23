@@ -353,12 +353,12 @@ export default function AdminDashboard({ myUid, onBack }) {
 
   if (selectedUser) {
     return (
-    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column", zIndex: 46 }}>
-        <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary }}>
+    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 46 }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
           <ChevronLeft size={22} color="#fff" onClick={() => setSelectedUser(null)} style={{ cursor: "pointer" }} />
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>{selectedUser.displayName}</span>
         </div>
-        <div style={{ padding: 16, overflowY: "auto", flex: 1 }}>
+        <div className="nx-scroll" style={{ padding: 16 }}>
           <div style={{ background: t.surface, borderRadius: 14, padding: 16, marginBottom: 14 }}>
             <div style={{ fontSize: 13, color: t.textMuted }}>Username</div><div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>@{selectedUser.username}</div>
             <div style={{ fontSize: 13, color: t.textMuted }}>Email</div><div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>{selectedUser.email}</div>
@@ -392,8 +392,8 @@ export default function AdminDashboard({ myUid, onBack }) {
   }
 
   return (
-    <div style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column", zIndex: 46 }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary }}>
+    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 46 }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
         <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
         <ShieldCheck size={18} color="#fff" />
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>Admin Dashboard</span>

@@ -47,6 +47,14 @@ export default function Avatar({ photoURL, name, uid, size = 52, style = {}, has
     return () => avatarMenuListeners.delete(fn);
   }, []);
 
+  // Escape key dismiss
+  useEffect(() => {
+    if (!showMenu) return;
+    const handler = (e) => { if (e.key === "Escape") closeMenu(); };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [showMenu]);
+
   const handleClick = (e) => {
     e.stopPropagation();
     broadcastAvatarMenu(uid);
@@ -90,6 +98,7 @@ export default function Avatar({ photoURL, name, uid, size = 52, style = {}, has
     <div
       ref={avatarRef}
       onClick={handleClick}
+      className="nx-avatar-thumb"
       style={{
         width: outerSize, height: outerSize, borderRadius: "50%",
         background: hasActiveStatus ? ringColor : "transparent",
@@ -98,7 +107,7 @@ export default function Avatar({ photoURL, name, uid, size = 52, style = {}, has
       }}
     >
       {effectivePhotoURL ? (
-        <img src={effectivePhotoURL} alt={name || "avatar"} style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover" }} />
+        <img src={effectivePhotoURL} alt={name || "avatar"} className="nx-avatar-thumb" style={{ width: size, height: size, objectFit: "cover" }} />
       ) : (
         <div style={{ width: size, height: size, borderRadius: "50%", background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize, fontWeight: 700, color: "#fff", userSelect: "none" }}>
           {initial}
@@ -112,7 +121,7 @@ export default function Avatar({ photoURL, name, uid, size = 52, style = {}, has
       {avatarNode}
       {showMenu && createPortal(
         <div onClick={closeMenu} style={{ position: "fixed", inset: 0, zIndex: 99998 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -40%)", background: "rgba(30,30,30,0.97)", borderRadius: 12, overflow: "hidden", overflowY: "auto", maxHeight: 220, zIndex: 99999, boxShadow: "0 8px 30px rgba(0,0,0,0.5)", minWidth: 200, whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "rgba(30,30,30,0.97)", borderRadius: 12, overflowY: "auto", maxHeight: "70vh", zIndex: 99999, boxShadow: "0 8px 30px rgba(0,0,0,0.5)", minWidth: 200, whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>
             {hasActiveStatus && onStatusView && !blockStatus && (
               <div onClick={handleMenuStatus} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer" }}>
                 <Eye size={16} color="#00A884" />
@@ -140,7 +149,7 @@ export default function Avatar({ photoURL, name, uid, size = 52, style = {}, has
         document.body
       )}
       {fullscreen && createPortal(
-        <div onClick={() => setFullscreen(false)} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.95)", zIndex: 999999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+        <div onClick={() => setFullscreen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", zIndex: 999999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           {effectivePhotoURL ? (
             <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", padding: 16 }}>
               <img src={effectivePhotoURL} alt={name || "avatar"} style={{ maxWidth: "100%", maxHeight: "80%", borderRadius: 12, objectFit: "contain", display: "block" }} />
@@ -157,7 +166,7 @@ export default function Avatar({ photoURL, name, uid, size = 52, style = {}, has
             <X size={24} color="#fff" strokeWidth={3} />
           </div>
         </div>,
-        (typeof document !== "undefined" && document.getElementById("nextext-app-shell")) || document.body
+        document.body
       )}
     </>
   );

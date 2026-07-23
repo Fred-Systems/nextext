@@ -864,8 +864,8 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   };
 
   return (
-    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, display: "flex", flexDirection: "column", zIndex: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 12px", background: t.primary, position: "relative" }}>
+    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 12px", background: t.primary, position: "relative", flexShrink: 0 }}>
         <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
         <div onClick={onOpenProfile} style={{ cursor: "pointer" }}>
           {isGroup && chatMeta?.groupPhotoURL ? (
@@ -1043,7 +1043,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 10px", background: t.bg, position: "relative" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 10px", background: t.bg, position: "relative", flexShrink: 0 }}>
         {isBlockedByMe ? (
           <div style={{ flex: 1, textAlign: "center", padding: "12px", color: t.textMuted, fontSize: 13 }}>
             You've blocked this contact — unblock from their profile to send messages.

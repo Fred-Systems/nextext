@@ -61,29 +61,24 @@ body {
   margin: 0;
   text-align: left;
   border: none;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
   box-sizing: border-box;
   background: #121212;
   overflow: hidden;
   position: relative;
 }
 
-/* Squared-off containers, inputs, cards — but NOT avatars/images */
-.nx-card, .nx-input, .nx-btn, .nx-section,
-input, button, select, textarea {
-  border-radius: 0 !important;
-}
-
-/* All profile pictures and avatars must be circular */
-img, .avatar, [class*="Avatar"], .avatar-img {
+/* Small avatar thumbnails are circular. Chat images, status photos,
+   and fullscreen picture views stay square with normal corners. */
+.nx-avatar-thumb, .nx-avatar-thumb img {
   border-radius: 50% !important;
 }
-
-/* Status dots and badges stay circular */
 .status-dot, .badge-dot {
   border-radius: 50% !important;
+}
+
+/* Chat/media images stay square — never circular */
+.nx-media-img {
+  border-radius: 8px !important;
 }
 
 h1,
@@ -174,15 +169,24 @@ code {
   to   { height: 18px; }
 }
 
-/* NexText: app-wide scrolling for page content containers.
-   The screen root uses this class for layout; the inner scroll
-   area uses .nx-scroll for touch scrolling between header and nav. */
+/* Screen root: flex column layout filling the positioned parent.
+   Each screen applies position:absolute,inset:0 on its own root div;
+   this class only provides the flex column so header + content + nav stack. */
 .nx-screen {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
+/* Scrollable content area between a fixed header and fixed bottom nav.
+   Apply this to the inner content div, NOT the screen root. */
 .nx-scroll {
+  flex: 1;
   overflow-y: auto !important;
+  overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
