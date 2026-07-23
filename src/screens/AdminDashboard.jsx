@@ -707,6 +707,26 @@ export default function AdminDashboard({ myUid, onBack }) {
               {aiResetStatus || "Reset All AI Access"}
             </button>
           </div>
+          <div style={{ background: t.surface, borderRadius: 14, padding: 16, marginTop: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <EyeOff size={18} color="#8E8E93" />
+              <span style={{ fontWeight: 700, fontSize: 15, color: t.text }}>Tech Stack Visibility</span>
+            </div>
+            <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
+              Hide or show the Developer &amp; AI Tech Stack section in Settings for all users.
+            </div>
+            <div onClick={() => {
+              const newVal = !settings?.hideTechStack;
+              updateGlobalSettings({ hideTechStack: newVal }, myUid);
+            }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 10, background: settings?.hideTechStack ? "#FF3B30" : t.primaryLight, cursor: "pointer" }}>
+              <div style={{ width: 46, height: 26, borderRadius: 13, background: settings?.hideTechStack ? "#FF3B30" : t.border, position: "relative" }}>
+                <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: settings?.hideTechStack ? 23 : 3, transition: "left 0.15s" }} />
+              </div>
+              <span style={{ fontWeight: 700, fontSize: 14, color: settings?.hideTechStack ? "#fff" : t.text }}>
+                {settings?.hideTechStack ? "Tech Stack HIDDEN" : "Tech Stack Visible"}
+              </span>
+            </div>
+          </div>
         </div>
       )}
 

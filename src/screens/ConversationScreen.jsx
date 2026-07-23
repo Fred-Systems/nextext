@@ -814,7 +814,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       <div>
         <StatusReplyBlock statusRef={m.statusRef} mine={m.senderId === myUid} t={t} />
         <div onClick={(e) => { e.stopPropagation(); setFullscreenImage(m.mediaURL); }} style={{ cursor: "pointer" }}>
-          <img src={m.mediaURL} alt="Sent photo" style={{ maxWidth: 220, maxHeight: 280, borderRadius: 10, display: "block" }} />
+          <img src={m.mediaURL} alt="Sent photo" className="nx-media-img" style={{ maxWidth: 220, maxHeight: 280, borderRadius: 8, display: "block" }} />
         </div>
         {expiryText && <div style={{ fontSize: 10, opacity: 0.55, marginTop: 3, fontStyle: "italic" }}>{expiryText}</div>}
       </div>
@@ -822,7 +822,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     if (m.type === "video") return (
       <div>
         <StatusReplyBlock statusRef={m.statusRef} mine={m.senderId === myUid} t={t} />
-        <video src={m.mediaURL} controls style={{ maxWidth: 240, maxHeight: 280, borderRadius: 10, display: "block" }} />
+          <video src={m.mediaURL} controls className="nx-media-img" style={{ maxWidth: 240, maxHeight: 280, borderRadius: 8, display: "block" }} />
         {expiryText && <div style={{ fontSize: 10, opacity: 0.55, marginTop: 3, fontStyle: "italic" }}>{expiryText}</div>}
       </div>
     );

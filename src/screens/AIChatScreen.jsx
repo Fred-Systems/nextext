@@ -364,7 +364,7 @@ export default function AIChatScreen({ myUid, onBack }) {
                     <img
                       src={m.mediaURL}
                       alt="Sent photo"
-                      style={{ maxWidth: 220, maxHeight: 280, borderRadius: 10, display: "block", cursor: "pointer" }}
+                      style={{ maxWidth: 220, maxHeight: 280, borderRadius: 8, display: "block", cursor: "pointer" }}
                       onClick={() => setFullscreenImage(m.mediaURL)}
                     />
                   ) : (

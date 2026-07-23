@@ -103,7 +103,8 @@ export default function Avatar({ photoURL, name, uid, size = 52, style = {}, has
         width: outerSize, height: outerSize, borderRadius: "50%",
         background: hasActiveStatus ? ringColor : "transparent",
         display: "flex", alignItems: "center", justifyContent: "center",
-        flexShrink: 0, cursor: "pointer", position: "relative", ...style,
+        flexShrink: 0, cursor: "pointer", position: "relative",
+        overflow: "hidden", ...style,
       }}
     >
       {effectivePhotoURL ? (
@@ -152,7 +153,7 @@ export default function Avatar({ photoURL, name, uid, size = 52, style = {}, has
         <div onClick={() => setFullscreen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", zIndex: 999999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           {effectivePhotoURL ? (
             <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", padding: 16 }}>
-              <img src={effectivePhotoURL} alt={name || "avatar"} style={{ maxWidth: "100%", maxHeight: "80%", borderRadius: 12, objectFit: "contain", display: "block" }} />
+              <img src={effectivePhotoURL} alt={name || "avatar"} style={{ maxWidth: "100%", maxHeight: "80%", borderRadius: 0, objectFit: "contain", display: "block" }} />
             </div>
           ) : (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", background: "#111b21" }}>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { ThemeProvider, useTheme, themes, ROTATE_INTERVALS } from "./theme/ThemeContext";
 import { useAuth } from "./firebase/useAuth";
 import { usePresenceHeartbeat } from "./firebase/presence";
@@ -28,6 +29,7 @@ import StatusScreen from "./screens/StatusScreen";
 import GroupInfoScreen from "./screens/GroupInfoScreen";
 import UpdatePrompt from "./components/UpdatePrompt";
 import { checkForUpdate, openDownloadUrl, setLastSeenRelease } from "./updater/updateChecker";
+import { updateGlobalSettings, useGlobalSettings } from "./firebase/config-settings";
 
 const UI_SCALE_KEY = "nextext_ui_scale";
 const SCROLL_DOWN_KEY = "nextext_show_scrolldown";
@@ -185,6 +187,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   const [appLockPassSaved, setAppLockPassSaved] = useState(false);
   const [linkPreviewsOn, setLinkPreviewsOn] = useState(() => localStorage.getItem("nextext_link_previews") !== "off");
   const sysConfig = useSystemConfigHook();
+  const globalSettings = useGlobalSettings();
   const [aiRequestStatus, setAiRequestStatus] = useState("");
 
   const userRestrictions = userDoc?.restrictions || null;
@@ -192,6 +195,8 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   const [customStatusSaved, setCustomStatusSaved] = useState(false);
   const [aiContextOn, setAiContextOn] = useState(() => localStorage.getItem("nextext_ai_context") === "true");
   const [openSections, setOpenSections] = useState({ account: true });
+  const [techStackEditing, setTechStackEditing] = useState(false);
+  const [techStackDraft, setTechStackDraft] = useState(null);
 
   const toggleSection = (key) => setOpenSections((prev) => ({ ...(prev || {}), [key]: !(prev?.[key]) }));
 
@@ -589,6 +594,51 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
           )}
         </SectionCard>
 
+        {/* ═══ DEVELOPER & AI TECH STACK ═══ */}
+        {!globalSettings?.hideTechStack && (() => {
+          const defaultItems = [
+            { label: "Developer", value: "Fred-Systems" },
+            { label: "AI Model", value: "Claude Sonnet 5" },
+            { label: "Core Engine", value: "Big Pickle" },
+            { label: "Framework", value: "Hy 3" },
+            { label: "UI System", value: "Laguna S 2.1" },
+          ];
+          const items = techStackDraft || globalSettings?.techStackItems || defaultItems;
+          return (
+            <SectionCard title="Developer & AI Tech Stack" emoji="🛠️" sectionKey="techstack">
+              {items.map((item, idx) => (
+                <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: idx < items.length - 1 ? `1px solid ${t.border}` : "none" }}>
+                  {techStackEditing ? (
+                    <div style={{ display: "flex", gap: 8, flex: 1, alignItems: "center" }}>
+                      <input value={item.label} onChange={(e) => { const next = [...items]; next[idx] = { ...next[idx], label: e.target.value }; setTechStackDraft(next); }} style={{ width: 90, padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.border}`, fontSize: 12, background: t.bg, color: t.text, fontWeight: 600, textTransform: "uppercase" }} placeholder="Label" />
+                      <input value={item.value} onChange={(e) => { const next = [...items]; next[idx] = { ...next[idx], value: e.target.value }; setTechStackDraft(next); }} style={{ flex: 1, padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.border}`, fontSize: 14, background: t.bg, color: t.text }} placeholder="Value" />
+                      <div onClick={() => { const next = items.filter((_, i) => i !== idx); setTechStackDraft(next); }} style={{ width: 28, height: 28, borderRadius: 6, background: "#FFE5E5", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 16, color: "#FF3B30", flexShrink: 0 }}>×</div>
+                    </div>
+                  ) : (
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, color: t.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>{item.label}</div>
+                      <div style={{ fontSize: 15, color: t.text, fontWeight: 600, marginTop: 2 }}>{item.value}</div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {isAdmin && (
+                <div style={{ display: "flex", gap: 8, paddingTop: 10 }}>
+                  {techStackEditing ? (
+                    <>
+                      <div onClick={() => setTechStackDraft([...items, { label: "New", value: "" }])} style={{ padding: "7px 12px", borderRadius: 8, background: t.primaryLight, color: t.primary, fontWeight: 700, fontSize: 13, cursor: "pointer", flex: 1, textAlign: "center" }}>+ Add Row</div>
+                      <div onClick={() => { updateGlobalSettings({ techStackItems: items }, myUid); setTechStackEditing(false); setTechStackDraft(null); }} style={{ padding: "7px 14px", borderRadius: 8, background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 13, cursor: "pointer", flex: 1, textAlign: "center" }}>Save</div>
+                      <div onClick={() => { setTechStackEditing(false); setTechStackDraft(null); }} style={{ padding: "7px 14px", borderRadius: 8, background: t.border, color: t.textMuted, fontWeight: 700, fontSize: 13, cursor: "pointer", flex: 1, textAlign: "center" }}>Cancel</div>
+                    </>
+                  ) : (
+                    <div onClick={() => setTechStackEditing(true)} style={{ padding: "7px 14px", borderRadius: 8, background: t.primaryLight, color: t.primary, fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center" }}>Edit Tech Stack</div>
+                  )}
+                </div>
+              )}
+            </SectionCard>
+          );
+        })()}
+
         <div style={{ textAlign: "center", color: t.textMuted, fontSize: 11.5, marginTop: 10, paddingBottom: 10 }}>
           Developed by Fred-Systems
         </div>
@@ -678,16 +728,15 @@ function AppShell() {
     return unsub;
   }, [auth.user?.uid]);
 
-  // Native launch splash: show for 2s, fade out over 0.5s. Failsafe at 4s
-  // guarantees the splash ALWAYS dismisses even if onTransitionEnd misfires.
+  // Native launch splash: fade starts at 1.5s, hard dismiss at 3s.
   useEffect(() => {
     if (!showSplash) {
       setSplashVisible(false);
       return;
     }
-    const fadeTimer = setTimeout(() => setSplashFading(true), 2000);
-    const failsafe = setTimeout(() => { setSplashFading(true); setSplashVisible(false); }, 4000);
-    return () => { clearTimeout(fadeTimer); clearTimeout(failsafe); };
+    const fadeTimer = setTimeout(() => setSplashFading(true), 1500);
+    const dismissTimer = setTimeout(() => { setSplashVisible(false); }, 3000);
+    return () => { clearTimeout(fadeTimer); clearTimeout(dismissTimer); };
   }, [showSplash]);
 
   // Auto-check for app updates once after login (delayed 5s to not block load)
@@ -951,7 +1000,7 @@ function AppShell() {
         );
       })()}
 
-      {splashVisible && (
+      {createPortal(splashVisible && (
         <div
           onTransitionEnd={() => { if (splashFading) setSplashVisible(false); }}
           style={{
@@ -972,7 +1021,7 @@ function AppShell() {
           />
           <style>{`@keyframes nextext-spin { to { transform: rotate(360deg); } }`}</style>
         </div>
-      )}
+      ), document.body)}
 
       {showUpdatePrompt && pendingUpdate && (
         <UpdatePrompt
