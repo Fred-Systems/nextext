@@ -7,21 +7,19 @@
     <title>nextext</title>
     <style>html,body,#root{background:#0B141A !important;margin:0;padding:0;height:100%;}</style>
     <script>
-    window.__nxModuleErrors = [];
+    window.__nxCapturedErrors = [];
     window.nxFail = function(msg) {
-      window.__nxModuleErrors.push(msg);
-      function tryShow() {
-        if (!document.body) { setTimeout(tryShow, 50); return; }
-        var e = document.createElement('div');
-        e.style.cssText = 'position:fixed;inset:0;z-index:99999999;background:#FF3B30;color:#fff;font:bold 14px monospace;padding:24px;white-space:pre-wrap;word-break:break-all;overflow:auto;';
-        e.textContent = 'SCRIPT LOAD FAILED:\n' + msg;
-        document.body.appendChild(e);
-      }
-      tryShow();
+      window.__nxCapturedErrors.push('FAIL: ' + msg);
     };
+    window.addEventListener('error', function(e) {
+      window.__nxCapturedErrors.push('ERROR: ' + (e.message||'?') + ' | ' + (e.filename||'?') + ':' + (e.lineno||'?') + ':' + (e.colno||'?') + ' | ' + ((e.error&&e.error.stack)||'no stack'));
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      var r = e.reason || {};
+      window.__nxCapturedErrors.push('REJECT: ' + (r.message || String(r)) + ' | ' + (r.stack || 'no stack'));
+    });
     </script>
-    <script type="module" src="/src/main.jsx"
-      onerror="nxFail('onerror fired on module script: src=' + (this&&this.getAttribute&&this.getAttribute('src')) + ' msg=' + (event&&event.message||'none'))"></script>
+    <script type="module" src="/src/main.jsx"></script>
   </head>
   <body style="margin:0;background:#0B141A;">
     <div id="nx-boot-error" style="position:fixed;inset:0;z-index:999999;pointer-events:none;overflow:auto;display:none;"></div>
@@ -39,13 +37,15 @@
       </div>
     </noscript>
     <script>
-    var NX_VER = 'iife-v1';
+    var NX_VER = 'iife-v2';
     var nxBootStart = Date.now();
+
     var nxBticker = document.createElement('div');
     nxBticker.id = 'nx-boot-ticker';
     nxBticker.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:99999999;background:rgba(255,0,0,0.9);color:#fff;font:bold 14px monospace;padding:8px 12px;text-align:center;letter-spacing:1px;';
     nxBticker.textContent = 'v' + NX_VER + ' BOOT 0s';
     document.body.appendChild(nxBticker);
+
     setInterval(function(){
       var s = Math.round((Date.now()-nxBootStart)/1000);
       var root = document.getElementById('root');
@@ -53,25 +53,29 @@
       var splash = !!document.querySelector('[data-nx-splash]');
       nxBticker.textContent = 'v' + NX_VER + ' ' + s + 's root:' + kids + ' splash:' + splash;
     }, 500);
-    function showBootError(html) {
-      var el = document.getElementById('nx-boot-error');
-      if (el) { el.style.display = 'block'; el.style.pointerEvents = 'auto'; el.innerHTML = html; }
-    }
-    window.addEventListener('error', function(e) {
-      showBootError('<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">' + (e.message||'Error') + '\n' + (e.filename||'') + ':' + (e.lineno||'') + '\n' + ((e.error&&e.error.stack)||'') + '</pre>');
+
+    fetch('./assets/' + (function(){var s=document.querySelectorAll('script[src]');return s.length>0?s[s.length-1].getAttribute('src').split('/').pop():'unknown'})(), {method:'HEAD'}).then(function(r) {
+      window.__nxBundleStatus = r.status;
+      if (!r.ok) window.__nxCapturedErrors.push('FETCH: bundle HEAD returned ' + r.status);
+      else window.__nxBundleExists = true;
+    }).catch(function(e) {
+      window.__nxCapturedErrors.push('FETCH ERR: ' + e.message);
     });
-    window.addEventListener('unhandledrejection', function(e) {
-      showBootError('<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">Unhandled: ' + (e.reason && e.reason.stack || e.reason) + '</pre>');
-    });
+
     setTimeout(function() {
       var root = document.getElementById('root');
       if (root && root.querySelector('[data-nx-splash]')) {
-        var allScripts = document.querySelectorAll('script[src]');
-        var srcs = [];
-        for (var i = 0; i < allScripts.length; i++) srcs.push(allScripts[i].getAttribute('src') + ' type=' + allScripts[i].type);
-        var errCount = window.__nxModuleErrors ? window.__nxModuleErrors.length : 0;
-        var errList = window.__nxModuleErrors ? window.__nxModuleErrors.join('\n') : 'none';
-        showBootError('<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">Boot timed out (12s). App did not load.\nScripts found: ' + srcs.join('\n') + '\n\nLoad errors caught: ' + errCount + '\n' + errList + '\n\nIf script type=module: file:// protocol may block ESM.\nVite should have converted to classic script (IIFE).</pre>');
+        var errCount = window.__nxCapturedErrors.length;
+        var errText = errCount > 0 ? window.__nxCapturedErrors.join('\n---\n') : '(none)';
+        var el = document.getElementById('nx-boot-error');
+        if (el) {
+          el.style.display = 'block';
+          el.style.pointerEvents = 'auto';
+          el.innerHTML = '<pre style="color:#ff6b6b;padding:16px;font-size:11px;white-space:pre-wrap;word-break:break-all;background:#0B141A;min-height:100vh;">' +
+            'v' + NX_VER + ' | Boot timeout (12s)\n' +
+            'bundle fetch: ' + (window.__nxBundleStatus||'?') + ' exists=' + (window.__nxBundleExists||false) + '\n' +
+            'errors (' + errCount + '):\n' + errText + '</pre>';
+        }
       }
     }, 12000);
     </script>
