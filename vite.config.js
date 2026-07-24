@@ -25,7 +25,7 @@ export default defineConfig({
       transformIndexHtml(html) {
         return html.replace(
           /<script type="module" src="([^"]+)"><\/script>/,
-          '<script src="$1"></script>'
+          '<script defer src="$1"></script>'
         )
       },
     },
