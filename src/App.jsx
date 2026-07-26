@@ -840,6 +840,8 @@ function AppShell() {
     position: "absolute", inset: 0,
     overflow: "hidden",
     fontFamily: appFont,
+    width: "100%",
+    height: "100%",
   };
 
   if (auth.loading) {
