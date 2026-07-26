@@ -2,6 +2,14 @@
 *:focus { outline: none !important; }
 *::-moz-focus-inner { border: 0 !important; }
 input:focus, button:focus, div:focus, a:focus { outline: none !important; }
+* {
+  -webkit-tap-highlight-color: transparent !important;
+  tap-highlight-color: transparent !important;
+}
+.nextext-chat-row:active {
+  background-color: rgba(128, 128, 128, 0.08) !important;
+  transition: background-color 0.06s ease !important;
+}
 
 /* Small avatar thumbnails are circular. Chat images, status photos,
    and fullscreen picture views stay square with normal corners. */
@@ -52,11 +60,7 @@ p {
 
 /* NexText: chat list row interaction polish */
 .nextext-chat-row {
-  transition: background-color 0.12s ease;
   border-bottom: 1px solid rgba(128, 128, 128, 0.08);
-}
-.nextext-chat-row:active {
-  background-color: rgba(128, 128, 128, 0.08);
 }
 
 /* NexText: animated voice waveform bars */

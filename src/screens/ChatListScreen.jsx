@@ -321,7 +321,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
         onTouchEnd={() => handleTouchEnd(c.id)}
         onClick={() => { if (!isSwiped) openChatRow(c); else setSwipedChatId(null); }}
         className="nextext-chat-row"
-        style={{ display: "flex", alignItems: "center", gap, padding: rowPadding, cursor: "pointer", background: t.bg, position: "relative", zIndex: 1, transform: isSwiped ? "translateX(-200px)" : "translateX(0)", transition: "transform 0.2s ease" }}
+        style={{ display: "flex", alignItems: "center", gap, padding: rowPadding, cursor: "pointer", background: t.bg, position: "relative", zIndex: 1, transform: isSwiped ? "translateX(-200px)" : "translateX(0)", transition: "transform 0.2s ease", touchAction: "pan-y" }}
       >
       {c.type === "group" ? (
         <div style={{ position: "relative", width: avatarSize, height: avatarSize, flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); setGroupMenu(c); }}>

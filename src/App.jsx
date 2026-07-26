@@ -391,6 +391,11 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
               </div>
             )}
             {appLockEnabled && appLockPassSaved && <div style={{ fontSize: 12, color: t.primary, fontWeight: 600, marginTop: 6, paddingLeft: 50 }}>Password saved &bull;&bull;&bull;&bull;&bull;</div>}
+            {appLockEnabled && (appLockPassSaved || localStorage.getItem("nextext_app_lock_pass")) && (
+              <div onClick={() => { localStorage.removeItem("nextext_app_lock_pass"); localStorage.setItem("nextext_app_lock", "pending"); setAppLockPassSaved(false); }} style={{ fontSize: 12, color: "#FF3B30", fontWeight: 600, marginTop: 4, paddingLeft: 50, cursor: "pointer" }}>
+                Reset password
+              </div>
+            )}
           </div>
 
           {/* Locked chats password */}
@@ -432,13 +437,19 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
             </div>
             <div
               onClick={() => {
-                const isFull = !!document.fullscreenElement;
-                if (isFull) { document.exitFullscreen().catch(() => {}); }
-                else { document.documentElement.requestFullscreen().catch(() => {}); }
+                const isFull = !!(document.fullscreenElement || document.webkitFullscreenElement);
+                if (isFull) {
+                  if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+                  else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                } else {
+                  const el = document.documentElement;
+                  if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+                  else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+                }
               }}
-              style={{ width: 46, height: 26, borderRadius: 13, background: document.fullscreenElement ? t.primary : t.border, position: "relative", cursor: "pointer", flexShrink: 0 }}
+              style={{ width: 46, height: 26, borderRadius: 13, background: (document.fullscreenElement || document.webkitFullscreenElement) ? t.primary : t.border, position: "relative", cursor: "pointer", flexShrink: 0 }}
             >
-              <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: document.fullscreenElement ? 23 : 3, transition: "left 0.15s" }} />
+              <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: (document.fullscreenElement || document.webkitFullscreenElement) ? 23 : 3, transition: "left 0.15s" }} />
             </div>
           </div>
 
@@ -618,10 +629,8 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
         {!globalSettings?.hideTechStack && (() => {
           const defaultItems = [
             { label: "Developer", value: "Fred-Systems" },
-            { label: "AI Models", value: "DeepSeek V4 Flash, Claude Sonnet 5" },
-            { label: "Core Engine", value: "Big Pickle" },
-            { label: "Framework", value: "Hy 3" },
-            { label: "UI System", value: "Laguna S 2.1" },
+            { label: "Base App", value: "Built with Claude Sonnet 5" },
+            { label: "Advanced Features & Bug Fixing", value: "Big Pickle, Hy 3, DeepSeek V4 Flash, Laguna S 2.1" },
           ];
           const items = techStackDraft || globalSettings?.techStackItems || defaultItems;
           return (
@@ -1087,6 +1096,16 @@ function AppShell() {
 }
 
 export default function App() {
+  useEffect(() => {
+    const requestPermissions = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        stream.getTracks().forEach((t) => t.stop());
+      } catch {}
+    };
+    requestPermissions();
+  }, []);
+
   return (
     <ThemeProvider>
       <AppShell />

@@ -4,6 +4,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
 } from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
@@ -37,6 +39,25 @@ export function useAuth() {
             setUserDoc(null);
           }
         } else {
+          // Check for redirect result (Capacitor/WebView Google sign-in)
+          try {
+            const result = await getRedirectResult(auth);
+            if (result?.user) {
+              const ref = doc(db, "users", result.user.uid);
+              const snap = await getDoc(ref);
+              if (!snap.exists()) {
+                await createUserProfile(result.user, {
+                  email: result.user.email,
+                  username: result.user.email.split("@")[0],
+                  displayName: result.user.displayName || "New User",
+                });
+              }
+              setUserDoc(snap.exists() ? snap.data() : null);
+              setUser(result.user);
+            }
+          } catch (e) {
+            console.error("[useAuth] Redirect result error:", e);
+          }
           setUserDoc(null);
         }
         setLoading(false);
@@ -67,17 +88,26 @@ export function useAuth() {
   }
 
   async function signInWithGoogle() {
-    const cred = await signInWithPopup(auth, googleProvider);
-    const ref = doc(db, "users", cred.user.uid);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      await createUserProfile(cred.user, {
-        email: cred.user.email,
-        username: cred.user.email.split("@")[0],
-        displayName: cred.user.displayName || "New User",
-      });
+    try {
+      const cred = await signInWithPopup(auth, googleProvider);
+      const ref = doc(db, "users", cred.user.uid);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await createUserProfile(cred.user, {
+          email: cred.user.email,
+          username: cred.user.email.split("@")[0],
+          displayName: cred.user.displayName || "New User",
+        });
+      }
+      return cred.user;
+    } catch (e) {
+      if (e.code === "auth/popup-blocked" || e.code === "auth/popup-closed-by-user" || e.code === "auth/unauthorized-domain") {
+        // Fall back to redirect for WebView/Capacitor
+        await signInWithRedirect(auth, googleProvider);
+        return null;
+      }
+      throw e;
     }
-    return cred.user;
   }
 
   async function createUserProfile(fbUser, { email, username, displayName }) {

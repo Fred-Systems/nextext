@@ -24,7 +24,7 @@ function broadcastAvatarMenu(openUid) {
   avatarMenuListeners.forEach((fn) => fn(openUid));
 }
 
-export default function Avatar({ photoURL, name, uid, size = 52, style = {}, hasActiveStatus = false, statusViewed = false, onStatusView, onViewProfile, onViewPicture, onViewGroupInfo, hideLocalOverride = false, blockStatus = false }) {
+export default React.memo(function Avatar({ photoURL, name, uid, size = 52, style = {}, hasActiveStatus = false, statusViewed = false, onStatusView, onViewProfile, onViewPicture, onViewGroupInfo, hideLocalOverride = false, blockStatus = false }) {
   const [showMenu, setShowMenu] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const avatarRef = useRef(null);
@@ -187,4 +187,4 @@ export default function Avatar({ photoURL, name, uid, size = 52, style = {}, has
       )}
     </>
   );
-}
+});
