@@ -18,7 +18,7 @@ export default function AppLockScreen({ onUnlock }) {
   };
 
   return (
-    <div style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 100, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18 }}>
+    <div style={{ position: "fixed", inset: 0, background: t.bg, zIndex: 999999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18 }}>
       <div style={{ width: 64, height: 64, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <Lock size={28} color={t.primary} />
       </div>

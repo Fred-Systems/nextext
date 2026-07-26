@@ -124,7 +124,7 @@ export default function AuthScreen({ auth }) {
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 65, display: "flex", flexDirection: "column", width: "100%", height: "100%", overflow: "hidden", boxSizing: "border-box" }}>
       <div style={{ height: 4, background: t.primary, flexShrink: 0 }} />
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "30px 28px", overflowY: "auto" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "30px 28px 50px", overflowY: "auto" }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ width: 64, height: 64, borderRadius: 18, background: t.primary, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
             <MessageSquare size={30} color={t.bubbleMeText} />
@@ -226,6 +226,11 @@ function friendlyError(code) {
     "auth/wrong-password": "Incorrect password.",
     "auth/user-not-found": "No account found with that email.",
     "auth/invalid-credential": "Incorrect email or password.",
+    "auth/popup-closed-by-user": "Google sign-in was cancelled. Please try again.",
+    "auth/popup-blocked": "Pop-up was blocked by your browser. Please allow pop-ups for this site.",
+    "auth/unauthorized-domain": "Google sign-in is not allowed on this device. Try signing in with email instead.",
+    "auth/cancelled-popup-request": "Another pop-up request is already in progress.",
   };
+  console.error("[Auth Error]", code);
   return map[code] || "Something went wrong — please try again.";
 }

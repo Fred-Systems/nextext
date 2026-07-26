@@ -180,11 +180,11 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   const profilePhotoRef = useRef(null);
   const [wallpaperSaved, setWallpaperSaved] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
-  const [lockedChatsPass, setLockedChatsPass] = useState(() => localStorage.getItem("nextext_locked_chats_password") || "");
   const [lockedChatsPassSaved, setLockedChatsPassSaved] = useState(false);
+  const lockedChatsPassRef = useRef(null);
   const [appLockEnabled, setAppLockEnabled] = useState(() => localStorage.getItem("nextext_app_lock") === "true");
-  const [appLockPass, setAppLockPass] = useState("");
   const [appLockPassSaved, setAppLockPassSaved] = useState(false);
+  const appLockPassRef = useRef(null);
   const [linkPreviewsOn, setLinkPreviewsOn] = useState(() => localStorage.getItem("nextext_link_previews") !== "off");
   const sysConfig = useSystemConfigHook();
   const globalSettings = useGlobalSettings();
@@ -194,7 +194,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   const customStatusInputRef = useRef(null);
   const [customStatusSaved, setCustomStatusSaved] = useState(false);
   const [aiContextOn, setAiContextOn] = useState(() => localStorage.getItem("nextext_ai_context") === "true");
-  const [openSections, setOpenSections] = useState({ account: true });
+  const [openSections, setOpenSections] = useState({});
   const [techStackEditing, setTechStackEditing] = useState(false);
   const [techStackDraft, setTechStackDraft] = useState(null);
 
@@ -386,8 +386,8 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
             </div>
             {appLockEnabled && !appLockPassSaved && (
               <div style={{ display: "flex", gap: 8, marginTop: 10, paddingLeft: 50 }}>
-                <input type="password" value={appLockPass} onChange={(e) => setAppLockPass(e.target.value)} placeholder="Set PIN or password…" style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 13, boxSizing: "border-box" }} />
-                <button onClick={() => { if (!appLockPass.trim()) return; localStorage.setItem("nextext_app_lock", "true"); localStorage.setItem("nextext_app_lock_pass", appLockPass); setAppLockPassSaved(true); setAppLockPass(""); }} disabled={!appLockPass.trim()} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: appLockPass.trim() ? t.primary : t.border, color: appLockPass.trim() ? t.bubbleMeText : t.textMuted, fontWeight: 700, fontSize: 13, cursor: appLockPass.trim() ? "pointer" : "not-allowed" }}>Save</button>
+                <input ref={appLockPassRef} type="password" defaultValue="" placeholder="Set PIN or password…" style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 13, boxSizing: "border-box" }} />
+                <button onClick={() => { const val = appLockPassRef.current?.value || ""; if (!val.trim()) return; localStorage.setItem("nextext_app_lock", "true"); localStorage.setItem("nextext_app_lock_pass", val); setAppLockPassSaved(true); if (appLockPassRef.current) appLockPassRef.current.value = ""; }} disabled={false} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Save</button>
               </div>
             )}
             {appLockEnabled && appLockPassSaved && <div style={{ fontSize: 12, color: t.primary, fontWeight: 600, marginTop: 6, paddingLeft: 50 }}>Password saved &bull;&bull;&bull;&bull;&bull;</div>}
@@ -398,8 +398,8 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
             <div style={{ fontWeight: 600, color: t.text, fontSize: 15, marginBottom: 4 }}>Locked chats password</div>
             <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 8 }}>Set a password to hide chats. Type it in the search bar to reveal them.</div>
             <div style={{ display: "flex", gap: 8 }}>
-              <input type="password" value={lockedChatsPass} onChange={(e) => setLockedChatsPass(e.target.value)} placeholder="Set password…" style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 13, boxSizing: "border-box" }} />
-              <button onClick={() => { localStorage.setItem("nextext_locked_chats_password", lockedChatsPass); setLockedChatsPassSaved(true); setTimeout(() => setLockedChatsPassSaved(false), 1800); }} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{lockedChatsPassSaved ? "Saved ✓" : "Save"}</button>
+              <input ref={lockedChatsPassRef} type="password" defaultValue={localStorage.getItem("nextext_locked_chats_password") || ""} placeholder="Set password…" style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 13, boxSizing: "border-box" }} />
+              <button onClick={() => { const val = lockedChatsPassRef.current?.value || ""; localStorage.setItem("nextext_locked_chats_password", val); setLockedChatsPassSaved(true); setTimeout(() => setLockedChatsPassSaved(false), 1800); }} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{lockedChatsPassSaved ? "Saved ✓" : "Save"}</button>
             </div>
           </div>
         </SectionCard>
@@ -421,6 +421,24 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
               style={{ width: 46, height: 26, borderRadius: 13, background: (showSplash ?? true) ? t.primary : t.border, position: "relative", cursor: "pointer", flexShrink: 0 }}
             >
               <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: showSplash ? 23 : 3, transition: "left 0.15s" }} />
+            </div>
+          </div>
+
+          {/* Fullscreen mode toggle */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 0", borderTop: `1px solid ${t.border}` }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, color: t.text, fontSize: 15 }}>Full Screen Mode</div>
+              <div style={{ fontSize: 12.5, color: t.textMuted, marginTop: 1 }}>Hide status bar and navigation for immersive experience.</div>
+            </div>
+            <div
+              onClick={() => {
+                const isFull = !!document.fullscreenElement;
+                if (isFull) { document.exitFullscreen().catch(() => {}); }
+                else { document.documentElement.requestFullscreen().catch(() => {}); }
+              }}
+              style={{ width: 46, height: 26, borderRadius: 13, background: document.fullscreenElement ? t.primary : t.border, position: "relative", cursor: "pointer", flexShrink: 0 }}
+            >
+              <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: document.fullscreenElement ? 23 : 3, transition: "left 0.15s" }} />
             </div>
           </div>
 
@@ -600,7 +618,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
         {!globalSettings?.hideTechStack && (() => {
           const defaultItems = [
             { label: "Developer", value: "Fred-Systems" },
-            { label: "AI Model", value: "Claude Sonnet 5" },
+            { label: "AI Models", value: "DeepSeek V4 Flash, Claude Sonnet 5" },
             { label: "Core Engine", value: "Big Pickle" },
             { label: "Framework", value: "Hy 3" },
             { label: "UI System", value: "Laguna S 2.1" },
@@ -795,6 +813,19 @@ function AppShell() {
 
   useEffect(() => { localStorage.setItem(UI_SCALE_KEY, String(uiScale)); }, [uiScale]);
   useEffect(() => { localStorage.setItem(SCROLL_DOWN_KEY, String(showScrollDown)); }, [showScrollDown]);
+
+  // Re-lock app whenever the user returns (from background, screen off, etc.)
+  useEffect(() => {
+    const relock = () => {
+      const enabled = localStorage.getItem("nextext_app_lock") === "true";
+      const pass = localStorage.getItem("nextext_app_lock_pass");
+      const shouldLock = enabled && !!pass;
+      if (shouldLock) setAppLocked(true);
+    };
+    document.addEventListener("visibilitychange", relock);
+    window.addEventListener("focus", relock);
+    return () => { document.removeEventListener("visibilitychange", relock); window.removeEventListener("focus", relock); };
+  }, []);
 
   // Re-evaluate app lock state whenever the user returns to the list screen
   // (this catches toggles made in Settings without needing a cross-tab event).

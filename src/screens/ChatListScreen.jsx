@@ -19,6 +19,14 @@ import FindFriendsScreen from "./FindFriendsScreen";
 import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { db } from "../firebase/config";
 
+function highlightText(text, query, color) {
+  if (!query.trim() || !text) return text;
+  const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi"));
+  return parts.map((part, i) => part.toLowerCase() === query.toLowerCase()
+    ? React.createElement("span", { key: i, style: { background: color + "44", color: color, fontWeight: 700, borderRadius: 3, padding: "0 2px" } }, part)
+    : part);
+}
+
 function ChatRowMeta({ myUid, otherUid, chatId, t, compact }) {
   const presence = usePresence(otherUid, myUid);
   const [theyTyping, setTheyTyping] = useState(false);
@@ -364,7 +372,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
         {c.type !== "group" && <ChatRowMeta myUid={myUid} otherUid={otherUid} chatId={c.id} t={t} compact={compactList} />}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minWidth: 0 }}>
           <span style={{ fontSize: msgSize, color: t.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-            {c.lastMessage?.text || "No messages yet"}
+            {searchQuery.trim() ? highlightText(c.lastMessage?.text || "No messages yet", searchQuery, t.accent) : (c.lastMessage?.text || "No messages yet")}
           </span>
           {c.unreadCount?.[myUid] > 0 && (
             <span style={{ background: t.accent, color: "#fff", fontSize: 11, fontWeight: 700, borderRadius: 10, minWidth: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 6px", flexShrink: 0 }}>
@@ -391,7 +399,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
 
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg }}>
-      {topBarVisible && <div style={{ padding: "12px 16px 10px", background: t.surface, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, position: "relative", zIndex: 1, borderBottom: `1px solid ${t.border}` }}>
+      {topBarVisible && <div style={{ padding: "12px 16px 6px", background: t.surface, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, position: "relative", zIndex: 1 }}>
         <span style={{ color: t.text, fontWeight: 800, fontSize: 20, flexShrink: 0 }}>NexText</span>
         <div style={{ display: "flex", gap: 18, alignItems: "center", flexShrink: 0 }}>
           <Camera size={20} color={t.text} style={{ cursor: "pointer", display: "block" }} onClick={openGlobalCamera} />
@@ -401,11 +409,11 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
       </div>}
 
       {(topBarVisible && showSearch) && (
-        <div style={{ padding: "10px 16px 6px", background: t.surface, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", background: t.bg, borderRadius: 12, padding: "9px 12px", gap: 8 }}>
-            <Search size={15} color={t.textMuted} />
-            <input autoFocus value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search chats and messages…" style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 13.5, color: t.text }} />
-            {searchQuery && <X size={15} color={t.textMuted} onClick={() => setSearchQuery("")} style={{ cursor: "pointer" }} />}
+        <div style={{ padding: "0 16px 8px", background: t.surface, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", background: t.bg, borderRadius: 10, padding: "7px 12px", gap: 8 }}>
+            <Search size={14} color={t.textMuted} />
+            <input autoFocus value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search chats and messages…" style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 13, color: t.text }} />
+            {searchQuery && <X size={14} color={t.textMuted} onClick={() => setSearchQuery("")} style={{ cursor: "pointer" }} />}
           </div>
         </div>
       )}

@@ -166,7 +166,7 @@ export default function Avatar({ photoURL, name, uid, size = 52, style = {}, has
         </div>,
         document.body
       )}
-      {fullscreen && createPortal(
+      {fullscreen && (
         <div onClick={() => setFullscreen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", zIndex: 999999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           {effectivePhotoURL ? (
             <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", padding: 16 }}>
@@ -183,8 +183,7 @@ export default function Avatar({ photoURL, name, uid, size = 52, style = {}, has
           <div onClick={() => setFullscreen(false)} style={{ position: "absolute", top: 16, right: 16, width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,0.25)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 1000000 }}>
             <X size={24} color="#fff" strokeWidth={3} />
           </div>
-        </div>,
-        document.body
+        </div>
       )}
     </>
   );

@@ -1,4 +1,7 @@
 *, *::before, *::after { box-sizing: border-box; }
+*:focus { outline: none !important; }
+*::-moz-focus-inner { border: 0 !important; }
+input:focus, button:focus, div:focus, a:focus { outline: none !important; }
 
 /* Small avatar thumbnails are circular. Chat images, status photos,
    and fullscreen picture views stay square with normal corners. */
@@ -78,6 +81,7 @@ p {
    Apply this to the inner content div, NOT the screen root. */
 .nx-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch;
