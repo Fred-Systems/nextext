@@ -392,7 +392,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
             )}
             {appLockEnabled && appLockPassSaved && <div style={{ fontSize: 12, color: t.primary, fontWeight: 600, marginTop: 6, paddingLeft: 50 }}>Password saved &bull;&bull;&bull;&bull;&bull;</div>}
             {appLockEnabled && (appLockPassSaved || localStorage.getItem("nextext_app_lock_pass")) && (
-              <div onClick={() => { localStorage.removeItem("nextext_app_lock_pass"); localStorage.setItem("nextext_app_lock", "pending"); setAppLockPassSaved(false); }} style={{ fontSize: 12, color: "#FF3B30", fontWeight: 600, marginTop: 4, paddingLeft: 50, cursor: "pointer" }}>
+              <div onClick={() => { const old = localStorage.getItem("nextext_app_lock_pass"); const input = prompt("Enter current password to reset:"); if (input !== old) { alert("Incorrect password."); return; } localStorage.removeItem("nextext_app_lock_pass"); localStorage.setItem("nextext_app_lock", "pending"); setAppLockPassSaved(false); }} style={{ fontSize: 12, color: "#FF3B30", fontWeight: 600, marginTop: 4, paddingLeft: 50, cursor: "pointer" }}>
                 Reset password
               </div>
             )}
@@ -901,7 +901,7 @@ function AppShell() {
     return <div style={containerStyle}><AuthScreen auth={auth} /></div>;
   }
   if (appLocked) {
-    return <div style={containerStyle}><AppLockScreen onUnlock={() => setAppLocked(false)} /></div>;
+    return <AppLockScreen onUnlock={() => setAppLocked(false)} />;
   }
 
   const isAdmin = auth.userDoc?.role === "admin" || auth.userDoc?.isAdmin === true;

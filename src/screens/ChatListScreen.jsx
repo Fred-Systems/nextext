@@ -76,6 +76,8 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
   const [showGlobalCamera, setShowGlobalCamera] = useState(false);
   const [globalCameraError, setGlobalCameraError] = useState("");
   const [capturedPhoto, setCapturedPhoto] = useState(null);
+  const [cameraPreviewStep, setCameraPreviewStep] = useState(false);
+  const [cameraCaption, setCameraCaption] = useState("");
   const [customLists, setCustomLists] = useState(() => {
     try { const raw = localStorage.getItem("nextext_custom_lists"); return raw ? JSON.parse(raw) : []; } catch { return []; }
   });
@@ -231,6 +233,8 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
       if (!blob) return;
       closeGlobalCamera();
       setCapturedPhoto(blob);
+      setCameraCaption("");
+      setCameraPreviewStep(true);
     }, "image/jpeg", 0.92);
   };
 
@@ -563,16 +567,16 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
 
       {showGlobalCamera && (
         <div style={{ position: "absolute", inset: 0, background: "#000", zIndex: 60, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", flexShrink: 0 }}>
             <span onClick={closeGlobalCamera} style={{ color: "#fff", fontSize: 15, cursor: "pointer" }}>Cancel</span>
             <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>Camera</span>
             <span style={{ width: 50 }} />
           </div>
-          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-            <video ref={globalCameraVideoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", minHeight: 0 }}>
+            <video ref={globalCameraVideoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", maxHeight: "70vh", objectFit: "contain" }} />
           </div>
-          {globalCameraError && <div style={{ color: "#FF3B30", fontSize: 13, textAlign: "center", padding: 8 }}>{globalCameraError}</div>}
-          <div style={{ display: "flex", justifyContent: "center", padding: "20px 0 30px" }}>
+          {globalCameraError && <div style={{ color: "#FF3B30", fontSize: 13, textAlign: "center", padding: 8, flexShrink: 0 }}>{globalCameraError}</div>}
+          <div style={{ display: "flex", justifyContent: "center", padding: "16px 0 24px", flexShrink: 0 }}>
             <div onClick={captureGlobalPhoto} style={{ width: 64, height: 64, borderRadius: "50%", border: "4px solid #fff", background: "rgba(255,255,255,0.3)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <div style={{ width: 52, height: 52, borderRadius: "50%", background: "#fff" }} />
             </div>
@@ -580,9 +584,9 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
         </div>
       )}
 
-      {capturedPhoto && (
+      {capturedPhoto && !cameraPreviewStep && (
         <div style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 60, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", background: t.primary }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", background: t.primary, flexShrink: 0 }}>
             <span onClick={() => setCapturedPhoto(null)} style={{ color: "#fff", fontSize: 15, cursor: "pointer" }}>Cancel</span>
             <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>Send to…</span>
             <span style={{ width: 50 }} />
@@ -608,6 +612,35 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
                 <span style={{ fontSize: 15, fontWeight: 600, color: t.text }}>{c.groupName}</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {capturedPhoto && cameraPreviewStep && (
+        <div style={{ position: "absolute", inset: 0, background: "#000", zIndex: 60, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", flexShrink: 0 }}>
+            <span onClick={() => { setCameraPreviewStep(false); setCapturedPhoto(null); setCameraCaption(""); }} style={{ color: "#fff", fontSize: 15, cursor: "pointer" }}>Discard</span>
+            <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>Preview</span>
+            <span style={{ width: 50 }} />
+          </div>
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", minHeight: 0 }}>
+            <img src={URL.createObjectURL(capturedPhoto)} alt="captured" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+          </div>
+          <div style={{ padding: "12px 16px", flexShrink: 0 }}>
+            <input
+              value={cameraCaption}
+              onChange={(e) => setCameraCaption(e.target.value)}
+              placeholder="Add a caption…"
+              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 14, background: "rgba(255,255,255,0.1)", color: "#fff", boxSizing: "border-box" }}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 16, justifyContent: "center", padding: "0 16px 24px", flexShrink: 0 }}>
+            <div onClick={() => { setCameraPreviewStep(false); setCapturedPhoto(null); setCameraCaption(""); openGlobalCamera(); }} style={{ flex: 1, padding: 13, borderRadius: 12, border: "1px solid rgba(255,255,255,0.3)", color: "#fff", fontWeight: 700, fontSize: 14, textAlign: "center", cursor: "pointer" }}>
+              Retake
+            </div>
+            <div onClick={() => setCameraPreviewStep(false)} style={{ flex: 2, padding: 13, borderRadius: 12, background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 14, textAlign: "center", cursor: "pointer" }}>
+              Send
+            </div>
           </div>
         </div>
       )}

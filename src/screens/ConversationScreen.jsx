@@ -960,9 +960,9 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       {chatSetupError && <div style={{ padding: "8px 16px", background: "#FFE5E5", color: "#B00020", fontSize: 12.5 }}>{chatSetupError}</div>}
       {sendError && <div style={{ padding: "8px 16px", background: "#FFE5E5", color: "#B00020", fontSize: 12.5 }}>{sendError}</div>}
 
-      <div style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", position: "relative" }}>
         <div ref={scrollRef} onScroll={handleScroll} style={{
-          position: "absolute", inset: 0, overflowY: "auto", padding: "14px 10px", display: "flex", flexDirection: "column",
+          flex: 1, overflowY: "auto", overflowX: "hidden", padding: "14px 10px", display: "flex", flexDirection: "column",
           backgroundImage: wallpaper ? `url(${wallpaper})` : "none", backgroundSize: "cover", backgroundPosition: "center",
         }}>
           {visibleMessages.map((m, i) => {

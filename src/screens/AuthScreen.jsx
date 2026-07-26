@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, Eye, EyeOff } from "lucide-react";
 import { useTheme } from "../theme/ThemeContext";
 import { collection, query, where, getDocs, limit as fbLimit } from "firebase/firestore";
 import { db } from "../firebase/config";
@@ -18,6 +18,7 @@ export default function AuthScreen({ auth }) {
   const [usernameTaken, setUsernameTaken] = useState(false);
   const [checkingUsername, setCheckingUsername] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const debounceRef = useRef(null);
 
   useEffect(() => {
@@ -156,7 +157,12 @@ export default function AuthScreen({ auth }) {
           </>
         )}
         <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" style={inputStyle(t)} />
-        <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="Password" style={{ ...inputStyle(t), marginBottom: 16 }} />
+        <div style={{ position: "relative" }}>
+          <input value={password} onChange={(e) => setPassword(e.target.value)} type={showPassword ? "text" : "password"} placeholder="Password" style={{ ...inputStyle(t), marginBottom: 16, paddingRight: 42 }} />
+          <div onClick={() => setShowPassword(!showPassword)} style={{ position: "absolute", right: 12, top: 13, cursor: "pointer", color: t.textMuted }}>
+            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+          </div>
+        </div>
 
         {error && <div style={{ color: "#FF3B30", fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
 
