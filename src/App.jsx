@@ -7,7 +7,7 @@ import { purgeExpiredStatuses, useStatuses } from "./firebase/status";
 import { useContacts } from "./firebase/contacts";
 import { useChats } from "./firebase/chats";
 import { setGlobalWallpaper, fileToWallpaperDataUrl } from "./theme/wallpaper";
-import { ChevronLeft, Palette, Shield, Lock, MessageSquare, X, ShieldCheck, Phone, Image as ImageIcon, Users, CircleDot, RotateCcw, Camera, Settings as SettingsIcon, Bot, Sparkles, RefreshCw } from "lucide-react";
+import { ChevronLeft, Palette, Shield, Lock, MessageSquare, X, ShieldCheck, Phone, Image as ImageIcon, Users, CircleDot, RotateCcw, Camera, Settings as SettingsIcon, Bot, Sparkles, RefreshCw, Search } from "lucide-react";
 import { FONTS } from "./theme/ThemeContext";
 import Avatar from "./components/Avatar";
 import { uploadChatFile } from "./supabase/media";
@@ -174,7 +174,7 @@ function PhoneNumberSetting({ myUid }) {
   );
 }
 
-function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiScale, showScrollDown, setShowScrollDown, animatedScrollEntry, setAnimatedScrollEntry, compactList, setCompactList, onBack, onNavigate, onLogout, userDoc, navConfig, setNavConfig, aiSidebarOn, setAiSidebarOn, showSplash, setShowSplash, onCheckUpdate, checkingUpdate, updateStatus }) {
+function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiScale, showScrollDown, setShowScrollDown, animatedScrollEntry, setAnimatedScrollEntry, compactList, setCompactList, onBack, onNavigate, onLogout, userDoc, navConfig, setNavConfig, aiSidebarOn, setAiSidebarOn, showSplash, setShowSplash, searchMode, setSearchMode, topBarVisible, setTopBarVisible, onCheckUpdate, checkingUpdate, updateStatus }) {
   const { t, hideNav, setHideNav, chatTextScale, setChatTextScale, appFontId, setAppFontId } = useTheme();
   const wallpaperInputRef = useRef(null);
   const profilePhotoRef = useRef(null);
@@ -480,6 +480,8 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
           <Row icon={<CircleDot size={18} color={t.primary} />} label="Animated scroll entry" sub={animatedScrollEntry ? "Smooth jump" : "Instant mount"} right={<Toggle on={animatedScrollEntry} onClick={() => { const next = !animatedScrollEntry; setAnimatedScrollEntry(next); localStorage.setItem("nextext_animated_scroll_entry", next ? "true" : "false"); }} />} />
           <Row icon={<Users size={18} color={t.primary} />} label="Compact chat list" sub={compactList ? "Denser rows" : "Standard spacing"} right={<Toggle on={compactList} onClick={() => { const next = !compactList; setCompactList(next); localStorage.setItem("nextext_compact_list", next ? "true" : "false"); }} />} />
           <Row icon={<Users size={18} color={t.primary} />} label="Hide bottom navigation" sub={hideNav ? "Hidden" : "Visible"} right={<Toggle on={hideNav} onClick={() => setHideNav(!hideNav)} />} />
+          <Row icon={<Search size={18} color={t.primary} />} label="Show search button" sub={searchMode === "button" ? "Search icon hides bar" : "Search bar always visible"} right={<Toggle on={searchMode === "button"} onClick={() => { const next = searchMode === "button" ? "visible" : "button"; setSearchMode(next); localStorage.setItem("nextext_search_mode", next); }} />} />
+          <Row icon={<Users size={18} color={t.primary} />} label="Show top bar" sub={topBarVisible ? "Visible" : "Hidden"} right={<Toggle on={topBarVisible} onClick={() => { const next = !topBarVisible; setTopBarVisible(next); localStorage.setItem("nextext_top_bar_visible", String(next)); }} />} />
         </SectionCard>
 
         {/* ═══ AI CONTROLS ═══ */}
@@ -647,7 +649,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   );
 }
 
-const DEFAULT_NAV_CONFIG = [{ key: "chats" }, { key: "status" }, { key: "groups" }];
+const DEFAULT_NAV_CONFIG = [{ key: "chats" }, { key: "status" }, { key: "groups" }, { key: "settings" }];
 
 function AppShell() {
   const { t, themeKey, setThemeKey, hideNav, appFont } = useTheme();
@@ -680,6 +682,8 @@ function AppShell() {
   const [splashVisible, setSplashVisible] = useState(() => localStorage.getItem("nextext_splash_enabled") !== "off");
   const [splashFading, setSplashFading] = useState(false);
   const [aiSidebarOn, setAiSidebarOn] = useState(() => localStorage.getItem("nextext_ai_sidebar") !== "off");
+  const [searchMode, setSearchMode] = useState(() => localStorage.getItem("nextext_search_mode") || "visible");
+  const [topBarVisible, setTopBarVisible] = useState(() => localStorage.getItem("nextext_top_bar_visible") !== "false");
   const [pendingUpdate, setPendingUpdate] = useState(null);
   const [showUpdatePrompt, setShowUpdatePrompt] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -883,7 +887,7 @@ function AppShell() {
         }
       }}
     >
-      <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab={activeNavTab} compactList={compactList} />
+      <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab={activeNavTab} compactList={compactList} searchMode={searchMode} topBarVisible={topBarVisible} />
 
       {screen === "chat" && activeChat && (
         <ConversationScreen
@@ -947,6 +951,10 @@ function AppShell() {
           setAiSidebarOn={setAiSidebarOn}
           showSplash={showSplash}
           setShowSplash={setShowSplash}
+          searchMode={searchMode}
+          setSearchMode={setSearchMode}
+          topBarVisible={topBarVisible}
+          setTopBarVisible={setTopBarVisible}
           onCheckUpdate={handleManualUpdateCheck}
           checkingUpdate={checkingUpdate}
           updateStatus={updateStatus}
@@ -984,6 +992,10 @@ function AppShell() {
             return ALL_TABS[key];
           })
           .map(({ key }) => ({ key, ...ALL_TABS[key] }));
+        // Force settings onto bottom bar when top bar is hidden
+        if (!topBarVisible && !navTabs.some((t) => t.key === "settings")) {
+          navTabs.push({ key: "settings", ...ALL_TABS.settings });
+        }
         if (!navTabs.length) return null;
         return (
           <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", background: t.surface, borderTop: `1px solid ${t.border}`, zIndex: screen === "status" ? 45 : 15 }}>

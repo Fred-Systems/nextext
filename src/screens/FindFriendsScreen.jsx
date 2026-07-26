@@ -86,8 +86,7 @@ export default function FindFriendsScreen({ myUid, onBack, onStartChat }) {
           <>
             <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16, lineHeight: 1.5 }}>
               Pick contacts from your phone to check which ones are already using
-              NexText. Nothing is read in the background — you choose exactly which
-              contacts to check each time.
+              NexText.
             </div>
             {error && <div style={{ color: "#FF3B30", fontSize: 12.5, marginBottom: 10 }}>{error}</div>}
             <button onClick={pickAndMatch} disabled={busy} style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 15, cursor: "pointer", marginBottom: 20 }}>

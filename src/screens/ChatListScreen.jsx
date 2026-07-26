@@ -47,7 +47,7 @@ function ChatRowMeta({ myUid, otherUid, chatId, t, compact }) {
   return <div style={{ fontSize: compact ? 11 : 12, color: t.textMuted, marginTop: compact ? 0 : 1 }}>{statusText}</div>;
 }
 
-export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroupInfo, onOpenSettings, hideNav, navTab, compactList }) {
+export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroupInfo, onOpenSettings, hideNav, navTab, compactList, searchMode = "visible", topBarVisible = true }) {
   const { t } = useTheme();
   const { chats } = useChats(myUid);
   const { contacts } = useContacts(myUid);
@@ -59,7 +59,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
   const effectiveTab = navTab === "groups" ? "groups" : navTab === "status" ? "all" : activeTab;
   const [showArchived, setShowArchived] = useState(false);
   const [acceptError, setAcceptError] = useState("");
-  const [showSearch, setShowSearch] = useState(false);
+  const [showSearch, setShowSearch] = useState(() => searchMode === "visible");
   const [searchQuery, setSearchQuery] = useState("");
   const [swipedChatId, setSwipedChatId] = useState(null);
   const [contextMenuChat, setContextMenuChat] = useState(null);
@@ -391,16 +391,16 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
 
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg }}>
-      <div style={{ padding: "18px 16px 12px", background: t.primary, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, position: "relative", zIndex: 1 }}>
-        <span style={{ color: "#fff", fontWeight: 800, fontSize: 22, flexShrink: 0 }}>NexText</span>
+      {topBarVisible && <div style={{ padding: "12px 16px 10px", background: t.surface, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, position: "relative", zIndex: 1, borderBottom: `1px solid ${t.border}` }}>
+        <span style={{ color: t.text, fontWeight: 800, fontSize: 20, flexShrink: 0 }}>NexText</span>
         <div style={{ display: "flex", gap: 18, alignItems: "center", flexShrink: 0 }}>
-          <Camera size={20} color="#fff" style={{ cursor: "pointer", display: "block" }} onClick={openGlobalCamera} />
-          <Search size={20} color="#fff" style={{ cursor: "pointer", display: "block" }} onClick={() => setShowSearch(!showSearch)} />
-          <Settings size={20} color="#fff" style={{ cursor: "pointer", display: "block" }} onClick={onOpenSettings} />
+          <Camera size={20} color={t.text} style={{ cursor: "pointer", display: "block" }} onClick={openGlobalCamera} />
+          {searchMode !== "visible" && <Search size={20} color={t.text} style={{ cursor: "pointer", display: "block" }} onClick={() => setShowSearch(!showSearch)} />}
+          <Settings size={20} color={t.text} style={{ cursor: "pointer", display: "block" }} onClick={onOpenSettings} />
         </div>
-      </div>
+      </div>}
 
-      {showSearch && (
+      {(topBarVisible && showSearch) && (
         <div style={{ padding: "10px 16px 6px", background: t.surface, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", background: t.bg, borderRadius: 12, padding: "9px 12px", gap: 8 }}>
             <Search size={15} color={t.textMuted} />
@@ -526,7 +526,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
       </div>
 
       {showFab && (
-        <div style={{ position: "absolute", bottom: hideNav ? 84 : 148, right: 20, background: t.surface, borderRadius: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", overflow: "hidden" }}>
+        <div style={{ position: "absolute", bottom: hideNav ? 84 : 148, right: 20, background: t.surface, borderRadius: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", overflow: "hidden", zIndex: 10 }}>
           <div onClick={() => { setShowFab(false); setShowNewGroup(true); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", whiteSpace: "nowrap" }}>
             <Users size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>New group</span>
           </div>
@@ -538,7 +538,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
           </div>
         </div>
       )}
-      <button onClick={() => setShowFab(!showFab)} style={{ position: "absolute", bottom: hideNav ? 20 : 84, right: 20, width: 54, height: 54, borderRadius: "50%", background: t.accent, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 12px rgba(0,0,0,0.25)", cursor: "pointer" }}>
+      <button onClick={() => setShowFab(!showFab)} style={{ position: "absolute", bottom: hideNav ? 20 : 84, right: 20, width: 54, height: 54, borderRadius: "50%", background: t.accent, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 12px rgba(0,0,0,0.25)", cursor: "pointer", zIndex: 10 }}>
         <Plus size={26} color="#fff" style={{ transform: showFab ? "rotate(45deg)" : "none", transition: "transform 0.2s" }} />
       </button>
 

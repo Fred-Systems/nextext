@@ -28,6 +28,7 @@ export default function Avatar({ photoURL, name, uid, size = 52, style = {}, has
   const [showMenu, setShowMenu] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const avatarRef = useRef(null);
+  const menuContentRef = useRef(null);
   const uidRef = useRef(uid);
   uidRef.current = uid;
   const localOverride = hideLocalOverride ? null : getLocalPhotoOverride(uid);
@@ -53,6 +54,22 @@ export default function Avatar({ photoURL, name, uid, size = 52, style = {}, has
     const handler = (e) => { if (e.key === "Escape") closeMenu(); };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
+  }, [showMenu]);
+
+  // Close menu when navigating away or clicking anywhere outside
+  useEffect(() => {
+    if (!showMenu) return;
+    const handler = (e) => {
+      if (menuContentRef.current && !menuContentRef.current.contains(e.target)) {
+        closeMenu();
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler);
+    };
   }, [showMenu]);
 
   const handleClick = (e) => {
@@ -122,7 +139,7 @@ export default function Avatar({ photoURL, name, uid, size = 52, style = {}, has
       {avatarNode}
       {showMenu && createPortal(
         <div onClick={closeMenu} style={{ position: "fixed", inset: 0, zIndex: 99998 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "rgba(30,30,30,0.97)", borderRadius: 12, overflowY: "auto", maxHeight: "70vh", zIndex: 99999, boxShadow: "0 8px 30px rgba(0,0,0,0.5)", minWidth: 200, whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>
+          <div ref={menuContentRef} onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "rgba(30,30,30,0.97)", borderRadius: 12, overflowY: "auto", maxHeight: "70vh", zIndex: 99999, boxShadow: "0 8px 30px rgba(0,0,0,0.5)", minWidth: 200, whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>
             {hasActiveStatus && onStatusView && !blockStatus && (
               <div onClick={handleMenuStatus} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer" }}>
                 <Eye size={16} color="#00A884" />
