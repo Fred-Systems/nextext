@@ -464,15 +464,20 @@ export default function AIChatScreen({ myUid, onBack }) {
       {/* Profile modal */}
       {showProfile && (
         <div onClick={() => setShowProfile(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: t.surface, borderRadius: 18, width: "100%", maxWidth: 320, overflow: "hidden" }}>
-            <div style={{ background: "linear-gradient(135deg, #7C5CFF, #53BDEB)", padding: "28px 20px", textAlign: "center" }}>
-              <div style={{ width: 72, height: 72, borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
-                <span style={{ fontSize: 36 }}>🤖</span>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: t.surface, borderRadius: 18, width: "100%", maxWidth: 320, maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "16px 20px" }}>
+              <div style={{ background: "linear-gradient(135deg, #7C5CFF, #53BDEB)", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <span style={{ fontSize: 20 }}>🤖</span>
               </div>
-              <div style={{ color: "#fff", fontWeight: 800, fontSize: 20 }}>NexText AI</div>
-              <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 13, marginTop: 4 }}>Powered by Groq + Llama 4 Scout</div>
+              <div onClick={() => setShowProfile(false)} style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(0,0,0,0.15)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                <X size={20} color="#fff" strokeWidth={2.5} />
+              </div>
             </div>
-            <div style={{ padding: "16px 20px" }}>
+            <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 20px" }}>
+              <div style={{ textAlign: "center", marginBottom: 16 }}>
+                <div style={{ color: t.text, fontWeight: 800, fontSize: 20 }}>NexText AI</div>
+                <div style={{ color: t.textMuted, fontSize: 13, marginTop: 4 }}>Powered by Groq + Llama 4 Scout</div>
+              </div>
               <div style={{ fontSize: 14, color: t.text, lineHeight: 1.6, marginBottom: 16 }}>
                 Your intelligent chat companion. Ask questions, have fun conversations, or switch personalities for a different experience.
               </div>
@@ -487,7 +492,7 @@ export default function AIChatScreen({ myUid, onBack }) {
                 Tip: Tap 📷 to send an image for AI analysis. Use the ⋮ menu to change personality, summarize any chat, or clear history.
               </div>
             </div>
-            <div onClick={() => setShowProfile(false)} style={{ padding: "14px", textAlign: "center", borderTop: `1px solid ${t.border}`, cursor: "pointer", fontWeight: 700, fontSize: 15, color: t.primary }}>
+            <div style={{ padding: "14px", textAlign: "center", borderTop: `1px solid ${t.border}`, cursor: "pointer", fontWeight: 700, fontSize: 15, color: t.primary }} onClick={() => setShowProfile(false)}>
               Close
             </div>
           </div>

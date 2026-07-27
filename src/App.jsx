@@ -195,6 +195,8 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   const [customStatusSaved, setCustomStatusSaved] = useState(false);
   const [aiContextOn, setAiContextOn] = useState(() => localStorage.getItem("nextext_ai_context") === "true");
   const [openSections, setOpenSections] = useState({});
+  const [resetPasswordModal, setResetPasswordModal] = useState(false);
+  const [resetPasswordInput, setResetPasswordInput] = useState("");
   const [techStackEditing, setTechStackEditing] = useState(false);
   const [techStackDraft, setTechStackDraft] = useState(null);
 
@@ -313,11 +315,11 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
 
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 25 }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
-        <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
-        <span style={{ color: "#fff", fontWeight: 700, fontSize: 18 }}>Settings</span>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.surface, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
+        <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
+        <span style={{ color: t.text, fontWeight: 700, fontSize: 18 }}>Settings</span>
       </div>
-      <div className="nx-scroll" style={{ padding: "12px 16px" }}>
+      <div className="nx-scroll" style={{ padding: "12px 16px", paddingBottom: 100 }}>
 
         {/* ═══ ACCOUNT & PROFILE ═══ */}
         <SectionCard title="Account & Profile" emoji="👤" sectionKey="account">
@@ -392,7 +394,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
             )}
             {appLockEnabled && appLockPassSaved && <div style={{ fontSize: 12, color: t.primary, fontWeight: 600, marginTop: 6, paddingLeft: 50 }}>Password saved &bull;&bull;&bull;&bull;&bull;</div>}
             {appLockEnabled && (appLockPassSaved || localStorage.getItem("nextext_app_lock_pass")) && (
-              <div onClick={() => { const old = localStorage.getItem("nextext_app_lock_pass"); const input = prompt("Enter current password to reset:"); if (input !== old) { alert("Incorrect password."); return; } localStorage.removeItem("nextext_app_lock_pass"); localStorage.setItem("nextext_app_lock", "pending"); setAppLockPassSaved(false); }} style={{ fontSize: 12, color: "#FF3B30", fontWeight: 600, marginTop: 4, paddingLeft: 50, cursor: "pointer" }}>
+              <div onClick={() => { setResetPasswordInput(""); setResetPasswordModal(true); }} style={{ fontSize: 12, color: "#FF3B30", fontWeight: 600, marginTop: 4, paddingLeft: 50, cursor: "pointer" }}>
                 Reset password
               </div>
             )}
@@ -667,10 +669,29 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
             </SectionCard>
           );
         })()}
-
-        <div style={{ textAlign: "center", color: t.textMuted, fontSize: 11.5, marginTop: 10, paddingBottom: 10 }}>
-          Developed by Fred-Systems
+      {resetPasswordModal && (
+        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => { setResetPasswordModal(false); setResetPasswordInput(""); }}>
+          <div style={{ background: t.surface, borderRadius: 16, padding: 20, maxWidth: 350, width: "100%" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+              <span style={{ fontWeight: 700, fontSize: 17, color: t.text }}>Reset App Lock Password</span>
+              <span onClick={() => { setResetPasswordModal(false); setResetPasswordInput(""); }} style={{ cursor: "pointer", color: t.textMuted, fontSize: 18 }}>×</span>
+            </div>
+            <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 16 }}>Enter your current password to reset the app lock.</div>
+            <input
+              type="password"
+              value={resetPasswordInput}
+              onChange={(e) => setResetPasswordInput(e.target.value)}
+              placeholder="Current password"
+              autoFocus
+              style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 14.5, color: t.text, background: t.surface, outline: "none", boxSizing: "border-box", marginBottom: 16 }}
+            />
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <div onClick={() => { setResetPasswordModal(false); setResetPasswordInput(""); }} style={{ padding: "9px 16px", borderRadius: 10, cursor: "pointer", fontSize: 13.5, fontWeight: 600, color: t.textMuted }}>Cancel</div>
+              <div onClick={() => { const old = localStorage.getItem("nextext_app_lock_pass"); if (resetPasswordInput !== old) { alert("Incorrect password."); return; } localStorage.removeItem("nextext_app_lock_pass"); localStorage.setItem("nextext_app_lock", "pending"); setAppLockPassSaved(false); setResetPasswordModal(false); setResetPasswordInput(""); }} style={{ padding: "9px 16px", borderRadius: 10, background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>Reset</div>
+            </div>
+          </div>
         </div>
+)}
       </div>
     </div>
   );
@@ -889,9 +910,9 @@ function AppShell() {
   };
 
   if (auth.loading) {
-    return <div style={{ ...containerStyle, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#00A884" }}>
+    return <div style={{ ...containerStyle, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#0B141A" }}>
       <img src="./icon.png" alt="" style={{ width: 100, height: 100, objectFit: "contain", marginBottom: 20 }} onError={(e) => { e.target.style.display = "none"; }} />
-      <div style={{ width: 40, height: 40, border: "4px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "nextext-spin 0.9s linear infinite", marginBottom: 16 }} />
+      <div style={{ width: 40, height: 40, border: "4px solid rgba(16, 185, 129, 0.25)", borderTopColor: "#10B981", borderRadius: "50%", animation: "nextext-spin 0.9s linear infinite", marginBottom: 16 }} />
       <span style={{ color: "#fff", fontSize: 20, fontWeight: 700 }}>Loading…</span>
       <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 14, marginTop: 8 }}>Connecting to server</span>
       <style>{`@keyframes nextext-spin { to { transform: rotate(360deg); } }`}</style>
@@ -1018,7 +1039,7 @@ function AppShell() {
 
 
 
-      {!hideNav && !storyViewerOpen && (screen === "list" || screen === "status") && (() => {
+      {!hideNav && !storyViewerOpen && (screen === "list" || screen === "status" || screen === "settings") && (() => {
         const ALL_TABS = {
           chats: { icon: MessageSquare, label: "Chats" },
           status: { icon: CircleDot, label: "Status" },

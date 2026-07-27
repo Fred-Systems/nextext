@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "406410965292",
+    "project_id": "nextext-ddf38",
+    "storage_bucket": "nextext-ddf38.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:406410965292:android:19e19eb360f1a85f853c89",
+        "android_client_info": {
+          "package_name": "com.nextext.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "406410965292-0f8c00p00molh3d9ja5urjqa7ug4en45.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nextext.app",
+            "certificate_hash": "9c02df32b9ab61afa156f5f5c8a5325a701f5879"
+          }
+        },
+        {
+          "client_id": "406410965292-jlh37tmtcsnucerqbv4ofp9je24mkeok.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBqsb4ALHFMhPA5LTNazBklVERozi_CP0M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "406410965292-jlh37tmtcsnucerqbv4ofp9je24mkeok.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

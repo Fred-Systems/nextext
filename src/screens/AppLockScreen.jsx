@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Lock, Eye, EyeOff } from "lucide-react";
 import { useTheme } from "../theme/ThemeContext";
 
@@ -27,7 +28,7 @@ export default function AppLockScreen({ onUnlock }) {
     } catch {}
   };
 
-  return (
+  const lockScreen = (
     <div style={{ position: "fixed", inset: 0, background: t.bg, zIndex: 999999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18 }}>
       <div style={{ width: 64, height: 64, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <Lock size={28} color={t.primary} />
@@ -60,4 +61,6 @@ export default function AppLockScreen({ onUnlock }) {
       )}
     </div>
   );
+
+  return createPortal(lockScreen, document.body);
 }
