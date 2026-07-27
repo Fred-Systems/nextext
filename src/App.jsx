@@ -1117,19 +1117,109 @@ function AppShell() {
 }
 
 export default function App() {
+  const [showPermissionDialog, setShowPermissionDialog] = useState(false);
+  const [permissionStep, setPermissionStep] = useState(0);
+  const permissions = [
+    { name: "Contacts", desc: "Used to find friends and sync your contact list", permission: "contacts" },
+    { name: "Microphone", desc: "Used for voice messages and voice calls", permission: "microphone" },
+    { name: "Camera", desc: "Used for photos, videos, and profile pictures", permission: "camera" },
+    { name: "Files & Media", desc: "Used to save and send images, videos, and files", permission: "files" },
+    { name: "Notifications", desc: "Used for message alerts and status updates", permission: "notifications" },
+  ];
+
   useEffect(() => {
-    const requestPermissions = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-        stream.getTracks().forEach((t) => t.stop());
-      } catch {}
+    const checkPermissions = async () => {
+      // Check if we've already shown the permission dialog
+      const hasShown = localStorage.getItem("nextext_permissions_shown");
+      if (!hasShown) {
+        setShowPermissionDialog(true);
+      }
     };
-    requestPermissions();
+    checkPermissions();
   }, []);
+
+  const requestPermission = async (perm) => {
+    try {
+      switch (perm) {
+        case "contacts":
+          // Contacts permission is handled by the OS when the app tries to access contacts
+          break;
+        case "microphone":
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream.getTracks().forEach((t) => t.stop());
+          } catch {}
+          break;
+        case "camera":
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            stream.getTracks().forEach((t) => t.stop());
+          } catch {}
+          break;
+        case "files":
+          // Files permission is implicit
+          break;
+        case "notifications":
+          if (Notification.permission === "default") {
+            await Notification.requestPermission();
+          }
+          break;
+      }
+    } catch (e) {
+      console.warn("Permission request failed:", e);
+    }
+    setPermissionStep((prev) => prev + 1);
+  };
+
+  const finishPermissions = () => {
+    localStorage.setItem("nextext_permissions_shown", "true");
+    setShowPermissionDialog(false);
+  };
+
+  const PermissionDialog = () => (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 999999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => {}}>
+      <div style={{ background: "#121B22", borderRadius: 20, width: "100%", maxWidth: 400, maxHeight: "90%", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: "24px 20px 16px", textAlign: "center", borderBottom: "1px solid #2a3a4a" }}>
+          <div style={{ fontSize: 20, fontWeight: 700, color: "#fff", marginBottom: 8 }}>Welcome to NexText</div>
+          <div style={{ fontSize: 14, color: "#8a9aa8" }}>We need a few permissions to give you the best experience</div>
+        </div>
+        <div style={{ padding: "16px 20px 8px", maxHeight: "60vh", overflowY: "auto" }}>
+          {permissions.map((p, i) => (
+            <div key={p.permission} style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px", background: i < permissionStep ? "rgba(0,168,132,0.1)" : "rgba(255,255,255,0.03)", borderRadius: 12, marginBottom: 8, border: `1px solid ${i < permissionStep ? "#00A884" : "rgba(255,255,255,0.1)"}`, transition: "all 0.3s" }}>
+              <div style={{ width: 40, height: 40, borderRadius: "50%", background: i < permissionStep ? "#00A884" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                {i < permissionStep ? (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                ) : (
+                  <span style={{ fontSize: 18, color: "#8a9aa8" }}>{i + 1}</span>
+                )}
+              </div>
+              <div style={{ flex: 1, textAlign: "left" }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "#fff" }}>{p.name}</div>
+                <div style={{ fontSize: 12, color: "#8a9aa8", marginTop: 2 }}>{p.desc}</div>
+              </div>
+              {i === permissionStep && (
+                <button onClick={() => requestPermission(p.permission)} style={{ padding: "10px 20px", borderRadius: 8, background: "#00A884", color: "#fff", fontWeight: 700, fontSize: 13, border: "none", cursor: "pointer" }}>
+                  Allow
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        {permissionStep >= permissions.length && (
+          <div style={{ padding: "20px", textAlign: "center", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 8 }}>All set!</div>
+            <div style={{ fontSize: 13, color: "#8a9aa8", marginBottom: 16 }}>Thanks for enabling permissions. You can change these anytime in settings.</div>
+            <button onClick={finishPermissions} style={{ padding: "14px 40px", borderRadius: 10, background: "#00A884", color: "#fff", fontWeight: 700, fontSize: 15, border: "none", cursor: "pointer" }}>Continue</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <ThemeProvider>
       <AppShell />
+      {showPermissionDialog && <PermissionDialog />}
     </ThemeProvider>
   );
 }
