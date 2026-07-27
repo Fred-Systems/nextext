@@ -576,8 +576,15 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
             <video ref={globalCameraVideoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", maxHeight: "70vh", objectFit: "contain" }} />
           </div>
           {globalCameraError && <div style={{ color: "#FF3B30", fontSize: 13, textAlign: "center", padding: 8, flexShrink: 0 }}>{globalCameraError}</div>}
-          <div style={{ display: "flex", justifyContent: "center", padding: "16px 0 24px", flexShrink: 0 }}>
-            <div onClick={captureGlobalPhoto} style={{ width: 64, height: 64, borderRadius: "50%", border: "4px solid #fff", background: "rgba(255,255,255,0.3)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 16px 24px", flexShrink: 0, gap: 16 }}>
+            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, overflowX: "auto", paddingBottom: 8, maxWidth: "70%" }}>
+              {acceptedContacts.slice(0, 8).map((c) => (
+                <div key={c.uid} onClick={() => { closeGlobalCamera(); setCapturedPhoto(null); sendCapturedPhotoTo(chatForContact || { id: null, type: "direct", participants: [myUid, otherUid] }); }} style={{ flexShrink: 0, width: 56, height: 56, borderRadius: "50%", overflow: "hidden", border: "2px solid rgba(255,255,255,0.3)", cursor: "pointer", background: t.primaryLight }}>
+                  <Avatar photoURL={c.profile?.photoURL} name={c.profile?.displayName} uid={c.uid} size={48} />
+                </div>
+              ))}
+            </div>
+            <div onClick={captureGlobalPhoto} style={{ width: 64, height: 64, borderRadius: "50%", border: "4px solid #fff", background: "rgba(255,255,255,0.3)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <div style={{ width: 52, height: 52, borderRadius: "50%", background: "#fff" }} />
             </div>
           </div>
