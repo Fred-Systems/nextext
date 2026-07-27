@@ -16,7 +16,6 @@
     "@capacitor/core": "^8.4.2",
     "@supabase/supabase-js": "^2.110.7",
     "browser-image-compression": "^2.0.2",
-    "cordova-plugin-media-capture": "^6.0.0",
     "firebase": "^12.16.0",
     "lucide-react": "^1.24.0",
     "react": "^19.2.7",
