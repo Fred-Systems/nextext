@@ -1059,7 +1059,7 @@ function AppShell() {
         }
         if (!navTabs.length) return null;
         return (
-          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", background: t.surface, borderTop: `1px solid ${t.border}`, zIndex: 50 }}>
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", background: t.surface, borderTop: `1px solid ${t.border}`, zIndex: 1000 }}>
             {navTabs.map(({ key, icon: Icon, label }) => {
               const isActive = key === "settings" ? screen === "settings" : key === "status" ? screen === "status" : (screen === "list" && activeNavTab === key);
               return (

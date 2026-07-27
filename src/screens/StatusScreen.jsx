@@ -461,13 +461,13 @@ await postStatus(myUid, {
   );
 
   return (
-    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40 }}>
+    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40, display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.surface, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
         <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
         <span style={{ color: t.text, fontWeight: 700, fontSize: 18 }}>Status</span>
       </div>
 
-      <div className="nx-scroll" style={{ flex: 1, paddingBottom: 70 }}>
+      <div className="nx-scroll" style={{ flex: 1, paddingBottom: 70, minHeight: 0 }}>
         <SectionHeader label="My Status" />
         <div style={{ display: "flex", alignItems: "center", gap: 13, padding: "10px 16px", borderBottom: `1px solid ${t.border}` }}>
           <div style={{ position: "relative" }}>
@@ -612,7 +612,7 @@ await postStatus(myUid, {
       {/* Post status sheet */}
       {showPost && (
         <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50, display: "flex", alignItems: "flex-end" }} onClick={() => { setShowPost(false); setPostMedia(null); setPostText(""); setPostMode("text"); }}>
-          <div style={{ background: t.surface, width: "100%", borderRadius: "20px 20px 0 0", padding: "20px 20px 30px", maxHeight: "90%", overflowY: "auto", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ background: t.surface, width: "100%", maxWidth: "480px", margin: "0 auto", borderRadius: "20px 20px 0 0", padding: "20px 24px 30px", maxHeight: "95vh", overflowY: "auto", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <span style={{ fontWeight: 700, fontSize: 17, color: t.text }}>New Status</span>
               <X size={20} color={t.textMuted} onClick={() => { setShowPost(false); setPostMedia(null); setPostText(""); setPostMode("text"); }} style={{ cursor: "pointer" }} />
