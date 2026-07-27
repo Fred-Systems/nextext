@@ -689,8 +689,16 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       setRecording(true);
       setRecordSeconds(0);
       recordTimerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
-    } catch {
-      setSendError("Microphone access denied or unavailable.");
+    } catch (err) {
+      let msg = "Microphone access denied or unavailable.";
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        msg = "Microphone permission denied. Please enable microphone access in your device settings for NexText.";
+      } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+        msg = "No microphone found. Please connect a microphone and try again.";
+      } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+        msg = "Microphone is in use by another app. Please close other apps using the microphone and try again.";
+      }
+      setSendError(msg);
     }
   };
 
@@ -1067,7 +1075,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
               <div onClick={() => setShowEmojiPicker(false)} style={{ position: "absolute", inset: 0, zIndex: 29 }}>
                 <div style={{ position: "absolute", bottom: 64, left: 10, right: 10, background: t.surface, borderRadius: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", padding: 12, zIndex: 30, display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 6, maxHeight: 180, overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
                   {EMOJI_PICKER_SET.map((e) => (
-                    <span key={e} onClick={() => { handleInputChange(input + e); setShowEmojiPicker(false); }} style={{ fontSize: 22, cursor: "pointer", textAlign: "center" }}>{e}</span>
+                    <span key={e} onClick={() => { handleInputChange(input + e); }} style={{ fontSize: 22, cursor: "pointer", textAlign: "center" }}>{e}</span>
                   ))}
                 </div>
               </div>
@@ -1226,8 +1234,15 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
             <video ref={cameraVideoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           </div>
           {cameraError && <div style={{ color: "#FF3B30", fontSize: 13, textAlign: "center", padding: 8 }}>{cameraError}</div>}
-          <div style={{ display: "flex", justifyContent: "center", padding: "20px 0 30px" }}>
-            <div onClick={capturePhoto} style={{ width: 64, height: 64, borderRadius: "50%", border: "4px solid #fff", background: "rgba(255,255,255,0.3)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 16px 24px", flexShrink: 0, gap: 16 }}>
+            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, overflowX: "auto", paddingBottom: 8, maxWidth: "70%" }}>
+              {acceptedContacts.slice(0, 8).map((c) => (
+                <div key={c.uid} onClick={() => { closeCamera(); setCapturedPhoto(null); sendCapturedPhotoTo(chatForContact || { id: null, type: "direct", participants: [myUid, otherUid] }); }} style={{ flexShrink: 0, width: 56, height: 56, borderRadius: "50%", overflow: "hidden", border: "2px solid rgba(255,255,255,0.3)", cursor: "pointer", background: t.primaryLight }}>
+                  <Avatar photoURL={c.profile?.photoURL} name={c.profile?.displayName} uid={c.uid} size={48} />
+                </div>
+              ))}
+            </div>
+            <div onClick={capturePhoto} style={{ width: 64, height: 64, borderRadius: "50%", border: "4px solid #fff", background: "rgba(255,255,255,0.3)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <div style={{ width: 52, height: 52, borderRadius: "50%", background: "#fff" }} />
             </div>
           </div>
