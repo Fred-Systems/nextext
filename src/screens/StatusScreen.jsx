@@ -261,7 +261,11 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
 
   const handlePost = async () => {
     if (postMode === "text" && !postText.trim()) return;
-    if (postMode === "media" && !postMedia && postImages.length === 0) return;
+    // Allow posting if we have images or media
+    if (postMode === "media" && !postMedia && postImages.length === 0) {
+      setSendError("Please select an image, video, or record something.");
+      return;
+    }
     setPosting(true);
     try {
       // Handle multiple images - send as separate status updates
