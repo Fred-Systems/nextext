@@ -167,6 +167,7 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewAudioURL, setPreviewAudioURL] = useState(null);
   const [previewVideoURL, setPreviewVideoURL] = useState(null);
+  const [postImages, setPostImages] = useState([]);
   const previewVideoRef = useRef(null);
   const previewAudioRef = useRef(null);
   const [viewerModalStatusId, setViewerModalStatusId] = useState(null);

@@ -175,7 +175,10 @@ export default React.memo(function Avatar({ photoURL, name, uid, size = 52, styl
           </div>
           {effectivePhotoURL ? (
             <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", padding: 24 }}>
-              <img src={effectivePhotoURL} alt={name || "avatar"} style={{ maxWidth: "90%", maxHeight: "90%", borderRadius: 8, objectFit: "contain", display: "block" }} />
+              <img src={effectivePhotoURL} alt={name || "avatar"} style={{ maxWidth: "90%", maxHeight: "90%", borderRadius: 8, objectFit: "contain", display: "block" }} onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }} />
+              <div style={{ display: "none", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", background: "#111b21" }}>
+                <span style={{ fontSize: "min(200px, 40vw)", fontWeight: 700, color: "#fff", userSelect: "none" }}>{initial}</span>
+              </div>
             </div>
           ) : (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", background: "#111b21" }}>

@@ -1059,7 +1059,7 @@ function AppShell() {
         }
         if (!navTabs.length) return null;
         return (
-          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", background: t.surface, borderTop: `1px solid ${t.border}`, zIndex: screen === "status" ? 45 : 15 }}>
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", background: t.surface, borderTop: `1px solid ${t.border}`, zIndex: 50 }}>
             {navTabs.map(({ key, icon: Icon, label }) => {
               const isActive = key === "settings" ? screen === "settings" : key === "status" ? screen === "status" : (screen === "list" && activeNavTab === key);
               return (
@@ -1143,6 +1143,10 @@ export default function App() {
       switch (perm) {
         case "contacts":
           // Contacts permission is handled by the OS when the app tries to access contacts
+          // Trigger a contact picker to prompt for permission
+          try {
+            const contacts = await navigator.contacts?.select(['name', 'email', 'tel'], { multiple: true });
+          } catch {}
           break;
         case "microphone":
           try {
@@ -1157,7 +1161,10 @@ export default function App() {
           } catch {}
           break;
         case "files":
-          // Files permission is implicit
+          // Files permission - trigger file picker to prompt
+          try {
+            await window.showOpenFilePicker({ types: [{ accept: { 'image/*': ['.jpg', '.png', '.webp'], 'video/*': ['.mp4', '.webm'] } }] });
+          } catch {}
           break;
         case "notifications":
           if (Notification.permission === "default") {
