@@ -672,12 +672,17 @@ export default function AdminDashboard({ myUid, onBack }) {
                 <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: sysConfig?.disableAiVision ? 23 : 3, transition: "left 0.15s" }} />
               </div>
               <span style={{ fontWeight: 700, fontSize: 14, color: sysConfig?.disableAiVision ? "#fff" : t.text }}>
-                {sysConfig?.disableAiVision ? "GLOBAL AI IMAGE ANALYSIS OFF" : "Global AI Image Analysis Control"}
+                {sysConfig?.disableAiVision ? "AI Image Analysis: OFF (hidden from all users)" : "AI Image Analysis: ON (users can upload images)"}
               </span>
             </div>
             {sysConfig?.disableAiVision && (
               <div style={{ padding: "8px 12px", borderRadius: 8, background: "#FFE5E5", color: "#FF3B30", fontSize: 12.5, fontWeight: 600 }}>
-                The image attachment button is hidden in every AI chat room. Vision analysis is disabled for all users.
+                Image upload button is hidden in AI chat. Vision analysis is disabled for all users.
+              </div>
+            )}
+            {!sysConfig?.disableAiVision && (
+              <div style={{ padding: "8px 12px", borderRadius: 8, background: "#E5F9E7", color: "#28A745", fontSize: 12.5, fontWeight: 600 }}>
+                Image upload button is visible in AI chat. Users can upload images for AI analysis.
               </div>
             )}
           </div>

@@ -261,9 +261,30 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
 
   const handlePost = async () => {
     if (postMode === "text" && !postText.trim()) return;
-    if (postMode === "media" && !postMedia) return;
+    if (postMode === "media" && !postMedia && postImages.length === 0) return;
     setPosting(true);
     try {
+      // Handle multiple images - send as separate status updates
+      if (postImages.length > 0) {
+        for (let i = 0; i < postImages.length; i++) {
+          const img = postImages[i];
+          const file = new File([img], `status-${Date.now()}-${i}.jpg`, { type: "image/jpeg" });
+          const result = await uploadChatFile(`status-${myUid}`, myUid, file, { compress: true });
+          const mediaURL = result.url;
+await postStatus(myUid, {
+            text: postText.trim() || null,
+            mediaURL,
+            mediaType: "image",
+            backgroundColor: bgColor,
+            fontFamily,
+            durationMs: durationSeconds * 1000,
+            textOverlay: textOverlay.trim() || null,
+          });
+        }
+        setPostImages([]);
+      }
+
+      // Handle single video or single image from postMedia
       let mediaURL = null;
       let mediaType = null;
       let durationMs = null;
@@ -306,6 +327,7 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
       setPostText("");
       setPostMedia(null);
       setPostMediaType(null);
+      setPostImages([]);
       setTextOverlay("");
       setBgAudioFile(null);
       setShowPost(false);
@@ -314,11 +336,22 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
   };
 
   const handleFileSelect = async (e, type) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setPostMedia(f);
-    setPostMediaType(type);
-    setPostMode("media");
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    if (type === "image") {
+      // Allow up to 6 images
+      const newImages = files.slice(0, 6 - postImages.length);
+      if (newImages.length > 0) {
+        setPostImages(prev => [...prev, ...newImages]);
+        setPostMode("media");
+        setPostMediaType("image");
+      }
+    } else if (type === "video" && files[0]) {
+      setPostMedia(files[0]);
+      setPostMediaType("video");
+      setPostMode("media");
+    }
     e.target.value = "";
   };
 
@@ -622,8 +655,40 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
               </div>
             ) : (
               <div>
-                <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => handleFileSelect(e, "image")} />
+                <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => handleFileSelect(e, "image")} />
                 <input ref={videoFileRef} type="file" accept="video/*" style={{ display: "none" }} onChange={(e) => handleFileSelect(e, "video")} />
+                <input ref={photoInputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => handleFileSelect(e, "image")} />
+
+                {/* Multiple image gallery picker (WhatsApp-style) */}
+                {postImages.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, marginBottom: 8 }}>
+                      {postImages.length} image{postImages.length > 1 ? "s" : ""} selected
+                    </div>
+                    <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
+                      {postImages.map((img, idx) => (
+                        <div key={idx} style={{ position: "relative", flexShrink: 0, width: 80, height: 80, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
+                          <img src={URL.createObjectURL(img)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setPostImages(prev => prev.filter((_, i) => i !== idx)); }}
+                            style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.6)", border: "none", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    {postImages.length < 6 && (
+                      <button
+                        onClick={() => photoInputRef.current?.click()}
+                        style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", borderRadius: 10, background: t.primaryLight, cursor: "pointer", marginTop: 8 }}
+                      >
+                        <Plus size={16} color={t.primary} />
+                        <span style={{ fontSize: 13, fontWeight: 600, color: t.primary }}>Add more</span>
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
                   <div onClick={() => fileRef.current?.click()} style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", borderRadius: 10, background: t.primaryLight, cursor: "pointer" }}>
@@ -640,7 +705,8 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
                   </div>
                 </div>
 
-                {postMedia && (
+                {/* Single video/image fallback when no multiple images */}
+                {(postMedia || postImages.length === 0) && postMedia && (
                   <div style={{ position: "relative", marginBottom: 12 }}>
                     {postMediaType === "video" ? (
                       <video src={URL.createObjectURL(postMedia)} style={{ width: "100%", maxHeight: 180, borderRadius: 10, objectFit: "contain", background: "#000" }} />

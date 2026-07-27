@@ -646,7 +646,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
       )}
 
       {contextMenuChat && (
-        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setContextMenuChat(null)}>
+        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setContextMenuChat(null)} onTouchStart={() => setContextMenuChat(null)}>
           <div style={{ background: t.surface, borderRadius: 14, overflow: "hidden", minWidth: 200, boxShadow: "0 4px 20px rgba(0,0,0,0.25)" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ padding: "14px 18px 8px", borderBottom: `1px solid ${t.border}` }}>
               <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{chatDisplayName(contextMenuChat)}</div>

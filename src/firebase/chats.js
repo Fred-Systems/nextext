@@ -219,9 +219,24 @@ export async function setTypingHeartbeat(chatId, myUid) {
 }
 
 export async function reactToMessage(chatId, messageId, myUid, emoji) {
-  await updateDoc(doc(db, "chats", chatId, "messages", messageId), {
-    [`reactions.${myUid}`]: emoji,
-  });
+  const messageRef = doc(db, "chats", chatId, "messages", messageId);
+  const snap = await getDoc(messageRef);
+  if (!snap.exists()) return;
+  const data = snap.data();
+  const existingReactions = data.reactions || {};
+  const myReaction = existingReactions[myUid];
+
+  if (myReaction === emoji) {
+    // User already reacted with this emoji, remove their reaction
+    await updateDoc(messageRef, {
+      [`reactions.${myUid}`]: deleteField(),
+    });
+  } else {
+    // Set new reaction (or replace existing different reaction)
+    await updateDoc(messageRef, {
+      [`reactions.${myUid}`]: emoji,
+    });
+  }
 }
 
 // Sends an image, video, file, or voice note message -- the actual bytes

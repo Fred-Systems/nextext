@@ -168,9 +168,14 @@ export default React.memo(function Avatar({ photoURL, name, uid, size = 52, styl
       )}
       {fullscreen && createPortal(
         <div onClick={() => setFullscreen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", zIndex: 999999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+          <div style={{ position: "absolute", top: 16, right: 16, zIndex: 1000001 }}>
+            <div onClick={(e) => { e.stopPropagation(); setFullscreen(false); }} style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,0.25)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <X size={24} color="#fff" strokeWidth={3} />
+            </div>
+          </div>
           {effectivePhotoURL ? (
-            <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", padding: 16 }}>
-              <img src={effectivePhotoURL} alt={name || "avatar"} style={{ maxWidth: "100%", maxHeight: "80%", borderRadius: 0, objectFit: "contain", display: "block" }} />
+            <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", padding: 24 }}>
+              <img src={effectivePhotoURL} alt={name || "avatar"} style={{ maxWidth: "90%", maxHeight: "90%", borderRadius: 8, objectFit: "contain", display: "block" }} />
             </div>
           ) : (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", background: "#111b21" }}>
@@ -180,9 +185,6 @@ export default React.memo(function Avatar({ photoURL, name, uid, size = 52, styl
           {name && (
             <div style={{ position: "absolute", bottom: 40, left: 0, right: 0, color: "#fff", fontSize: 16, fontWeight: 600, textAlign: "center", maxWidth: "90%", margin: "0 auto" }}>{name}</div>
           )}
-          <div onClick={() => setFullscreen(false)} style={{ position: "absolute", top: 16, right: 16, width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,0.25)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 1000000 }}>
-            <X size={24} color="#fff" strokeWidth={3} />
-          </div>
         </div>,
         document.body
       )}

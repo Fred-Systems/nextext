@@ -347,8 +347,8 @@ export default function StatusStoryViewer({ statuses, initialIndex = 0, myUid, o
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "60px 20px 40px" }}>
         {current.bgAudioURL && <audio ref={bgAudioRef} src={current.bgAudioURL} loop />}
         {current.mediaType === "video" && current.mediaURL ? (
-          <div style={{ position: "relative", maxWidth: "100%", maxHeight: "100%" }}>
-            <video ref={videoRef} src={current.mediaURL} muted playsInline loop={false} style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 8, objectFit: "contain" }} />
+          <div style={{ position: "relative", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+            <video ref={videoRef} src={current.mediaURL} muted playsInline loop={false} style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", borderRadius: 8, objectFit: "contain" }} />
             {current.textOverlay && (
               <div style={{ position: "absolute", bottom: 16, left: 12, right: 12, background: "rgba(0,0,0,0.6)", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: 14, fontWeight: 600, textAlign: "center" }}>
                 {current.textOverlay}
@@ -356,8 +356,8 @@ export default function StatusStoryViewer({ statuses, initialIndex = 0, myUid, o
             )}
           </div>
         ) : current.mediaType === "image" && current.mediaURL ? (
-          <div style={{ position: "relative", maxWidth: "100%", maxHeight: "100%" }}>
-            <img src={current.mediaURL} alt="Status" style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 8, objectFit: "contain" }} />
+          <div style={{ position: "relative", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+            <img src={current.mediaURL} alt="Status" style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain", borderRadius: 8 }} />
             {current.textOverlay && (
               <div style={{ position: "absolute", bottom: 16, left: 12, right: 12, background: "rgba(0,0,0,0.6)", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: 14, fontWeight: 600, textAlign: "center" }}>
                 {current.textOverlay}
