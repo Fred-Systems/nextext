@@ -1064,10 +1064,12 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         ) : (
           <>
             {showEmojiPicker && (
-              <div style={{ position: "absolute", bottom: 64, left: 10, right: 10, background: t.surface, borderRadius: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", padding: 12, zIndex: 30, display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 6, maxHeight: 180, overflowY: "auto" }}>
-                {EMOJI_PICKER_SET.map((e) => (
-                  <span key={e} onClick={() => { handleInputChange(input + e); setShowEmojiPicker(false); }} style={{ fontSize: 22, cursor: "pointer", textAlign: "center" }}>{e}</span>
-                ))}
+              <div onClick={() => setShowEmojiPicker(false)} style={{ position: "absolute", inset: 0, zIndex: 29 }}>
+                <div style={{ position: "absolute", bottom: 64, left: 10, right: 10, background: t.surface, borderRadius: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", padding: 12, zIndex: 30, display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 6, maxHeight: 180, overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+                  {EMOJI_PICKER_SET.map((e) => (
+                    <span key={e} onClick={() => { handleInputChange(input + e); setShowEmojiPicker(false); }} style={{ fontSize: 22, cursor: "pointer", textAlign: "center" }}>{e}</span>
+                  ))}
+                </div>
               </div>
             )}
             {showAttach && (

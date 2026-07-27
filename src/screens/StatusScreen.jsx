@@ -178,6 +178,7 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
   const cameraVideoRef = useRef(null);
   const cameraRecordingRef = useRef(null);
   const cameraTimerRef = useRef(null);
+  const photoInputRef = useRef(null);
 
   const acceptedContacts = contacts.filter((c) => c.status === "accepted");
   const contactUids = acceptedContacts.map((c) => c.uid);
