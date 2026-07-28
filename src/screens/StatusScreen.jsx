@@ -111,10 +111,14 @@ function StatusViewerModal({ statusId, contacts, onClose, t }) {
   return (
     <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: t.surface, borderRadius: 16, width: "100%", maxWidth: 320, maxHeight: "70%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${t.border}` }}>
-          <Eye size={18} color={t.primary} style={{ marginRight: 8 }} />
-          <span style={{ fontWeight: 700, fontSize: 16, color: t.text, flex: 1 }}>Viewers ({viewers.length})</span>
-          <X size={18} color={t.textMuted} onClick={onClose} style={{ cursor: "pointer" }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: `1px solid ${t.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Eye size={18} color={t.primary} style={{ marginRight: 8 }} />
+            <span style={{ fontWeight: 700, fontSize: 16, color: t.text, flex: 1 }}>Viewers ({viewers.length})</span>
+          </div>
+          <div onClick={onClose} style={{ width: 30, height: 30, borderRadius: "50%", border: `1.5px solid ${t.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <X size={16} color={t.textMuted} />
+          </div>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
           {viewers.length === 0 && (
