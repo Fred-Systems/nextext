@@ -278,7 +278,6 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
 
   const handleTouchStart = useCallback((chat, e) => {
     swipeRef.current[chat.id] = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, swiping: false };
-    longPressRef.current = setTimeout(() => setContextMenuChat(chat), 400);
   }, []);
 
   const handleTouchMove = useCallback((chat, e) => {
@@ -286,19 +285,16 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
     if (!ref) return;
     const dx = e.touches[0].clientX - ref.startX;
     const dy = e.touches[0].clientY - ref.startY;
-    if (Math.abs(dy) > 10) { clearTimeout(longPressRef.current); return; }
+    if (Math.abs(dy) > 10) return;
     if (dx < -20) {
       ref.swiping = true;
       setSwipedChatId(chat.id);
-      clearTimeout(longPressRef.current);
     } else if (dx > 20) {
       setSwipedChatId(null);
-      clearTimeout(longPressRef.current);
     }
   }, []);
 
   const handleTouchEnd = useCallback((chatId) => {
-    clearTimeout(longPressRef.current);
     const ref = swipeRef.current[chatId];
     if (ref && !ref.swiping && swipedChatId === chatId) {
       // Tap outside — close
@@ -537,6 +533,9 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
         </div>
       </div>
 
+      {swipedChatId && (
+        <div onClick={() => setSwipedChatId(null)} onTouchStart={() => setSwipedChatId(null)} onMouseDown={() => setSwipedChatId(null)} style={{ position: "fixed", inset: 0, zIndex: 5, background: "transparent" }} />
+      )}
       {showFab && (
         <>
           <div onClick={() => setShowFab(false)} style={{ position: "fixed", inset: 0, zIndex: 9 }} />
@@ -656,8 +655,8 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
       )}
 
       {contextMenuChat && (
-        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setContextMenuChat(null)} onTouchStart={() => setContextMenuChat(null)}>
-          <div style={{ background: t.surface, borderRadius: 14, overflow: "hidden", minWidth: 200, boxShadow: "0 4px 20px rgba(0,0,0,0.25)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setContextMenuChat(null)} onTouchStart={() => setContextMenuChat(null)} onMouseDown={() => setContextMenuChat(null)}>
+          <div style={{ background: t.surface, borderRadius: 14, overflow: "hidden", minWidth: 200, boxShadow: "0 4px 20px rgba(0,0,0,0.25)" }} onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
             <div style={{ padding: "14px 18px 8px", borderBottom: `1px solid ${t.border}` }}>
               <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{chatDisplayName(contextMenuChat)}</div>
             </div>

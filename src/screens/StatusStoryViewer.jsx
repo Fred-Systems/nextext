@@ -365,7 +365,7 @@ export default function StatusStoryViewer({ statuses, initialIndex = 0, myUid, o
             )}
           </div>
         ) : (
-          <div style={{ color: "#fff", fontSize: 22, fontWeight: 700, textAlign: "center", lineHeight: 1.4, padding: 20, fontFamily: current.fontFamily || appFont }}>
+          <div style={{ color: "#fff", fontSize: 22, fontWeight: 700, textAlign: "center", lineHeight: 1.4, padding: 20, fontFamily: current.fontFamily || appFont, width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
             {current.text || "No text"}
           </div>
         )}

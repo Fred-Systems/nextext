@@ -89,23 +89,25 @@ export function useAuth() {
 
   async function signInWithGoogle() {
     try {
-      const cred = await signInWithPopup(auth, googleProvider);
-      const ref = doc(db, "users", cred.user.uid);
-      const snap = await getDoc(ref);
-      if (!snap.exists()) {
-        await createUserProfile(cred.user, {
-          email: cred.user.email,
-          username: cred.user.email.split("@")[0],
-          displayName: cred.user.displayName || "New User",
-        });
-      }
-      return cred.user;
-    } catch (e) {
-      if (e.code === "auth/popup-blocked" || e.code === "auth/popup-closed-by-user" || e.code === "auth/unauthorized-domain") {
-        // Fall back to redirect for WebView/Capacitor
+      const isCapacitor = window.location.hostname === 'localhost';
+      if (isCapacitor) {
+        const cred = await signInWithPopup(auth, googleProvider);
+        const ref = doc(db, "users", cred.user.uid);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          await createUserProfile(cred.user, {
+            email: cred.user.email,
+            username: cred.user.email.split("@")[0],
+            displayName: cred.user.displayName || "New User",
+          });
+        }
+        return cred.user;
+      } else {
         await signInWithRedirect(auth, googleProvider);
         return null;
       }
+    } catch (e) {
+      console.error("[useAuth] Google sign-in error:", e);
       throw e;
     }
   }

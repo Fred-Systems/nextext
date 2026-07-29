@@ -54,7 +54,7 @@ function ThemeSheet({ current, onSelect, onClose }) {
 
   return (
     <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
-      <div style={{ background: t.surface, width: "100%", borderRadius: "20px 20px 0 0", padding: 20, maxHeight: "78%", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ background: t.surface, width: "100%", borderRadius: "20px 20px 0 0", padding: "20px 20px 30px", maxHeight: "90%", overflowY: "auto", boxSizing: "border-box" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
           <h3 style={{ margin: 0, color: t.text, fontSize: 18 }}>Theme</h3>
           <X size={20} color={t.textMuted} onClick={onClose} style={{ cursor: "pointer" }} />
@@ -436,7 +436,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 0", borderTop: `1px solid ${t.border}` }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, color: t.text, fontSize: 15 }}>Full Screen Mode</div>
-              <div style={{ fontSize: 12.5, color: t.textMuted, marginTop: 1 }}>Hide status bar and navigation for immersive experience.</div>
+              <div style={{ fontSize: 12.5, color: t.textMuted, marginTop: 1 }}>Hide status bar and navigation for immersive experience. (Only available on some devices)</div>
             </div>
             <div
               onClick={() => {
@@ -617,7 +617,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
           </div>
 
           <div style={{ padding: "13px 0" }}>
-            <button onClick={() => { const keys = Object.keys(localStorage).filter((k) => k.startsWith("nextext_")); keys.forEach((k) => localStorage.removeItem(k)); window.location.reload(); }} style={{ width: "100%", padding: "11px 16px", border: "none", background: t.primaryLight, color: t.primary, fontWeight: 700, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <button onClick={() => { if (window.confirm("Are you sure you want to reset all settings? This will clear all local preferences (theme, privacy, app lock, etc.) and reload the app. This cannot be undone.")) { const keys = Object.keys(localStorage).filter((k) => k.startsWith("nextext_")); keys.forEach((k) => localStorage.removeItem(k)); window.location.reload(); } }} style={{ width: "100%", padding: "11px 16px", border: "none", background: t.primaryLight, color: t.primary, fontWeight: 700, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <RotateCcw size={15} /> Reset all settings
             </button>
           </div>
@@ -912,6 +912,8 @@ function AppShell() {
     fontFamily: appFont,
     width: "100%",
     height: "100%",
+    transform: `scale(${uiScale})`,
+    transformOrigin: "top left",
   };
 
   if (auth.loading) {
@@ -926,10 +928,6 @@ function AppShell() {
   if (!auth.user) {
     return <div style={containerStyle}><AuthScreen auth={auth} /></div>;
   }
-  if (appLocked) {
-    return <AppLockScreen onUnlock={() => setAppLocked(false)} />;
-  }
-
   const isAdmin = auth.userDoc?.role === "admin" || auth.userDoc?.isAdmin === true;
 
   return (
@@ -1149,7 +1147,10 @@ export default function App() {
         case "contacts":
           try {
             if (navigator.contacts && navigator.contacts.select) {
-              await navigator.contacts.select(['name', 'email', 'tel'], { multiple: true });
+              await Promise.race([
+                navigator.contacts.select(['name', 'email', 'tel'], { multiple: true }),
+                new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000))
+              ]);
             }
           } catch {}
           break;
@@ -1167,11 +1168,20 @@ export default function App() {
           break;
         case "files":
           try {
+            if (navigator.storage?.persist) {
+              await navigator.storage.persist();
+            }
             const input = document.createElement("input");
             input.type = "file";
             input.accept = "image/*,video/*";
+            const focusHandler = () => {};
+            window.addEventListener("focus", focusHandler, { once: true });
             input.click();
-            await new Promise((resolve) => { input.onchange = resolve; });
+            await Promise.race([
+              new Promise((resolve) => { input.addEventListener("change", resolve, { once: true }); }),
+              new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000))
+            ]);
+            window.removeEventListener("focus", focusHandler);
           } catch {}
           break;
         case "notifications":
@@ -1188,6 +1198,10 @@ export default function App() {
     setPermissionStep((prev) => prev + 1);
   };
 
+  const skipAllPermissions = () => {
+    finishPermissions();
+  };
+
   const skipPermission = () => {
     setPermissionStep((prev) => prev + 1);
   };
@@ -1202,7 +1216,10 @@ export default function App() {
       <div style={{ background: "#121B22", borderRadius: 20, width: "100%", maxWidth: 400, maxHeight: "90%", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: "24px 20px 16px", textAlign: "center", borderBottom: "1px solid #2a3a4a" }}>
           <div style={{ fontSize: 20, fontWeight: 700, color: "#fff", marginBottom: 8 }}>Welcome to NexText</div>
-          <div style={{ fontSize: 14, color: "#8a9aa8" }}>We need a few permissions to give you the best experience</div>
+          <div style={{ fontSize: 14, color: "#8a9aa8", marginBottom: 12 }}>We need a few permissions to give you the best experience</div>
+          <div onClick={skipAllPermissions} style={{ padding: "8px 16px", borderRadius: 8, background: "transparent", color: "#8a9aa8", fontWeight: 600, fontSize: 12, border: "1px solid rgba(255,255,255,0.15)", cursor: "pointer", display: "inline-block" }}>
+            Skip all — I'll do it later
+          </div>
         </div>
         <div style={{ padding: "16px 20px 8px", maxHeight: "60vh", overflowY: "auto" }}>
           {permissions.map((p, i) => (
@@ -1231,6 +1248,11 @@ export default function App() {
             </div>
           ))}
         </div>
+        <div style={{ padding: "12px 20px", textAlign: "center", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+          <div onClick={skipAllPermissions} style={{ padding: "10px 16px", borderRadius: 8, background: "transparent", color: "#8a9aa8", fontWeight: 600, fontSize: 13, border: "1px solid rgba(255,255,255,0.15)", cursor: "pointer", display: "inline-block" }}>
+            Skip all — I'll do it later
+          </div>
+        </div>
         {permissionStep >= permissions.length && (
           <div style={{ padding: "20px", textAlign: "center", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 8 }}>All set!</div>
@@ -1246,6 +1268,7 @@ export default function App() {
     <ThemeProvider>
       <AppShell />
       {showPermissionDialog && <PermissionDialog />}
+      {appLocked && <AppLockScreen onUnlock={() => setAppLocked(false)} />}
     </ThemeProvider>
   );
 }

@@ -18,6 +18,7 @@ import { extractFirstUrl, fetchLinkPreview, isLinkPreviewEnabled } from "../util
 import { useGlobalSettings } from "../firebase/config-settings";
 import { useStatuses } from "../firebase/status";
 import { shouldTriggerGroupAI, sendGroupAIMessage, AI_CONTACT_UID } from "../firebase/ai";
+import { useContacts } from "../firebase/contacts";
 
 
 const VIEWED_KEY = "nextext_status_viewed";
@@ -372,6 +373,8 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const readTimer = useRef(null);
   const { messages: rawMessages } = useMessages(chatId, myUid);
   const messages = rawMessages || [];
+  const { contacts: convoContacts } = useContacts(myUid);
+  const acceptedContacts = (convoContacts || []).filter((c) => c.status === "accepted");
   const presence = usePresence(isGroup ? null : otherUid, myUid);
   const otherParticipants = isGroup
     ? (chatMeta?.participants || []).filter((p) => p !== myUid)
@@ -830,8 +833,8 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     if (m.type === "image") return (
       <div>
         <StatusReplyBlock statusRef={m.statusRef} mine={m.senderId === myUid} t={t} />
-        <div onClick={(e) => { e.stopPropagation(); setFullscreenImage(m.mediaURL); }} style={{ cursor: "pointer" }}>
-          <img src={m.mediaURL} alt="Sent photo" className="nx-media-img" style={{ maxWidth: 220, maxHeight: 280, borderRadius: 8, display: "block" }} />
+        <div onClick={(e) => { e.stopPropagation(); setFullscreenImage(m.mediaURL); }} style={{ cursor: "pointer", width: 220, height: 220, overflow: "hidden", borderRadius: 8, background: "rgba(0,0,0,0.05)" }}>
+          <img src={m.mediaURL} alt="Sent photo" className="nx-media-img" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
         </div>
         {expiryText && <div style={{ fontSize: 10, opacity: 0.55, marginTop: 3, fontStyle: "italic" }}>{expiryText}</div>}
       </div>
@@ -839,7 +842,9 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     if (m.type === "video") return (
       <div>
         <StatusReplyBlock statusRef={m.statusRef} mine={m.senderId === myUid} t={t} />
-          <video src={m.mediaURL} controls className="nx-media-img" style={{ maxWidth: 240, maxHeight: 280, borderRadius: 8, display: "block" }} />
+          <div style={{ width: 220, height: 220, overflow: "hidden", borderRadius: 8, background: "rgba(0,0,0,0.05)", position: "relative" }}>
+            <video src={m.mediaURL} controls className="nx-media-img" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          </div>
         {expiryText && <div style={{ fontSize: 10, opacity: 0.55, marginTop: 3, fontStyle: "italic" }}>{expiryText}</div>}
       </div>
     );
@@ -895,7 +900,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
               size={38}
               hasActiveStatus={!isGroup && hasOtherActiveStatus}
               statusViewed={otherStatusViewed}
-              onViewPicture={() => contact?.profile?.photoURL && setFullscreenImage(contact.profile.photoURL)}
+              onViewPicture={() => { if (contact?.profile?.photoURL) setFullscreenImage(contact.profile.photoURL); }}
             />
           )}
         </div>

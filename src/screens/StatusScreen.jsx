@@ -267,7 +267,6 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
 
   const handlePost = async () => {
     if (postMode === "text" && !postText.trim()) return;
-    // Allow posting if we have images or media
     if (postMode === "media" && !postMedia && postImages.length === 0) {
       setSendError("Please select an image, video, or record something.");
       return;
@@ -576,7 +575,7 @@ await postStatus(myUid, {
       {/* Camera overlay */}
       {showCamera && (
         <div style={{ position: "absolute", inset: 0, background: "#000", zIndex: 60, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", minHeight: 44, flexShrink: 0 }}>
             <X size={22} color="#fff" onClick={() => { setShowCamera(false); stopCameraStream(); }} style={{ cursor: "pointer" }} />
           </div>
           <video
@@ -590,7 +589,7 @@ await postStatus(myUid, {
             autoPlay
             playsInline
             muted
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            style={{ flex: 1, width: "100%", objectFit: "cover" }}
           />
           {cameraError && <div style={{ position: "absolute", bottom: 100, left: 0, right: 0, textAlign: "center", color: "#FF3B30", fontSize: 13, fontWeight: 600 }}>{cameraError}</div>}
           <div style={{ position: "absolute", bottom: 40, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 28, zIndex: 10 }}>
@@ -719,9 +718,9 @@ await postStatus(myUid, {
                 {(postMedia || postImages.length === 0) && postMedia && (
                   <div style={{ position: "relative", marginBottom: 12 }}>
                     {postMediaType === "video" ? (
-                      <video src={URL.createObjectURL(postMedia)} style={{ width: "100%", maxHeight: 180, borderRadius: 10, objectFit: "contain", background: "#000" }} />
+                      <video src={URL.createObjectURL(postMedia)} style={{ width: "100%", maxHeight: 300, borderRadius: 10, objectFit: "contain", background: "#000" }} />
                     ) : (
-                      <img src={URL.createObjectURL(postMedia)} alt="" style={{ width: "100%", maxHeight: 180, borderRadius: 10, objectFit: "contain" }} />
+                      <img src={URL.createObjectURL(postMedia)} alt="" style={{ width: "100%", maxHeight: 300, borderRadius: 10, objectFit: "contain" }} />
                     )}
                     <div onClick={() => { setPostMedia(null); setPostMediaType(null); setPostMode("text"); }} style={{ position: "absolute", top: 8, right: 8, width: 22, height: 22, borderRadius: "50%", background: "#FF3B30", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
                       <X size={12} color="#fff" />
@@ -824,8 +823,8 @@ await postStatus(myUid, {
 
             <button
               onClick={handlePost}
-              disabled={posting || (postMode === "text" && !postText.trim()) || (postMode === "media" && !postMedia)}
-              style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: ((postMode === "text" && postText.trim()) || (postMode === "media" && postMedia)) ? t.primary : t.border, color: ((postMode === "text" && postText.trim()) || (postMode === "media" && postMedia)) ? t.bubbleMeText : t.textMuted, fontWeight: 700, fontSize: 15, cursor: ((postMode === "text" && postText.trim()) || (postMode === "media" && postMedia)) ? "pointer" : "not-allowed" }}
+              disabled={posting || (postMode === "text" && !postText.trim()) || (postMode === "media" && !postMedia && postImages.length === 0)}
+              style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: ((postMode === "text" && postText.trim()) || (postMode === "media" && (postMedia || postImages.length > 0))) ? t.primary : t.border, color: ((postMode === "text" && postText.trim()) || (postMode === "media" && (postMedia || postImages.length > 0))) ? t.bubbleMeText : t.textMuted, fontWeight: 700, fontSize: 15, cursor: ((postMode === "text" && postText.trim()) || (postMode === "media" && (postMedia || postImages.length > 0))) ? "pointer" : "not-allowed" }}
             >
               {posting ? "Posting…" : "Post Status"}
             </button>
