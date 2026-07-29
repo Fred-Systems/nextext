@@ -616,7 +616,7 @@ await postStatus(myUid, {
       {/* Post status sheet */}
       {showPost && (
         <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50, display: "flex", alignItems: "flex-end" }} onClick={() => { setShowPost(false); setPostMedia(null); setPostText(""); setPostMode("text"); }}>
-          <div style={{ background: t.surface, width: "100%", maxWidth: "480px", margin: "0 auto", borderRadius: "20px 20px 0 0", padding: "20px 24px 30px", maxHeight: "95vh", overflowY: "auto", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ background: t.surface, width: "100%", boxSizing: "border-box", borderRadius: "20px 20px 0 0", padding: "20px 24px 30px", maxHeight: "95vh", overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <span style={{ fontWeight: 700, fontSize: 17, color: t.text }}>New Status</span>
               <X size={20} color={t.textMuted} onClick={() => { setShowPost(false); setPostMedia(null); setPostText(""); setPostMode("text"); }} style={{ cursor: "pointer" }} />
@@ -634,7 +634,7 @@ await postStatus(myUid, {
 
             {postMode === "text" ? (
               <div>
-                <div style={{ padding: 16, borderRadius: 12, background: STATUS_BG_COLORS[bgColorIdx], minHeight: 110, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12, transition: "background 0.2s" }}>
+                <div style={{ padding: 16, boxSizing: "border-box", overflow: "hidden", borderRadius: 12, background: STATUS_BG_COLORS[bgColorIdx], minHeight: 110, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12, transition: "background 0.2s" }}>
                   <textarea
                     ref={postTextRef}
                     autoFocus
@@ -642,7 +642,7 @@ await postStatus(myUid, {
                     onChange={(e) => setPostText(e.target.value)}
                     placeholder="What's on your mind?"
                     rows={3}
-                    style={{ width: "100%", background: "transparent", border: "none", outline: "none", color: "#fff", fontSize: 18, fontWeight: 700, textAlign: "center", resize: "none", fontFamily: FONTS[fontIdx].value, lineHeight: 1.4, caretColor: "#fff" }}
+                    style={{ width: "100%", boxSizing: "border-box", background: "transparent", border: "none", outline: "none", color: "#fff", fontSize: 18, fontWeight: 700, textAlign: "center", resize: "none", fontFamily: FONTS[fontIdx].value, lineHeight: 1.4, caretColor: "#fff" }}
                   />
                 </div>
 
@@ -819,6 +819,8 @@ await postStatus(myUid, {
                 )}
               </div>
             )}
+
+            <div style={{ flex: 1, minHeight: 0 }} />
 
             <button
               onClick={handlePost}

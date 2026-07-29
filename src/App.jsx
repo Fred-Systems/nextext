@@ -27,6 +27,7 @@ import { useSystemConfigHook, requestAIAccess, setAIPersonality, PERSONALITIES }
 import AppLockScreen from "./screens/AppLockScreen";
 import StatusScreen from "./screens/StatusScreen";
 import GroupInfoScreen from "./screens/GroupInfoScreen";
+import { initNotifications } from "./firebase/notifications";
 import UpdatePrompt from "./components/UpdatePrompt";
 import { checkForUpdate, openDownloadUrl, setLastSeenRelease } from "./updater/updateChecker";
 import { updateGlobalSettings, useGlobalSettings } from "./firebase/config-settings";
@@ -741,6 +742,10 @@ function AppShell() {
   const myUid = auth.user?.uid;
   usePresenceHeartbeat(myUid);
 
+  useEffect(() => {
+    if (myUid) initNotifications(myUid);
+  }, [myUid]);
+
   const { contacts } = useContacts(myUid);
   const { chats: myChats } = useChats(myUid);
   const totalUnreadChats = (myChats || []).reduce((sum, c) => sum + (c.unreadCount?.[myUid] || 0), 0);
@@ -1142,10 +1147,10 @@ export default function App() {
     try {
       switch (perm) {
         case "contacts":
-          // Contacts permission is handled by the OS when the app tries to access contacts
-          // Trigger a contact picker to prompt for permission
           try {
-            const contacts = await navigator.contacts?.select(['name', 'email', 'tel'], { multiple: true });
+            if (navigator.contacts && navigator.contacts.select) {
+              await navigator.contacts.select(['name', 'email', 'tel'], { multiple: true });
+            }
           } catch {}
           break;
         case "microphone":
@@ -1161,20 +1166,29 @@ export default function App() {
           } catch {}
           break;
         case "files":
-          // Files permission - trigger file picker to prompt
           try {
-            await window.showOpenFilePicker({ types: [{ accept: { 'image/*': ['.jpg', '.png', '.webp'], 'video/*': ['.mp4', '.webm'] } }] });
+            const input = document.createElement("input");
+            input.type = "file";
+            input.accept = "image/*,video/*";
+            input.click();
+            await new Promise((resolve) => { input.onchange = resolve; });
           } catch {}
           break;
         case "notifications":
-          if (Notification.permission === "default") {
-            await Notification.requestPermission();
-          }
+          try {
+            if ("Notification" in window && Notification.permission === "default") {
+              await Notification.requestPermission();
+            }
+          } catch {}
           break;
       }
     } catch (e) {
       console.warn("Permission request failed:", e);
     }
+    setPermissionStep((prev) => prev + 1);
+  };
+
+  const skipPermission = () => {
     setPermissionStep((prev) => prev + 1);
   };
 
@@ -1205,9 +1219,14 @@ export default function App() {
                 <div style={{ fontSize: 12, color: "#8a9aa8", marginTop: 2 }}>{p.desc}</div>
               </div>
               {i === permissionStep && (
-                <button onClick={() => requestPermission(p.permission)} style={{ padding: "10px 20px", borderRadius: 8, background: "#00A884", color: "#fff", fontWeight: 700, fontSize: 13, border: "none", cursor: "pointer" }}>
-                  Allow
-                </button>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => requestPermission(p.permission)} style={{ padding: "10px 20px", borderRadius: 8, background: "#00A884", color: "#fff", fontWeight: 700, fontSize: 13, border: "none", cursor: "pointer" }}>
+                    Allow
+                  </button>
+                  <button onClick={skipPermission} style={{ padding: "10px 14px", borderRadius: 8, background: "transparent", color: "#8a9aa8", fontWeight: 600, fontSize: 12, border: "1px solid rgba(255,255,255,0.15)", cursor: "pointer" }}>
+                    Skip
+                  </button>
+                </div>
               )}
             </div>
           ))}

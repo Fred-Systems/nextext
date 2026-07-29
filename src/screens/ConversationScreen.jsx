@@ -340,6 +340,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState("");
+  const [capturedPhotos, setCapturedPhotos] = useState([]);
   const [restrictions, setRestrictions] = useState(null);
   const [newMsgBadge, setNewMsgBadge] = useState(0);
   const [contactCardMember, setContactCardMember] = useState(null);
@@ -680,9 +681,23 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
 
   const startVoiceRecording = async () => {
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setSendError("Voice recording is not supported on this browser or device.");
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       recordedChunksRef.current = [];
-      const recorder = new MediaRecorder(stream);
+      let mimeType = "audio/webm";
+      if (!MediaRecorder.isTypeSupported("audio/webm")) {
+        mimeType = "audio/webm;codecs=opus";
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = "audio/ogg;codecs=opus";
+          if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = "";
+          }
+        }
+      }
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       recorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
       recorder.start();
       mediaRecorderRef.current = recorder;
@@ -690,9 +705,9 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       setRecordSeconds(0);
       recordTimerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
     } catch (err) {
-      let msg = "Microphone access denied or unavailable.";
+      let msg = "Microphone access denied or unavailable. Please check your device settings and ensure microphone permission is granted for NexText, then try again.";
       if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-        msg = "Microphone permission denied. Please enable microphone access in your device settings for NexText.";
+        msg = "Microphone permission denied. Please enable microphone access in your device settings for NexText, then restart the app.";
       } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
         msg = "No microphone found. Please connect a microphone and try again.";
       } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
@@ -755,16 +770,9 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     canvas.getContext("2d").drawImage(video, 0, 0);
     canvas.toBlob(async (blob) => {
       if (!blob) return;
-      closeCamera();
       const file = new File([blob], `camera-${Date.now()}.jpg`, { type: "image/jpeg" });
-      setUploading(true);
-      try {
-        const result = await uploadChatFile(chatId, myUid, file, { compress: true });
-        await sendMediaMessage(chatId, myUid, "image", result, otherParticipants);
-      } catch (err) {
-        setSendError("Couldn't send photo: " + err.message);
-      }
-      setUploading(false);
+      const thumbnailUrl = URL.createObjectURL(blob);
+      setCapturedPhotos((prev) => [...prev, { file, thumbnailUrl, sending: false }]);
     }, "image/jpeg", 0.92);
   };
 
@@ -773,6 +781,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       cameraStreamRef.current.getTracks().forEach((tr) => tr.stop());
       cameraStreamRef.current = null;
     }
+    setCapturedPhotos([]);
     setShowCamera(false);
   };
 
@@ -877,7 +886,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
         <div onClick={onOpenProfile} style={{ cursor: "pointer" }}>
           {isGroup && chatMeta?.groupPhotoURL ? (
-            <img src={chatMeta.groupPhotoURL} alt="" style={{ width: 38, height: 38, borderRadius: "50%", objectFit: "cover" }} />
+            <img src={chatMeta.groupPhotoURL} alt="" style={{ width: 38, height: 38, borderRadius: "50%", objectFit: "cover", cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); setFullscreenImage(chatMeta.groupPhotoURL); }} />
           ) : (
             <Avatar
               photoURL={isGroup ? null : contact?.profile?.photoURL}
@@ -886,6 +895,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
               size={38}
               hasActiveStatus={!isGroup && hasOtherActiveStatus}
               statusViewed={otherStatusViewed}
+              onViewPicture={() => contact?.profile?.photoURL && setFullscreenImage(contact.profile.photoURL)}
             />
           )}
         </div>
@@ -905,6 +915,8 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         <MoreVertical size={19} color="#fff" style={{ cursor: "pointer" }} onClick={() => setShowOverflow(!showOverflow)} />
 
         {showOverflow && (
+          <>
+          <div onClick={() => setShowOverflow(false)} style={{ position: "fixed", inset: 0, zIndex: 39 }} />
           <div style={{ position: "absolute", top: 52, right: 10, background: t.surface, borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.25)", overflow: "hidden", zIndex: 40, minWidth: 190 }}>
             <div onClick={() => { scrollToTop(); setShowOverflow(false); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer" }}>
               <ArrowUp size={16} color={t.text} />
@@ -950,6 +962,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
               <span style={{ fontSize: 14, color: "#FF3B30" }}>Delete chat</span>
             </div>
           </div>
+          </>
         )}
         <input ref={wallpaperInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleWallpaperUpload} />
       </div>
@@ -1072,15 +1085,20 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         ) : (
           <>
             {showEmojiPicker && (
-              <div onClick={() => setShowEmojiPicker(false)} style={{ position: "absolute", inset: 0, zIndex: 29 }}>
-                <div style={{ position: "absolute", bottom: 64, left: 10, right: 10, background: t.surface, borderRadius: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", padding: 12, zIndex: 30, display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 6, maxHeight: 180, overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
-                  {EMOJI_PICKER_SET.map((e) => (
-                    <span key={e} onClick={() => { handleInputChange(input + e); }} style={{ fontSize: 22, cursor: "pointer", textAlign: "center" }}>{e}</span>
-                  ))}
+              <>
+                <div onClick={() => setShowEmojiPicker(false)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
+                <div style={{ position: "absolute", bottom: 64, left: 10, right: 10, background: t.surface, borderRadius: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", padding: 12, zIndex: 30, maxHeight: 200, overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {EMOJI_PICKER_SET.map((emoji) => (
+                      <span key={emoji} onClick={(e) => { e.stopPropagation(); setInput((prev) => prev + emoji); }} style={{ fontSize: 22, cursor: "pointer", padding: "4px 5px", borderRadius: 6, textAlign: "center" }}>{emoji}</span>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              </>
             )}
             {showAttach && (
+              <>
+              <div onClick={() => setShowAttach(false)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
               <div style={{ position: "absolute", bottom: 64, left: 10, background: t.surface, borderRadius: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", overflow: "hidden", zIndex: 30 }}>
                 <div onClick={() => { setShowAttach(false); setShowPoll(true); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer" }}>
                   <BarChart2 size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Poll</span>
@@ -1095,6 +1113,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
                   <Camera size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Camera</span>
                 </div>
               </div>
+              </>
             )}
             <input ref={photoInputRef} type="file" accept="image/*,video/*" style={{ display: "none" }} onChange={handlePhotoOrVideoPick} />
             <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={handleFilePick} />
@@ -1234,11 +1253,48 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
             <video ref={cameraVideoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           </div>
           {cameraError && <div style={{ color: "#FF3B30", fontSize: 13, textAlign: "center", padding: 8 }}>{cameraError}</div>}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 16px 24px", flexShrink: 0, gap: 16 }}>
-            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, overflowX: "auto", paddingBottom: 8, maxWidth: "70%" }}>
+          {capturedPhotos.length > 0 && (
+            <div style={{ display: "flex", gap: 8, padding: "8px 16px", overflowX: "auto", flexShrink: 0 }}>
+              {capturedPhotos.map((p, i) => (
+                <div key={i} onClick={async () => {
+                  if (p.sending) return;
+                  setCapturedPhotos((prev) => prev.map((x, j) => j === i ? { ...x, sending: true } : x));
+                  setUploading(true);
+                  try {
+                    const result = await uploadChatFile(chatId, myUid, p.file, { compress: true });
+                    await sendMediaMessage(chatId, myUid, "image", result, otherParticipants);
+                    setCapturedPhotos((prev) => prev.filter((_, j) => j !== i));
+                  } catch (err) {
+                    setSendError("Couldn't send photo: " + err.message);
+                    setCapturedPhotos((prev) => prev.map((x, j) => j === i ? { ...x, sending: false } : x));
+                  }
+                  setUploading(false);
+                }} style={{ flexShrink: 0, width: 52, height: 52, borderRadius: 8, overflow: "hidden", border: "2px solid rgba(255,255,255,0.4)", cursor: p.sending ? "wait" : "pointer", position: "relative" }}>
+                  <img src={p.thumbnailUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  {p.sending && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#fff" }}>Sending…</div>}
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px 20px", flexShrink: 0, gap: 16 }}>
+            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, overflowX: "auto", paddingBottom: 8, maxWidth: "60%" }}>
               {acceptedContacts.slice(0, 8).map((c) => (
-                <div key={c.uid} onClick={() => { closeCamera(); setCapturedPhoto(null); sendCapturedPhotoTo(chatForContact || { id: null, type: "direct", participants: [myUid, otherUid] }); }} style={{ flexShrink: 0, width: 56, height: 56, borderRadius: "50%", overflow: "hidden", border: "2px solid rgba(255,255,255,0.3)", cursor: "pointer", background: t.primaryLight }}>
-                  <Avatar photoURL={c.profile?.photoURL} name={c.profile?.displayName} uid={c.uid} size={48} />
+                <div key={c.uid} onClick={async () => {
+                  if (capturedPhotos.length === 0) return;
+                  const last = capturedPhotos[capturedPhotos.length - 1];
+                  setCapturedPhotos((prev) => prev.map((x, j) => j === prev.length - 1 ? { ...x, sending: true } : x));
+                  setUploading(true);
+                  try {
+                    const result = await uploadChatFile(chatId, myUid, last.file, { compress: true });
+                    await sendMediaMessage(chatId, myUid, "image", result, otherParticipants);
+                    setCapturedPhotos((prev) => prev.filter((_, j) => j !== prev.length - 1));
+                  } catch (err) {
+                    setSendError("Couldn't send photo: " + err.message);
+                    setCapturedPhotos((prev) => prev.map((x, j) => j === prev.length - 1 ? { ...x, sending: false } : x));
+                  }
+                  setUploading(false);
+                }} style={{ flexShrink: 0, width: 48, height: 48, borderRadius: "50%", overflow: "hidden", border: capturedPhotos.length > 0 ? "2px solid #00A884" : "2px solid rgba(255,255,255,0.3)", cursor: capturedPhotos.length > 0 ? "pointer" : "default", background: t.primaryLight, opacity: capturedPhotos.length > 0 ? 1 : 0.5 }}>
+                  <Avatar photoURL={c.profile?.photoURL} name={c.profile?.displayName} uid={c.uid} size={40} />
                 </div>
               ))}
             </div>

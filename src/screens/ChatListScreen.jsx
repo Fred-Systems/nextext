@@ -538,17 +538,20 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
       </div>
 
       {showFab && (
-        <div style={{ position: "absolute", bottom: hideNav ? 84 : 148, right: 20, background: t.surface, borderRadius: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", overflow: "hidden", zIndex: 10 }}>
-          <div onClick={() => { setShowFab(false); setShowNewGroup(true); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", whiteSpace: "nowrap" }}>
-            <Users size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>New group</span>
+        <>
+          <div onClick={() => setShowFab(false)} style={{ position: "fixed", inset: 0, zIndex: 9 }} />
+          <div style={{ position: "absolute", bottom: hideNav ? 84 : 148, right: 20, background: t.surface, borderRadius: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", overflow: "hidden", zIndex: 10 }}>
+            <div onClick={() => { setShowFab(false); setShowNewGroup(true); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", whiteSpace: "nowrap" }}>
+              <Users size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>New group</span>
+            </div>
+            <div onClick={() => { setShowFab(false); setShowAddContact(true); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", whiteSpace: "nowrap", borderTop: `1px solid ${t.border}` }}>
+              <Plus size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Add contact</span>
+            </div>
+            <div onClick={() => { setShowFab(false); setShowFindFriends(true); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", whiteSpace: "nowrap", borderTop: `1px solid ${t.border}` }}>
+              <Smartphone size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Find friends from contacts</span>
+            </div>
           </div>
-          <div onClick={() => { setShowFab(false); setShowAddContact(true); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", whiteSpace: "nowrap", borderTop: `1px solid ${t.border}` }}>
-            <Plus size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Add contact</span>
-          </div>
-          <div onClick={() => { setShowFab(false); setShowFindFriends(true); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", whiteSpace: "nowrap", borderTop: `1px solid ${t.border}` }}>
-            <Smartphone size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Find friends from contacts</span>
-          </div>
-        </div>
+        </>
       )}
       <button onClick={() => setShowFab(!showFab)} style={{ position: "absolute", bottom: hideNav ? 20 : 84, right: 20, width: 54, height: 54, borderRadius: "50%", background: t.accent, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 12px rgba(0,0,0,0.25)", cursor: "pointer", zIndex: 10 }}>
         <Plus size={26} color="#fff" style={{ transform: showFab ? "rotate(45deg)" : "none", transition: "transform 0.2s" }} />
@@ -697,7 +700,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
       {/* Group avatar tap context menu */}
       {groupMenu && (
         <div onClick={() => setGroupMenu(null)} style={{ position: "fixed", inset: 0, zIndex: 9998 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "rgba(30,30,30,0.97)", borderRadius: 12, overflow: "hidden", overflowY: "auto", maxHeight: "70vh", zIndex: 9999, boxShadow: "0 8px 30px rgba(0,0,0,0.5)", minWidth: 210, whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "rgba(30,30,30,0.97)", borderRadius: 12, overflowY: "auto", maxHeight: "70vh", zIndex: 9999, boxShadow: "0 8px 30px rgba(0,0,0,0.5)", minWidth: 210, whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>
             <div onClick={() => { setGroupMenu(null); openGroupInfo(groupMenu); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer" }}>
               <Info size={16} color="#00A884" />
               <span style={{ color: "#fff", fontSize: 14, fontWeight: 600 }}>View Group Info</span>

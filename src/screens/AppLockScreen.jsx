@@ -47,7 +47,7 @@ export default function AppLockScreen({ onUnlock }) {
           onChange={(e) => setPass(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit()}
           placeholder="Enter PIN…"
-          style={{ width: "100%", padding: "12px 42px 12px 14px", borderRadius: 12, border: `1px solid ${error ? "#FF3B30" : "#2a3a4a"}`, fontSize: 16, textAlign: "center", letterSpacing: 6, boxSizing: "border-box", outline: "none" }}
+          style={{ width: "100%", padding: "12px 42px 12px 14px", borderRadius: 12, border: `1px solid ${error ? "#FF3B30" : "#2a3a4a"}`, fontSize: 16, textAlign: "center", letterSpacing: 6, boxSizing: "border-box", outline: "none", color: "#fff", background: "#1e2c35" }}
         />
         <div onClick={() => setShowPass(!showPass)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: "#889aa6" }}>
           <EyeOff size={18} />
