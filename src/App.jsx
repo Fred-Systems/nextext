@@ -700,7 +700,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
 
 const DEFAULT_NAV_CONFIG = [{ key: "chats" }, { key: "status" }, { key: "groups" }, { key: "settings" }];
 
-function AppShell() {
+function AppShell({ appLocked, setAppLocked }) {
   const { t, themeKey, setThemeKey, hideNav, appFont } = useTheme();
   const auth = useAuth();
   const [screen, setScreen] = useState("list");
@@ -720,11 +720,6 @@ function AppShell() {
       if (Array.isArray(stored) && stored.length >= 2) return stored;
     } catch { /* ignore */ }
     return DEFAULT_NAV_CONFIG;
-  });
-  const [appLocked, setAppLocked] = useState(() => {
-    const enabled = localStorage.getItem("nextext_app_lock") === "true";
-    const pass = localStorage.getItem("nextext_app_lock_pass");
-    return enabled && !!pass;
   });
   const [storyViewerOpen, setStoryViewerOpen] = useState(false);
   const [showSplash, setShowSplash] = useState(() => localStorage.getItem("nextext_splash_enabled") !== "off");
@@ -1120,6 +1115,11 @@ function AppShell() {
 }
 
 export default function App() {
+  const [appLocked, setAppLocked] = useState(() => {
+    const enabled = localStorage.getItem("nextext_app_lock") === "true";
+    const pass = localStorage.getItem("nextext_app_lock_pass");
+    return enabled && !!pass;
+  });
   const [showPermissionDialog, setShowPermissionDialog] = useState(false);
   const [permissionStep, setPermissionStep] = useState(0);
   const permissions = [
@@ -1266,7 +1266,7 @@ export default function App() {
 
   return (
     <ThemeProvider>
-      <AppShell />
+      <AppShell appLocked={appLocked} setAppLocked={setAppLocked} />
       {showPermissionDialog && <PermissionDialog />}
       {appLocked && <AppLockScreen onUnlock={() => setAppLocked(false)} />}
     </ThemeProvider>
