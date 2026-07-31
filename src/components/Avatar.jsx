@@ -4,7 +4,7 @@ import { X, Eye, User, Image as ImageIcon, Info } from "lucide-react";
 import { getAvatarColor, getAvatarInitial } from "../utils/avatarColors";
 
 const LOCAL_OVERRIDE_KEY = "nextext_contact_photo_overrides";
-function getLocalPhotoOverride(uid) {
+export function getLocalPhotoOverride(uid) {
   if (!uid) return null;
   try {
     const raw = localStorage.getItem(LOCAL_OVERRIDE_KEY);
@@ -104,7 +104,7 @@ export default React.memo(function Avatar({ photoURL, name, uid, size = 52, styl
   const handleMenuPicture = (e) => {
     e.stopPropagation();
     closeMenu();
-    if (onViewPicture) {
+    if (onViewPicture && hasPhoto) {
       onViewPicture();
     } else {
       setFullscreen(true);

@@ -4,6 +4,7 @@ import {
   serverTimestamp, updateDoc, arrayUnion, arrayRemove, getDoc, getDocs, writeBatch, deleteField, deleteDoc,
 } from "firebase/firestore";
 import { db } from "./config";
+import { deleteChatFile } from "../supabase/media";
 
 // Deterministic chat id for 1:1 chats -- group chat ids are random (see
 // createGroupChat below), direct chat ids are the two sorted uids joined.
@@ -394,6 +395,59 @@ export async function deleteChatCompletely(chatId) {
   } catch {
     await deleteDoc(doc(db, "chats", chatId));
   }
+}
+
+// ── Expired media auto-deletion ───────────────────────────────────────────
+
+// True when a media message has passed its auto-delete window (either the
+// purge already flagged it, or enough days have elapsed since it was sent).
+export function isMediaExpired(m, mediaExpiryDays) {
+  if (!m) return false;
+  if (m.mediaExpired === true) return true;
+  if (mediaExpiryDays == null || !m.sentAt?.toDate) return false;
+  return Date.now() - m.sentAt.toDate().getTime() >= mediaExpiryDays * 24 * 60 * 60 * 1000;
+}
+
+// Scan every chat this user is in for media that has passed its auto-delete
+// window, then really delete the Supabase storage file and flag the message
+// doc as expired so every client shows the "Expired" placeholder instead of
+// a dead media URL.
+//
+// Supabase RLS only lets the uploader remove a file, so:
+//  - messages this user uploaded: delete the file, null out mediaPath/mediaURL;
+//  - messages someone else uploaded: mark expired now (hides the media); the
+//    uploader's own purge deletes the actual file later.
+export async function purgeExpiredChatMedia(myUid, mediaExpiryDays) {
+  if (!myUid || mediaExpiryDays == null) return 0;
+  const chatsSnap = await getDocs(query(collection(db, "chats"), where("participants", "array-contains", myUid)));
+  let processed = 0;
+  for (const chatDoc of chatsSnap.docs) {
+    const chatId = chatDoc.id;
+    const msgSnap = await getDocs(query(collection(db, "chats", chatId, "messages"), where("mediaPath", "!=", null)));
+    for (const msgDoc of msgSnap.docs) {
+      const m = msgDoc.data();
+      if (!isMediaExpired(m, mediaExpiryDays)) continue;
+      const sentMs = m.sentAt?.toDate?.()?.getTime?.() || Date.now();
+      const expiresAt = new Date(sentMs + mediaExpiryDays * 24 * 60 * 60 * 1000);
+      const patch = {
+        mediaExpired: true,
+        mediaExpiresAt: expiresAt,
+        mediaThumbURL: null,
+      };
+      if (m.senderId === myUid && m.mediaPath) {
+        try {
+          await deleteChatFile(m.mediaPath);
+          patch.mediaPath = null;
+          patch.mediaURL = null;
+        } catch { /* storage already gone or RLS block — still hide the media */ }
+      } else {
+        patch.mediaURL = null;
+      }
+      await updateDoc(msgDoc.ref, patch);
+      processed += 1;
+    }
+  }
+  return processed;
 }
 
 // ── Group administration helpers ──

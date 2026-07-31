@@ -5,7 +5,7 @@ import { useAuth } from "./firebase/useAuth";
 import { usePresenceHeartbeat } from "./firebase/presence";
 import { purgeExpiredStatuses, useStatuses } from "./firebase/status";
 import { useContacts } from "./firebase/contacts";
-import { useChats } from "./firebase/chats";
+import { useChats, purgeExpiredChatMedia } from "./firebase/chats";
 import { setGlobalWallpaper, fileToWallpaperDataUrl } from "./theme/wallpaper";
 import { ChevronLeft, Palette, Shield, Lock, MessageSquare, X, ShieldCheck, Phone, Image as ImageIcon, Users, CircleDot, RotateCcw, Camera, Settings as SettingsIcon, Bot, Sparkles, RefreshCw, Search } from "lucide-react";
 import { FONTS } from "./theme/ThemeContext";
@@ -52,9 +52,9 @@ function ThemeSheet({ current, onSelect, onClose }) {
     </div>
   );
 
-  return (
-    <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
-      <div style={{ background: t.surface, width: "100%", borderRadius: "20px 20px 0 0", padding: "20px 20px 30px", maxHeight: "90%", overflowY: "auto", boxSizing: "border-box" }} onClick={(e) => e.stopPropagation()}>
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100000, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
+      <div style={{ background: t.surface, width: "100%", borderRadius: "20px 20px 0 0", padding: "20px 20px 30px", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", boxSizing: "border-box", WebkitOverflowScrolling: "touch" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
           <h3 style={{ margin: 0, color: t.text, fontSize: 18 }}>Theme</h3>
           <X size={20} color={t.textMuted} onClick={onClose} style={{ cursor: "pointer" }} />
@@ -112,7 +112,8 @@ function ThemeSheet({ current, onSelect, onClose }) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -176,7 +177,7 @@ function PhoneNumberSetting({ myUid }) {
 }
 
 function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiScale, showScrollDown, setShowScrollDown, animatedScrollEntry, setAnimatedScrollEntry, compactList, setCompactList, onBack, onNavigate, onLogout, userDoc, navConfig, setNavConfig, aiSidebarOn, setAiSidebarOn, showSplash, setShowSplash, searchMode, setSearchMode, topBarVisible, setTopBarVisible, onCheckUpdate, checkingUpdate, updateStatus }) {
-  const { t, hideNav, setHideNav, chatTextScale, setChatTextScale, appFontId, setAppFontId } = useTheme();
+  const { t, hideNav, setHideNav, chatTextScale, setChatTextScale, appFontId, setAppFontId, composerHeight, setComposerHeight } = useTheme();
   const wallpaperInputRef = useRef(null);
   const profilePhotoRef = useRef(null);
   const [wallpaperSaved, setWallpaperSaved] = useState(false);
@@ -484,6 +485,16 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
             </div>
           </div>
 
+          {/* Message box height */}
+          <div style={{ padding: "13px 0" }}>
+            <div style={{ fontWeight: 600, color: t.text, fontSize: 15, marginBottom: 4 }}>Message box size</div>
+            <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 8 }}>Make the message input taller and easier to tap.</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <input type="range" min="1" max="2.5" step="0.25" value={composerHeight} onChange={(e) => setComposerHeight(Number(e.target.value))} style={{ flex: 1, accentColor: t.primary }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: t.primary, minWidth: 44 }}>{composerHeight === 1 ? "Default" : `${Math.round(composerHeight * 100)}%`}</span>
+            </div>
+          </div>
+
           {/* Bottom bar customizer */}
           <div style={{ padding: "13px 0" }}>
             <div style={{ fontWeight: 600, color: t.text, fontSize: 15, marginBottom: 4 }}>Bottom bar layout</div>
@@ -703,6 +714,7 @@ const DEFAULT_NAV_CONFIG = [{ key: "chats" }, { key: "status" }, { key: "groups"
 function AppShell({ appLocked, setAppLocked }) {
   const { t, themeKey, setThemeKey, hideNav, appFont } = useTheme();
   const auth = useAuth();
+  const globalSettings = useGlobalSettings();
   const [screen, setScreen] = useState("list");
   const [activeChat, setActiveChat] = useState(null);
   const [activeGroup, setActiveGroup] = useState(null);
@@ -769,6 +781,14 @@ function AppShell({ appLocked, setAppLocked }) {
     if (!myUid) return;
     purgeExpiredStatuses(myUid);
   }, [myUid]);
+
+  // Auto-delete chat media that has passed its expiry window (default 3 days,
+  // admin-adjustable). Deletes the Supabase storage files and flags the
+  // message docs as expired. Runs once per signed-in session.
+  useEffect(() => {
+    if (!myUid || globalSettings?.mediaExpiryDays == null) return;
+    purgeExpiredChatMedia(myUid, globalSettings.mediaExpiryDays).catch(() => {});
+  }, [myUid, globalSettings?.mediaExpiryDays]);
 
   useEffect(() => {
     if (!auth.user?.uid) return;
@@ -844,29 +864,21 @@ function AppShell({ appLocked, setAppLocked }) {
   useEffect(() => { localStorage.setItem(UI_SCALE_KEY, String(uiScale)); }, [uiScale]);
   useEffect(() => { localStorage.setItem(SCROLL_DOWN_KEY, String(showScrollDown)); }, [showScrollDown]);
 
-  // Re-lock app whenever the user returns (from background, screen off, etc.)
+  // Re-lock app whenever the user returns to it from the background.
+  // Only visibilitychange is used (NOT window focus): focus fires spuriously
+  // in the WebView (keyboard open/close, returning after unlock) and would
+  // immediately re-lock the app right after the user enters their PIN.
   useEffect(() => {
     const relock = () => {
+      if (document.visibilityState !== "hidden") return;
       const enabled = localStorage.getItem("nextext_app_lock") === "true";
       const pass = localStorage.getItem("nextext_app_lock_pass");
       const shouldLock = enabled && !!pass;
       if (shouldLock) setAppLocked(true);
     };
     document.addEventListener("visibilitychange", relock);
-    window.addEventListener("focus", relock);
-    return () => { document.removeEventListener("visibilitychange", relock); window.removeEventListener("focus", relock); };
+    return () => document.removeEventListener("visibilitychange", relock);
   }, []);
-
-  // Re-evaluate app lock state whenever the user returns to the list screen
-  // (this catches toggles made in Settings without needing a cross-tab event).
-  useEffect(() => {
-    if (screen === "list" || screen === "settings") {
-      const enabled = localStorage.getItem("nextext_app_lock") === "true";
-      const pass = localStorage.getItem("nextext_app_lock_pass");
-      const shouldLock = enabled && !!pass;
-      setAppLocked(shouldLock);
-    }
-  }, [screen]);
 
   const [initialViewStatuses, setInitialViewStatuses] = useState(null);
   const [statusOrigin, setStatusOrigin] = useState("status");
@@ -907,8 +919,7 @@ function AppShell({ appLocked, setAppLocked }) {
     fontFamily: appFont,
     width: "100%",
     height: "100%",
-    transform: `scale(${uiScale})`,
-    transformOrigin: "top left",
+    ...(uiScale !== 1 ? { transform: `scale(${uiScale})`, transformOrigin: "top left" } : {}),
   };
 
   if (auth.loading) {

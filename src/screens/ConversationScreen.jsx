@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { ChevronLeft, Send, Smile, Check, CheckCheck, CornerUpLeft, X, BarChart2, Plus, MoreVertical, Bell, BellOff, Star, ArrowDown, ArrowUp, Search, Image as ImageIcon, Paperclip, Mic, Play, Pause, FileText, Camera, Lock, Archive, Trash2, MessageSquare, UserPlus, Users } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ChevronLeft, Send, Smile, Check, CheckCheck, CornerUpLeft, X, BarChart2, Plus, MoreVertical, Bell, BellOff, Star, ArrowDown, ArrowUp, Search, Image as ImageIcon, Paperclip, Mic, Play, Pause, FileText, Camera, Lock, Archive, Trash2, MessageSquare, UserPlus, Users, ImageOff, VideoOff, MicOff, FileX } from "lucide-react";
 import { useTheme } from "../theme/ThemeContext";
 import {
   useMessages, sendTextMessage, markChatRead, setTypingHeartbeat, reactToMessage,
   getOrCreateDirectChat, markMessagesDelivered, markMessagesRead, sendPollMessage,
   voteOnPoll, editMessage, deleteMessageForSelf, deleteMessageForEveryone,
   toggleFavorite, setMute, clearMute, sendMediaMessage, toggleLocked, toggleArchive, deleteChatCompletely,
+  isMediaExpired,
 } from "../firebase/chats";
 import { getWallpaperForChat, setWallpaperForChat, fileToWallpaperDataUrl } from "../theme/wallpaper";
 import { usePresence, formatLastSeen } from "../firebase/presence";
@@ -13,7 +15,7 @@ import { uploadChatFile } from "../supabase/media";
 import { FileTooLargeError } from "../media/mediaCompression";
 import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "../firebase/config";
-import Avatar from "../components/Avatar";
+import Avatar, { getLocalPhotoOverride } from "../components/Avatar";
 import { extractFirstUrl, fetchLinkPreview, isLinkPreviewEnabled } from "../utils/linkPreview";
 import { useGlobalSettings } from "../firebase/config-settings";
 import { useStatuses } from "../firebase/status";
@@ -309,7 +311,7 @@ function ScheduleSendSheet({ t, onClose, onSchedule }) {
 }
 
 export default function ConversationScreen({ myUid, chatId: initialChatId, otherUid, contact, onBack, onOpenProfile, onOpenGroupInfo, openSettings = false, showScrollDownSetting = true, animatedScrollEntry = false }) {
-  const { t, chatTextScale } = useTheme();
+  const { t, chatTextScale, composerHeight } = useTheme();
   const globalSettings = useGlobalSettings();
   const isGroup = !!contact?.isGroup;
   const [chatId, setChatId] = useState(initialChatId);
@@ -368,6 +370,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const wallpaperInputRef = useRef(null);
   const longPressTimer = useRef(null);
   const scrollRef = useRef(null);
+  const composerRef = useRef(null);
   const prevMessageCount = useRef(0);
   const typingClearTimer = useRef(null);
   const readTimer = useRef(null);
@@ -529,8 +532,20 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     setWallpaperState(getWallpaperForChat(chatId)); // falls back to global if set
   };
 
+  const autoResizeComposer = () => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.max(el.scrollHeight, 26 + composerHeight * 14)}px`;
+  };
+
+  useEffect(() => {
+    autoResizeComposer();
+  }, [composerHeight]);
+
   const handleInputChange = (val) => {
     setInput(val);
+    autoResizeComposer();
     if (chatId) setTypingHeartbeat(chatId, myUid);
   };
 
@@ -540,6 +555,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     if (!chatId) { setSendError("Chat isn't ready yet — please wait a moment and try again."); return; }
     const textToSend = input.trim();
     setInput("");
+    autoResizeComposer();
     try {
       await sendTextMessage(chatId, myUid, textToSend, otherParticipants, { replyTo: replyingTo });
       setReplyingTo(null);
@@ -577,6 +593,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     if (!input.trim() || !chatId) return;
     const textToSend = input.trim();
     setInput("");
+    autoResizeComposer();
     try {
       await sendTextMessage(chatId, myUid, textToSend, otherParticipants, { scheduledFor: dateObj });
     } catch (e) {
@@ -590,6 +607,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     try { await editMessage(chatId, editingMsg.id, input.trim(), editingMsg.text); }
     catch (e) { setSendError("Couldn't edit: " + e.message); }
     setInput("");
+    autoResizeComposer();
     setEditingMsg(null);
   };
 
@@ -617,7 +635,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     setActiveMsg(null);
   };
 
-  const handleEdit = () => { if (!activeMsg) return; setEditingMsg(activeMsg); setInput(activeMsg.text || ""); setActiveMsg(null); };
+  const handleEdit = () => { if (!activeMsg) return; setEditingMsg(activeMsg); setInput(activeMsg.text || ""); setActiveMsg(null); setTimeout(autoResizeComposer, 0); };
   const handleDeleteSelf = async () => { if (!chatId || !activeMsg) return; try { await deleteMessageForSelf(chatId, activeMsg.id, myUid); } catch { /* silent */ } setActiveMsg(null); };
   const handleDeleteEveryone = async () => { if (!chatId || !activeMsg) return; try { await deleteMessageForEveryone(chatId, activeMsg.id); } catch { /* silent */ } setActiveMsg(null); };
 
@@ -682,13 +700,34 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     setShowAttach(false);
   };
 
+  const getMicrophoneStream = async (constraints) => {
+    // The Android WebView caches a "denied" answer for the page session even
+    // after the user grants the permission in system settings. Retrying once
+    // after a short pause succeeds on many devices once the OS permission
+    // lands, avoiding a forced app restart.
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints || { audio: true });
+    } catch (firstErr) {
+      if (firstErr.name === "NotAllowedError" || firstErr.name === "PermissionDeniedError") {
+        await new Promise((r) => setTimeout(r, 500));
+        try {
+          return await navigator.mediaDevices.getUserMedia(constraints || { audio: true });
+        } catch (retryErr) {
+          retryErr.isDenied = true;
+          throw retryErr;
+        }
+      }
+      throw firstErr;
+    }
+  };
+
   const startVoiceRecording = async () => {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         setSendError("Voice recording is not supported on this browser or device.");
         return;
       }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await getMicrophoneStream();
       recordedChunksRef.current = [];
       let mimeType = "audio/webm";
       if (!MediaRecorder.isTypeSupported("audio/webm")) {
@@ -710,7 +749,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     } catch (err) {
       let msg = "Microphone access denied or unavailable. Please check your device settings and ensure microphone permission is granted for NexText, then try again.";
       if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-        msg = "Microphone permission denied. Please enable microphone access in your device settings for NexText, then restart the app.";
+        msg = "Microphone permission is off. Tap Settings in your device for NexText, allow Microphone, then press the mic button again. If it still fails, restart the app.";
       } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
         msg = "No microphone found. Please connect a microphone and try again.";
       } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
@@ -750,7 +789,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     setShowAttach(false);
     setCameraError("");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      const stream = await getMicrophoneStream({ video: true });
       cameraStreamRef.current = stream;
       setShowCamera(true);
       setTimeout(() => {
@@ -760,7 +799,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         }
       }, 100);
     } catch {
-      setCameraError("Camera access denied or unavailable.");
+      setCameraError("Camera access denied or unavailable. Allow Camera for NexText in your device settings, then try again.");
     }
   };
 
@@ -809,6 +848,19 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     const expiryText = getMediaExpiryText(m.sentAt, globalSettings?.mediaExpiryDays);
     if (m.deletedForEveryone) return <div style={{ fontSize: 13, fontStyle: "italic", opacity: 0.6 }}>This message was deleted</div>;
     if (m.type === "poll") return <PollBubble t={t} mine={m.senderId === myUid} poll={m.poll} myUid={myUid} onVote={(optId) => handleVote(m, optId)} textScale={chatTextScale} />;
+
+    if (["image", "video", "voice", "file"].includes(m.type) && isMediaExpired(m, globalSettings?.mediaExpiryDays)) {
+      const ExpiredIcon = m.type === "image" ? ImageOff : m.type === "video" ? VideoOff : m.type === "voice" ? MicOff : FileX;
+      return (
+        <div>
+          <StatusReplyBlock statusRef={m.statusRef} mine={m.senderId === myUid} t={t} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, background: m.senderId === myUid ? "rgba(255,255,255,0.12)" : t.primaryLight }}>
+            <ExpiredIcon size={16} color={t.textMuted} />
+            <span style={{ fontSize: 13, fontStyle: "italic", color: t.textMuted }}>Expired</span>
+          </div>
+        </div>
+      );
+    }
 
     // Parental controls: intercept incoming blocked media before it renders.
     if (restrictions && m.senderId !== myUid) {
@@ -900,7 +952,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
               size={38}
               hasActiveStatus={!isGroup && hasOtherActiveStatus}
               statusViewed={otherStatusViewed}
-              onViewPicture={() => { if (contact?.profile?.photoURL) setFullscreenImage(contact.profile.photoURL); }}
+              onViewPicture={() => { const effective = getLocalPhotoOverride(otherUid) || contact?.profile?.photoURL; if (effective) setFullscreenImage(effective); }}
             />
           )}
         </div>
@@ -1092,10 +1144,14 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
             {showEmojiPicker && (
               <>
                 <div onClick={() => setShowEmojiPicker(false)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
-                <div style={{ position: "absolute", bottom: 64, left: 10, right: 10, background: t.surface, borderRadius: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", padding: 12, zIndex: 30, maxHeight: 200, overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+                <div style={{ position: "absolute", bottom: 64, left: 10, right: 10, background: t.surface, borderRadius: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", padding: "10px 12px", zIndex: 30, maxHeight: 200, overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: t.textMuted }}>Emoji</span>
+                    <X size={17} color={t.textMuted} onClick={() => setShowEmojiPicker(false)} style={{ cursor: "pointer" }} />
+                  </div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                     {EMOJI_PICKER_SET.map((emoji) => (
-                      <span key={emoji} onClick={(e) => { e.stopPropagation(); setInput((prev) => prev + emoji); }} style={{ fontSize: 22, cursor: "pointer", padding: "4px 5px", borderRadius: 6, textAlign: "center" }}>{emoji}</span>
+                      <span key={emoji} onClick={(e) => { e.stopPropagation(); setInput((prev) => prev + emoji); autoResizeComposer(); }} style={{ fontSize: 22, cursor: "pointer", padding: "4px 5px", borderRadius: 6, textAlign: "center" }}>{emoji}</span>
                     ))}
                   </div>
                 </div>
@@ -1122,10 +1178,19 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
             )}
             <input ref={photoInputRef} type="file" accept="image/*,video/*" style={{ display: "none" }} onChange={handlePhotoOrVideoPick} />
             <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={handleFilePick} />
-            <div style={{ flex: 1, display: "flex", alignItems: "center", background: t.surface, borderRadius: 24, padding: "8px 6px 8px 14px", gap: 8 }}>
-              <Smile size={20} color={t.textMuted} onClick={() => setShowEmojiPicker(!showEmojiPicker)} style={{ cursor: "pointer" }} />
-              <input value={input} onChange={(e) => handleInputChange(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (editingMsg ? saveEdit() : send())} placeholder={editingMsg ? "Edit message…" : "Message"} style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 14.5, color: t.text }} />
-              <Plus size={20} color={t.textMuted} onClick={() => setShowAttach(!showAttach)} style={{ cursor: "pointer" }} />
+            <div style={{ flex: 1, display: "flex", alignItems: "flex-end", background: t.surface, borderRadius: 24, padding: "8px 6px 8px 10px", gap: 8 }}>
+              <Smile size={20} color={t.textMuted} onClick={() => setShowEmojiPicker(!showEmojiPicker)} style={{ cursor: "pointer", flexShrink: 0, marginBottom: 6 }} />
+              <ImageIcon size={20} color={t.textMuted} onClick={() => photoInputRef.current?.click()} style={{ cursor: "pointer", flexShrink: 0, marginBottom: 6 }} />
+              <textarea
+                ref={composerRef}
+                value={input}
+                onChange={(e) => handleInputChange(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); editingMsg ? saveEdit() : send(); } }}
+                placeholder={editingMsg ? "Edit message…" : "Message"}
+                rows={1}
+                style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 14.5, color: t.text, resize: "none", maxHeight: 42 + composerHeight * 42, lineHeight: 1.4, paddingTop: 6, paddingBottom: 6, fontFamily: "inherit" }}
+              />
+              <Plus size={20} color={t.textMuted} onClick={() => setShowAttach(!showAttach)} style={{ cursor: "pointer", flexShrink: 0, marginBottom: 6 }} />
             </div>
             {input.trim() || editingMsg ? (
               <button
@@ -1153,8 +1218,12 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         const canEdit = ageMs < 15 * 60 * 1000;
         const canDeleteEveryone = ageMs < 60 * 60 * 60 * 1000;
         return (
-          <div className="nextext-overlay-backdrop" style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 55, display: "flex", alignItems: "flex-end" }} onClick={() => { setActiveMsg(null); setShowCustomEmoji(false); setCustomEmoji(""); }}>
+          <div className="nextext-overlay-backdrop" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 55, display: "flex", alignItems: "flex-end" }} onClick={() => { setActiveMsg(null); setShowCustomEmoji(false); setCustomEmoji(""); }}>
             <div className="nextext-overlay-sheet" style={{ background: t.surface, width: "100%", borderRadius: "18px 18px 0 0", padding: "16px 20px 24px" }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <span style={{ fontWeight: 700, fontSize: 15, color: t.text }}>Message actions</span>
+                <X size={20} color={t.textMuted} onClick={() => { setActiveMsg(null); setShowCustomEmoji(false); setCustomEmoji(""); }} style={{ cursor: "pointer" }} />
+              </div>
               <div style={{ display: "flex", justifyContent: "space-around", alignItems: "center", marginBottom: 16 }}>
                 {QUICK_REACTIONS.map((e) => <span key={e} onClick={() => handleReact(e)} style={{ fontSize: 26, cursor: "pointer" }}>{e}</span>)}
                 <div onClick={() => setShowCustomEmoji(!showCustomEmoji)} style={{ width: 30, height: 30, borderRadius: "50%", border: `1.5px solid ${t.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
@@ -1254,7 +1323,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
             <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>Camera</span>
             <span style={{ width: 50 }} />
           </div>
-          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", minHeight: 0 }}>
             <video ref={cameraVideoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           </div>
           {cameraError && <div style={{ color: "#FF3B30", fontSize: 13, textAlign: "center", padding: 8 }}>{cameraError}</div>}
@@ -1281,7 +1350,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
               ))}
             </div>
           )}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px 20px", flexShrink: 0, gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px calc(20px + env(safe-area-inset-bottom))", flexShrink: 0, gap: 16 }}>
             <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, overflowX: "auto", paddingBottom: 8, maxWidth: "60%" }}>
               {acceptedContacts.slice(0, 8).map((c) => (
                 <div key={c.uid} onClick={async () => {
@@ -1310,8 +1379,8 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         </div>
       )}
 
-      {fullscreenImage && (
-        <div className="nextext-overlay-backdrop" style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 60, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }} onClick={() => setFullscreenImage(null)}>
+      {fullscreenImage && createPortal(
+        <div className="nextext-overlay-backdrop" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 999999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }} onClick={() => setFullscreenImage(null)}>
           <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 14, zIndex: 61 }}>
             <div onClick={async (e) => { e.stopPropagation(); try { const res = await fetch(fullscreenImage); const blob = await res.blob(); const blobUrl = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = blobUrl; a.download = `nextext-image-${Date.now()}.jpg`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(blobUrl); } catch { window.open(fullscreenImage, "_blank"); } }} style={{ width: 38, height: 38, borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -1321,7 +1390,8 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
             </div>
           </div>
           <img src={fullscreenImage} onClick={(e) => e.stopPropagation()} style={{ maxWidth: "92%", maxHeight: "80%", borderRadius: 8, objectFit: "contain" }} />
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -2,12 +2,5 @@
   "appId": "com.nextext.app",
   "appName": "NexText",
   "webDir": "dist",
-  "androidBackgroundColor": "#121212",
-  "plugins": {
-    "GoogleAuth": {
-      "scopes": ["profile", "email"],
-      "serverClientId": "406410965292-jlh37tmtcsnucerqbv4ofp9je24mkeok.apps.googleusercontent.com",
-      "forceCodeForRefreshToken": true
-    }
-  }
+  "androidBackgroundColor": "#121212"
 }

@@ -6,10 +6,14 @@ import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
+  signInWithCredential,
+  GoogleAuthProvider,
   signOut,
 } from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
-import { auth, googleProvider, db } from "../firebase/config";
+import { Capacitor } from "@capacitor/core";
+import { SocialLogin } from "@capgo/capacitor-social-login";
+import { auth, googleProvider, db, serverClientId } from "../firebase/config";
 
 // One account per email: Firebase Auth itself already prevents creating a
 // second account with the same email under a different password (it'll
@@ -88,38 +92,70 @@ export function useAuth() {
   }
 
   async function signInWithGoogle() {
+    // Native (Capacitor) builds use the real Google Sign-In plugin — no popup
+    // or redirect, which do not work reliably inside the Android WebView.
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await SocialLogin.initialize({
+          google: {
+            webClientId: serverClientId,
+            iOSClientId: serverClientId,
+            iOSServerClientId: serverClientId,
+            mode: "online",
+          },
+        });
+      } catch (e) {
+        console.warn("[useAuth] SocialLogin.initialize failed (continuing):", e);
+      }
+      const loginResult = await SocialLogin.login({ provider: "google" });
+      const idToken = loginResult?.result?.idToken || loginResult?.result?.accessToken?.token;
+      if (!idToken) throw new Error("Google sign-in did not return an ID token.");
+      const credential = GoogleAuthProvider.credential(idToken);
+      const cred = await signInWithCredential(auth, credential);
+      const ref = doc(db, "users", cred.user.uid);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        const profile = loginResult.result?.profile;
+        await createUserProfile(cred.user, {
+          email: cred.user.email,
+          username: cred.user.email ? cred.user.email.split("@")[0] : `user-${cred.user.uid.slice(0, 6)}`,
+          displayName: cred.user.displayName || profile?.name || "New User",
+          photoURL: cred.user.photoURL || profile?.imageUrl || null,
+        });
+      }
+      return cred.user;
+    }
+
     try {
-      const isCapacitor = window.location.hostname === 'localhost';
-      if (isCapacitor) {
-        const cred = await signInWithPopup(auth, googleProvider);
-        const ref = doc(db, "users", cred.user.uid);
-        const snap = await getDoc(ref);
-        if (!snap.exists()) {
-          await createUserProfile(cred.user, {
-            email: cred.user.email,
-            username: cred.user.email.split("@")[0],
-            displayName: cred.user.displayName || "New User",
-          });
-        }
-        return cred.user;
-      } else {
+      const cred = await signInWithPopup(auth, googleProvider);
+      const ref = doc(db, "users", cred.user.uid);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await createUserProfile(cred.user, {
+          email: cred.user.email,
+          username: cred.user.email.split("@")[0],
+          displayName: cred.user.displayName || "New User",
+          photoURL: cred.user.photoURL || null,
+        });
+      }
+      return cred.user;
+    } catch (e) {
+      if (e.code === "auth/popup-blocked" || e.code === "auth/popup-closed-by-user" || e.code === "auth/unauthorized-domain") {
         await signInWithRedirect(auth, googleProvider);
         return null;
       }
-    } catch (e) {
-      console.error("[useAuth] Google sign-in error:", e);
       throw e;
     }
   }
 
-  async function createUserProfile(fbUser, { email, username, displayName }) {
+  async function createUserProfile(fbUser, { email, username, displayName, photoURL }) {
     await setDoc(doc(db, "users", fbUser.uid), {
       email,
       emailLower: email.toLowerCase(),
       username,
       usernameLower: username.toLowerCase(),
       displayName,
-      photoURL: null,
+      photoURL: photoURL || null,
       about: "",
       createdAt: serverTimestamp(),
       lastSeen: serverTimestamp(),

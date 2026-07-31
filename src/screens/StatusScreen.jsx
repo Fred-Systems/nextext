@@ -589,10 +589,10 @@ await postStatus(myUid, {
             autoPlay
             playsInline
             muted
-            style={{ flex: 1, width: "100%", objectFit: "cover" }}
+            style={{ flex: 1, width: "100%", objectFit: "cover", minHeight: 0 }}
           />
           {cameraError && <div style={{ position: "absolute", bottom: 100, left: 0, right: 0, textAlign: "center", color: "#FF3B30", fontSize: 13, fontWeight: 600 }}>{cameraError}</div>}
-          <div style={{ position: "absolute", bottom: 40, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 28, zIndex: 10 }}>
+          <div style={{ position: "absolute", bottom: 40, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 28, zIndex: 10, paddingBottom: "env(safe-area-inset-bottom)" }}>
             <div onClick={capturePhotoFromCamera} style={{ width: 64, height: 64, borderRadius: "50%", border: "4px solid #fff", background: "rgba(255,255,255,0.15)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Camera size={26} color="#fff" />
             </div>
@@ -716,11 +716,11 @@ await postStatus(myUid, {
 
                 {/* Single video/image fallback when no multiple images */}
                 {(postMedia || postImages.length === 0) && postMedia && (
-                  <div style={{ position: "relative", marginBottom: 12 }}>
+                  <div style={{ position: "relative", marginBottom: 12, width: "100%" }}>
                     {postMediaType === "video" ? (
-                      <video src={URL.createObjectURL(postMedia)} style={{ width: "100%", maxHeight: 300, borderRadius: 10, objectFit: "contain", background: "#000" }} />
+                      <video src={URL.createObjectURL(postMedia)} style={{ width: "100%", aspectRatio: "9/16", maxHeight: "70vh", borderRadius: 10, objectFit: "cover", background: "#000", display: "block" }} />
                     ) : (
-                      <img src={URL.createObjectURL(postMedia)} alt="" style={{ width: "100%", maxHeight: 300, borderRadius: 10, objectFit: "contain" }} />
+                      <img src={URL.createObjectURL(postMedia)} alt="" style={{ width: "100%", aspectRatio: "9/16", maxHeight: "70vh", borderRadius: 10, objectFit: "cover", display: "block" }} />
                     )}
                     <div onClick={() => { setPostMedia(null); setPostMediaType(null); setPostMode("text"); }} style={{ position: "absolute", top: 8, right: 8, width: 22, height: 22, borderRadius: "50%", background: "#FF3B30", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
                       <X size={12} color="#fff" />

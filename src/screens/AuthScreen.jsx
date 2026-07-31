@@ -236,6 +236,10 @@ function friendlyError(code) {
     "auth/popup-blocked": "Pop-up was blocked by your browser. Please allow pop-ups for this site.",
     "auth/unauthorized-domain": "Google sign-in is not allowed on this device. Try signing in with email instead.",
     "auth/cancelled-popup-request": "Another pop-up request is already in progress.",
+    "USER_CANCELLED": "",
+    "user-cancelled": "",
+    "cancelled": "",
+    "CANCELLED": "",
   };
   console.error("[Auth Error]", code);
   return map[code] || "Something went wrong — please try again.";

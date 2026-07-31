@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { ChevronLeft, Ban, Flag, FileText, Camera, X } from "lucide-react";
 import { useTheme } from "../theme/ThemeContext";
 import { doc, onSnapshot, updateDoc, collection, query, orderBy } from "firebase/firestore";
@@ -8,6 +9,7 @@ import Avatar from "../components/Avatar";
 import { useGlobalSettings } from "../firebase/config-settings";
 import { useStatuses } from "../firebase/status";
 import { uploadChatFile } from "../supabase/media";
+import { isMediaExpired } from "../firebase/chats";
 import { AI_CONTACT_UID } from "../firebase/ai";
 
 const LOCAL_OVERRIDE_KEY = "nextext_contact_photo_overrides";
@@ -162,7 +164,7 @@ export default function ContactProfileScreen({ myUid, otherUid, contact, onBack,
 
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40 }}>
-      {fullscreenImage && (
+      {fullscreenImage && createPortal(
         <div onClick={() => setFullscreenImage(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", zIndex: 999999, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", padding: 16 }}>
             <img src={fullscreenImage} alt="Full" style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 12, objectFit: "contain", display: "block" }} />
@@ -170,7 +172,8 @@ export default function ContactProfileScreen({ myUid, otherUid, contact, onBack,
           <div onClick={() => setFullscreenImage(null)} style={{ position: "fixed", top: 16, right: 16, width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,0.25)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 1000000 }}>
             <X size={24} color="#fff" strokeWidth={3} />
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: isAIContact ? "linear-gradient(135deg, #7C5CFF, #53BDEB)" : t.primary, flexShrink: 0 }}>
         <ChevronLeft size={22} color="#fff" onClick={safeBack} style={{ cursor: "pointer" }} />
@@ -266,14 +269,17 @@ export default function ContactProfileScreen({ myUid, otherUid, contact, onBack,
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
               {sharedMedia.map((m) => {
                 const expiryText = getMediaExpiryText(m.sentAt, globalSettings?.mediaExpiryDays);
+                const expired = isMediaExpired(m, globalSettings?.mediaExpiryDays);
                 return (
-                  <div key={m.id} style={{ position: "relative", cursor: m.type === "image" ? "pointer" : "default", aspectRatio: "1", overflow: "hidden", borderRadius: 6, background: t.border }} onClick={() => m.type === "image" && setFullscreenImage(m.mediaURL)}>
-                    {m.type === "image" ? (
+                  <div key={m.id} style={{ position: "relative", cursor: !expired && m.type === "image" ? "pointer" : "default", aspectRatio: "1", overflow: "hidden", borderRadius: 6, background: t.border }} onClick={() => !expired && m.type === "image" && setFullscreenImage(m.mediaURL)}>
+                    {expired ? (
+                      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: t.border, color: t.textMuted, fontSize: 10, fontWeight: 700 }}>Expired</div>
+                    ) : m.type === "image" ? (
                       <img src={m.mediaURL} alt="Shared" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     ) : (
                       <video src={m.mediaURL} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     )}
-                    {expiryText && <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 9, padding: "2px 4px", textAlign: "center" }}>{expiryText}</div>}
+                    {!expired && expiryText && <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 9, padding: "2px 4px", textAlign: "center" }}>{expiryText}</div>}
                   </div>
                 );
               })}
@@ -282,6 +288,18 @@ export default function ContactProfileScreen({ myUid, otherUid, contact, onBack,
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {sharedMedia.map((m) => {
                 const expiryText = getMediaExpiryText(m.sentAt, globalSettings?.mediaExpiryDays);
+                const expired = isMediaExpired(m, globalSettings?.mediaExpiryDays);
+                if (expired) {
+                  return (
+                    <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: t.primaryLight, color: t.textMuted }}>
+                      <FileText size={22} color={t.textMuted} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.fileName || "File"}</div>
+                        <div style={{ fontSize: 11, fontStyle: "italic" }}>Expired</div>
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <a key={m.id} href={m.mediaURL} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: t.bubbleOtherBg, textDecoration: "none", color: t.text }}>
                     <FileText size={22} color={t.textMuted} />

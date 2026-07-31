@@ -51,6 +51,8 @@ try {
   console.error("[firebase/config] getStorage failed:", e);
 }
 
+export const serverClientId = "406410965292-jlh37tmtcsnucerqbv4ofp9je24mkeok.apps.googleusercontent.com";
+
 export { app, auth };
 export default app;
 
