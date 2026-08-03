@@ -18,17 +18,18 @@ export default function AISidebarWidget({ userDoc, onOpenAI }) {
         width: 50,
         height: 50,
         borderRadius: "50%",
-        background: "linear-gradient(135deg, #7C5CFF, #53BDEB)",
+        background: "linear-gradient(135deg, rgba(124,92,255,0.30), rgba(83,189,235,0.30))",
+        border: "1px solid rgba(255,255,255,0.35)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        boxShadow: "0 4px 16px rgba(124,92,255,0.4)",
+        boxShadow: "0 4px 16px rgba(124,92,255,0.20)",
         cursor: "pointer",
         zIndex: 30,
-        transition: "transform 0.2s",
+        transition: "transform 0.2s, background 0.2s",
       }}
     >
-      <span style={{ fontSize: 24 }}>🤖</span>
+      <span style={{ fontSize: 24, opacity: 0.7 }}>🤖</span>
     </div>
   );
 }

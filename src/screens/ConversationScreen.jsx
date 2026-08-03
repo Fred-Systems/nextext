@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, Send, Smile, Check, CheckCheck, CornerUpLeft, X, BarChart2, Plus, MoreVertical, Bell, BellOff, Star, ArrowDown, ArrowUp, Search, Image as ImageIcon, Paperclip, Mic, Play, Pause, FileText, Camera, Lock, Archive, Trash2, MessageSquare, UserPlus, Users, ImageOff, VideoOff, MicOff, FileX } from "lucide-react";
+import { ChevronLeft, Send, Smile, Check, CheckCheck, CornerUpLeft, X, BarChart2, Plus, MoreVertical, Bell, BellOff, Star, ArrowDown, ArrowUp, Search, Image as ImageIcon, Paperclip, Mic, Play, Pause, FileText, Camera, Lock, Archive, Trash2, MessageSquare, UserPlus, Users, ImageOff, VideoOff, MicOff, FileX, RefreshCw } from "lucide-react";
 import { useTheme } from "../theme/ThemeContext";
 import {
   useMessages, sendTextMessage, markChatRead, setTypingHeartbeat, reactToMessage,
@@ -15,9 +15,13 @@ import { uploadChatFile } from "../supabase/media";
 import { FileTooLargeError } from "../media/mediaCompression";
 import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "../firebase/config";
+import { registerPlugin } from "@capacitor/core";
 import Avatar, { getLocalPhotoOverride } from "../components/Avatar";
 import { extractFirstUrl, fetchLinkPreview, isLinkPreviewEnabled } from "../utils/linkPreview";
 import { useGlobalSettings } from "../firebase/config-settings";
+import { getSystemInsets } from "../utils/systemInsets";
+
+const NextextNative = registerPlugin("NextextNative");
 import { useStatuses } from "../firebase/status";
 import { shouldTriggerGroupAI, sendGroupAIMessage, AI_CONTACT_UID } from "../firebase/ai";
 import { useContacts } from "../firebase/contacts";
@@ -311,7 +315,7 @@ function ScheduleSendSheet({ t, onClose, onSchedule }) {
 }
 
 export default function ConversationScreen({ myUid, chatId: initialChatId, otherUid, contact, onBack, onOpenProfile, onOpenGroupInfo, openSettings = false, showScrollDownSetting = true, animatedScrollEntry = false }) {
-  const { t, chatTextScale, composerHeight } = useTheme();
+  const { t, chatTextScale, setChatTextScale, composerHeight } = useTheme();
   const globalSettings = useGlobalSettings();
   const isGroup = !!contact?.isGroup;
   const [chatId, setChatId] = useState(initialChatId);
@@ -323,6 +327,14 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const [sendError, setSendError] = useState("");
   const [chatSetupError, setChatSetupError] = useState("");
   const [showAttach, setShowAttach] = useState(false);
+  const [attachRendered, setAttachRendered] = useState(false);
+  const [attachClosing, setAttachClosing] = useState(false);
+  const openAttach = () => { setAttachClosing(false); setAttachRendered(true); setShowAttach(true); };
+  const closeAttach = () => {
+    if (!attachRendered) return;
+    setAttachClosing(true);
+    setTimeout(() => { setAttachRendered(false); setShowAttach(false); setAttachClosing(false); }, 150);
+  };
   const [showPoll, setShowPoll] = useState(false);
   const [showOverflow, setShowOverflow] = useState(openSettings || false);
 
@@ -343,11 +355,50 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState("");
+  const [navInset, setNavInset] = useState(0);
+  const [cameraFacing, setCameraFacing] = useState("environment");
   const [capturedPhotos, setCapturedPhotos] = useState([]);
   const [restrictions, setRestrictions] = useState(null);
   const [newMsgBadge, setNewMsgBadge] = useState(0);
   const [contactCardMember, setContactCardMember] = useState(null);
   const [myGroupNickname, setMyGroupNickname] = useState("");
+  const [otherUserPhoto, setOtherUserPhoto] = useState(null);
+
+  // Fallback: fetch the other user's profile photo directly from Firestore so
+  // "View Profile Picture" always has the image even if the contact object is stale.
+  useEffect(() => {
+    if (isGroup || !otherUid || otherUid === myUid) { setOtherUserPhoto(null); return; }
+    const unsub = onSnapshot(doc(db, "users", otherUid), (snap) => {
+      const data = snap.exists() ? snap.data() : {};
+      setOtherUserPhoto(data?.photoURL || null);
+    });
+    return unsub;
+  }, [otherUid, myUid, isGroup]);
+
+  useEffect(() => {
+    getSystemInsets().then((insets) => setNavInset(insets.bottom || 0)).catch(() => {});
+  }, []);
+
+  const pinchEnabled = () => {
+    try { return localStorage.getItem("nextext_pinch_zoom") === "true"; } catch { return false; }
+  };
+
+  const onMessagesTouchStart = (e) => {
+    if (!pinchEnabled() || e.touches.length !== 2) { pinchStartRef.current = null; return; }
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    pinchStartRef.current = { dist: d, scale: chatTextScale };
+  };
+
+  const onMessagesTouchMove = (e) => {
+    if (!pinchEnabled() || e.touches.length !== 2 || !pinchStartRef.current) return;
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    if (pinchStartRef.current.dist > 0) {
+      const next = Math.min(1.6, Math.max(0.6, pinchStartRef.current.scale * (d / pinchStartRef.current.dist)));
+      if (Math.abs(next - chatTextScale) >= 0.03) setChatTextScale(Math.round(next * 20) / 20);
+    }
+  };
+
+  const onMessagesTouchEnd = () => { pinchStartRef.current = null; };
 
   // Read this user's per-group nickname override (if any).
   useEffect(() => {
@@ -371,6 +422,8 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const longPressTimer = useRef(null);
   const scrollRef = useRef(null);
   const composerRef = useRef(null);
+  const composerBarRef = useRef(null);
+  const pinchStartRef = useRef(null);
   const prevMessageCount = useRef(0);
   const typingClearTimer = useRef(null);
   const readTimer = useRef(null);
@@ -497,7 +550,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       const entries = await Promise.all(
         missing.map(async (uid) => {
           const snap = await getDoc(doc(db, "users", uid));
-          return [uid, snap.data()?.displayName || "Unknown"];
+          return [uid, snap.data()?.displayName || snap.data()?.username || "Unknown"];
         })
       );
       setMemberNames((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
@@ -642,7 +695,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const createPoll = async (question, opts) => {
     try { await sendPollMessage(chatId, myUid, question, opts); }
     catch (e) { setSendError("Couldn't send poll: " + e.message); }
-    setShowPoll(false); setShowAttach(false);
+    setShowPoll(false); closeAttach();
     if (isGroup && (chatMeta?.participants || []).includes(AI_CONTACT_UID)) {
       setTimeout(async () => {
         try {
@@ -679,11 +732,10 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       else setSendError("Couldn't send: " + err.message);
     }
     setUploading(false);
-    setShowAttach(false);
+    closeAttach();
   };
 
-  const handleFilePick = async (e) => {
-    const file = e.target.files?.[0];
+  const handleFilePick = async (e) => {    const file = e.target.files?.[0];
     e.target.value = "";
     if (!file || !chatId) return;
     setSendError("");
@@ -697,28 +749,100 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       else setSendError("Couldn't send: " + err.message);
     }
     setUploading(false);
-    setShowAttach(false);
+    closeAttach();
   };
 
   const getMicrophoneStream = async (constraints) => {
     // The Android WebView caches a "denied" answer for the page session even
-    // after the user grants the permission in system settings. Retrying once
-    // after a short pause succeeds on many devices once the OS permission
-    // lands, avoiding a forced app restart.
-    try {
-      return await navigator.mediaDevices.getUserMedia(constraints || { audio: true });
-    } catch (firstErr) {
-      if (firstErr.name === "NotAllowedError" || firstErr.name === "PermissionDeniedError") {
-        await new Promise((r) => setTimeout(r, 500));
-        try {
-          return await navigator.mediaDevices.getUserMedia(constraints || { audio: true });
-        } catch (retryErr) {
-          retryErr.isDenied = true;
-          throw retryErr;
-        }
-      }
-      throw firstErr;
+    // after the user grants the permission in system settings, and the first
+    // audio-capture start after launch (or right after the OS grant) can
+    // transiently fail with NotReadableError ("Could not start audio source").
+    //
+    // Deep fixes applied here:
+    //   1. A "priming" acquire+release right before the real capture. Many
+    //      Android devices only free the previous AudioRecord/input state after
+    //      one full (even failed) open+close cycle, so the second open works.
+    //   2. The default first attempt uses AEC/noise/AGC DISABLED. Some devices
+    //      cannot route the mic through the echo-cancelling audio processing
+    //      chain and report NotReadableError on the default constraints, while
+    //      the raw-input variant succeeds immediately.
+    //   3. Retry targeting the explicit physical audioinput deviceId. The
+    //      virtual "default" device is sometimes busy/blocked while the real
+    //      device id is available.
+    //   4. Generous delays between attempts so the OS/WebView media stack can
+    //      fully release the input between tries.
+    // Stop any lingering stream first: an un-released AudioTrack from a
+    // previous capture can keep the input busy and cause NotReadableError.
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((tr) => tr.stop());
+      cameraStreamRef.current = null;
     }
+    if (mediaRecorderRef.current) {
+      try { if (mediaRecorderRef.current.state !== "inactive") mediaRecorderRef.current.stop(); } catch {}
+      mediaRecorderRef.current = null;
+    }
+
+    const isMic = !constraints?.video;
+    const base = constraints || { audio: true };
+    const RETRYABLE = ["NotAllowedError", "PermissionDeniedError", "NotReadableError", "TrackStartError", "AbortError"];
+    const attempts = [];
+    const push = (delay, c) => attempts.push({ delay, constraints: c });
+
+    // Prime: open + immediately release the input once so the device state is
+    // fresh for the real capture below.
+    if (isMic) {
+      try {
+        const primeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        primeStream.getTracks().forEach((tr) => tr.stop());
+      } catch {}
+      await new Promise((r) => setTimeout(r, 250));
+    }
+
+    push(0, isMic ? { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } } : base);
+    push(700, base);
+    push(1500, isMic ? { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } } : base);
+    if (isMic) {
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        const firstInput = devs.find((d) => d.kind === "audioinput" && d.deviceId);
+        if (firstInput?.deviceId) {
+          push(2200, { audio: { deviceId: { exact: firstInput.deviceId } } });
+          push(2800, { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, deviceId: { exact: firstInput.deviceId } } });
+        }
+      } catch { /* device enumeration is best-effort */ }
+    }
+    push(3400, base);
+
+    let firstError = null;
+    for (const attempt of attempts) {
+      if (attempt.delay > 0) await new Promise((r) => setTimeout(r, attempt.delay));
+      try {
+        return await navigator.mediaDevices.getUserMedia(attempt.constraints);
+      } catch (err) {
+        firstError = firstError || err;
+        if (!RETRYABLE.includes(err.name)) throw err;
+      }
+    }
+    firstError.isDenied = firstError.name === "NotAllowedError" || firstError.name === "PermissionDeniedError";
+    throw firstError;
+  };
+
+  const getMicDiagnostics = async (err) => {
+    const parts = ["mic diag"];
+    try {
+      parts.push(`name=${err?.name || "?"}`);
+      parts.push(`msg=${(err?.message || "").slice(0, 80)}`);
+    } catch { parts.push("name=?"); }
+    try {
+      const perms = await navigator.permissions?.query?.({ name: "microphone" }).catch(() => null);
+      parts.push(`perm=${perms?.state || "unknown"}`);
+    } catch { parts.push("perm=unknown"); }
+    try {
+      const inputs = await navigator.mediaDevices.enumerateDevices();
+      parts.push(`audioInputs=${inputs.filter((d) => d.kind === "audioinput").length}`);
+    } catch { parts.push("audioInputs=?"); }
+    parts.push(`gUM=${typeof navigator.mediaDevices?.getUserMedia === "function" ? "yes" : "no"}`);
+    return parts.join(" | ");
   };
 
   const startVoiceRecording = async () => {
@@ -726,6 +850,15 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       if (!navigator.mediaDevices?.getUserMedia) {
         setSendError("Voice recording is not supported on this browser or device.");
         return;
+      }
+      if (window.Capacitor?.isNativePlatform && window.Capacitor.isNativePlatform()) {
+        try {
+          const perm = await NextextNative.requestMicrophone();
+          if (perm && perm.granted === false) {
+            setSendError("Microphone permission is off. Tap Settings in your device for NexText, allow Microphone, then press the mic button again.");
+            return;
+          }
+        } catch { /* fall through to WebView permission flow */ }
       }
       const stream = await getMicrophoneStream();
       recordedChunksRef.current = [];
@@ -752,9 +885,15 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         msg = "Microphone permission is off. Tap Settings in your device for NexText, allow Microphone, then press the mic button again. If it still fails, restart the app.";
       } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
         msg = "No microphone found. Please connect a microphone and try again.";
-      } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
-        msg = "Microphone is in use by another app. Please close other apps using the microphone and try again.";
+      } else if (err.name === "NotReadableError" || err.name === "TrackStartError" || err.originalName === "NotReadableError" || err.originalName === "TrackStartError") {
+        msg = "The microphone is busy or unavailable. Please close other apps using the microphone and try again. If it still fails, restart the app.";
       }
+      // Append concise device diagnostics so failures can be pinpointed from
+      // the exact message the user reports back.
+      try {
+        const diag = await getMicDiagnostics(err);
+        msg += ` (${diag})`;
+      } catch { /* diagnostics are best-effort */ }
       setSendError(msg);
     }
   };
@@ -786,10 +925,10 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   };
 
   const openCamera = async () => {
-    setShowAttach(false);
+    closeAttach();
     setCameraError("");
     try {
-      const stream = await getMicrophoneStream({ video: true });
+      const stream = await getMicrophoneStream({ video: { facingMode: cameraFacing } });
       cameraStreamRef.current = stream;
       setShowCamera(true);
       setTimeout(() => {
@@ -800,6 +939,26 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       }, 100);
     } catch {
       setCameraError("Camera access denied or unavailable. Allow Camera for NexText in your device settings, then try again.");
+    }
+  };
+
+  const flipChatCamera = async () => {
+    const next = cameraFacing === "environment" ? "user" : "environment";
+    try {
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach((tr) => tr.stop());
+        cameraStreamRef.current = null;
+      }
+      setCameraFacing(next);
+      const stream = await getMicrophoneStream({ video: { facingMode: next } });
+      cameraStreamRef.current = stream;
+      if (cameraVideoRef.current) {
+        cameraVideoRef.current.srcObject = stream;
+        cameraVideoRef.current.play().catch(() => {});
+      }
+    } catch {
+      setCameraFacing((f) => (f === "environment" ? "user" : "environment"));
+      setCameraError("Couldn't switch camera. Check the Camera permission in your device settings.");
     }
   };
 
@@ -939,20 +1098,21 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
 
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 12px", background: t.primary, position: "relative", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "calc(14px + var(--safe-top)) 12px 14px", background: "#111B21", position: "relative", flexShrink: 0 }}>
         <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
         <div onClick={onOpenProfile} style={{ cursor: "pointer" }}>
           {isGroup && chatMeta?.groupPhotoURL ? (
             <img src={chatMeta.groupPhotoURL} alt="" style={{ width: 38, height: 38, borderRadius: "50%", objectFit: "cover", cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); setFullscreenImage(chatMeta.groupPhotoURL); }} />
           ) : (
             <Avatar
-              photoURL={isGroup ? null : contact?.profile?.photoURL}
+              photoURL={isGroup ? null : (contact?.profile?.photoURL || otherUserPhoto)}
               name={isGroup ? "👥" : (contact?.profile?.displayName || "…")}
               uid={isGroup ? null : otherUid}
               size={38}
               hasActiveStatus={!isGroup && hasOtherActiveStatus}
               statusViewed={otherStatusViewed}
-              onViewPicture={() => { const effective = getLocalPhotoOverride(otherUid) || contact?.profile?.photoURL; if (effective) setFullscreenImage(effective); }}
+              onViewProfile={onOpenProfile}
+              onViewPicture={() => { const effective = getLocalPhotoOverride(otherUid) || contact?.profile?.photoURL || otherUserPhoto; if (effective) setFullscreenImage(effective); }}
             />
           )}
         </div>
@@ -1039,8 +1199,9 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       {sendError && <div style={{ padding: "8px 16px", background: "#FFE5E5", color: "#B00020", fontSize: 12.5 }}>{sendError}</div>}
 
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", position: "relative" }}>
-        <div ref={scrollRef} onScroll={handleScroll} style={{
+        <div ref={scrollRef} onScroll={handleScroll} onTouchStart={onMessagesTouchStart} onTouchMove={onMessagesTouchMove} onTouchEnd={onMessagesTouchEnd} style={{
           flex: 1, overflowY: "auto", overflowX: "hidden", padding: "14px 10px", display: "flex", flexDirection: "column",
+          touchAction: pinchEnabled() ? "pan-y" : "auto",
           backgroundImage: wallpaper ? `url(${wallpaper})` : "none", backgroundSize: "cover", backgroundPosition: "center",
         }}>
           {visibleMessages.map((m, i) => {
@@ -1057,7 +1218,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
                   borderRadius: `${groupedWithPrev ? 6 : 14}px ${groupedWithPrev ? 6 : 14}px ${groupedWithNext ? 6 : 14}px ${groupedWithNext ? 6 : 14}px`,
                 }}>
                   {isGroup && !isMine && !groupedWithPrev && (
-                    <div onClick={(e) => { e.stopPropagation(); const memberInfo = { uid: m.senderId, name: memberNames[m.senderId] || "…" }; setContactCardMember(memberInfo); }} style={{ fontSize: 12, fontWeight: 700, color: t.primary, marginBottom: 2, cursor: "pointer" }}>{memberNames[m.senderId] || "…"}</div>
+                    <div onClick={(e) => { e.stopPropagation(); const memberInfo = { uid: m.senderId, name: m.senderName || memberNames[m.senderId] || "…" }; setContactCardMember(memberInfo); }} style={{ fontSize: 12, fontWeight: 700, color: t.primary, marginBottom: 2, cursor: "pointer" }}>{m.senderName || memberNames[m.senderId] || "…"}</div>
                   )}
                   {m.replyTo && (
                   <div style={{ background: m.senderId === myUid ? "rgba(255,255,255,0.15)" : t.primaryLight, borderLeft: `3px solid ${m.senderId === myUid ? "rgba(255,255,255,0.6)" : t.primary}`, borderRadius: 6, padding: "5px 8px", marginBottom: 6, fontSize: 12 }}>
@@ -1121,7 +1282,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 10px", background: t.bg, position: "relative", flexShrink: 0 }}>
+      <div ref={composerBarRef} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 10px", paddingBottom: "calc(10px + var(--safe-bottom))", background: t.bg, position: "relative", flexShrink: 0 }}>
         {isBlockedByMe ? (
           <div style={{ flex: 1, textAlign: "center", padding: "12px", color: t.textMuted, fontSize: 13 }}>
             You've blocked this contact — unblock from their profile to send messages.
@@ -1157,30 +1318,31 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
                 </div>
               </>
             )}
-            {showAttach && (
+            {attachRendered && createPortal(
               <>
-              <div onClick={() => setShowAttach(false)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
-              <div style={{ position: "absolute", bottom: 64, left: 10, background: t.surface, borderRadius: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", overflow: "hidden", zIndex: 30 }}>
-                <div onClick={() => { setShowAttach(false); setShowPoll(true); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer" }}>
+              <div onClick={closeAttach} style={{ position: "fixed", inset: 0, zIndex: 2147481000, opacity: attachClosing ? 0 : 1, transition: "opacity 0.15s ease" }} />
+              <div style={{ position: "fixed", left: 10, bottom: composerBarRef.current ? (window.innerHeight - composerBarRef.current.getBoundingClientRect().top) + 6 + navInset : 96, background: t.surface, borderRadius: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", overflow: "hidden", zIndex: 2147481001, minWidth: 190, opacity: attachClosing ? 0 : 1, transform: attachClosing ? "translateY(8px) scale(0.97)" : "translateY(0) scale(1)", transition: "opacity 0.15s ease, transform 0.18s ease", transformOrigin: "bottom left" }}>
+                <div onClick={() => { closeAttach(); setShowPoll(true); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer" }}>
                   <BarChart2 size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Poll</span>
                 </div>
-                <div onClick={() => photoInputRef.current?.click()} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
+                <div onClick={() => { closeAttach(); photoInputRef.current?.click(); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
                   <ImageIcon size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Photo or video</span>
                 </div>
-                <div onClick={() => fileInputRef.current?.click()} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
+                <div onClick={() => { closeAttach(); fileInputRef.current?.click(); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
                   <Paperclip size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>File (max 50MB)</span>
                 </div>
-                <div onClick={openCamera} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
+                <div onClick={() => { closeAttach(); openCamera(); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
                   <Camera size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Camera</span>
                 </div>
               </div>
-              </>
+              </>,
+              document.body
             )}
             <input ref={photoInputRef} type="file" accept="image/*,video/*" style={{ display: "none" }} onChange={handlePhotoOrVideoPick} />
             <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={handleFilePick} />
-            <div style={{ flex: 1, display: "flex", alignItems: "flex-end", background: t.surface, borderRadius: 24, padding: "8px 6px 8px 10px", gap: 8 }}>
-              <Smile size={20} color={t.textMuted} onClick={() => setShowEmojiPicker(!showEmojiPicker)} style={{ cursor: "pointer", flexShrink: 0, marginBottom: 6 }} />
-              <ImageIcon size={20} color={t.textMuted} onClick={() => photoInputRef.current?.click()} style={{ cursor: "pointer", flexShrink: 0, marginBottom: 6 }} />
+            <div style={{ flex: 1, display: "flex", alignItems: "center", background: t.surface, borderRadius: 24, padding: `${Math.round(8 * composerHeight)}px 6px ${Math.round(8 * composerHeight)}px 10px`, gap: 8 }}>
+              <Smile size={Math.max(22, Math.round(25 * composerHeight))} color={t.textMuted} onClick={() => setShowEmojiPicker(!showEmojiPicker)} style={{ cursor: "pointer", flexShrink: 0, alignSelf: "center" }} />
+              <ImageIcon size={Math.max(22, Math.round(25 * composerHeight))} color={t.textMuted} onClick={() => photoInputRef.current?.click()} style={{ cursor: "pointer", flexShrink: 0, alignSelf: "center" }} />
               <textarea
                 ref={composerRef}
                 value={input}
@@ -1188,9 +1350,9 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); editingMsg ? saveEdit() : send(); } }}
                 placeholder={editingMsg ? "Edit message…" : "Message"}
                 rows={1}
-                style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 14.5, color: t.text, resize: "none", maxHeight: 42 + composerHeight * 42, lineHeight: 1.4, paddingTop: 6, paddingBottom: 6, fontFamily: "inherit" }}
+                style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: Math.max(14, Math.round(16.5 * composerHeight * 10) / 10), color: t.text, resize: "none", maxHeight: Math.round((42 + composerHeight * 42) * composerHeight), lineHeight: 1.4, paddingTop: Math.round(7 * composerHeight), paddingBottom: Math.round(7 * composerHeight), fontFamily: "inherit" }}
               />
-              <Plus size={20} color={t.textMuted} onClick={() => setShowAttach(!showAttach)} style={{ cursor: "pointer", flexShrink: 0, marginBottom: 6 }} />
+              <Plus size={Math.max(22, Math.round(25 * composerHeight))} color={t.textMuted} onClick={() => (showAttach ? closeAttach() : openAttach())} style={{ cursor: "pointer", flexShrink: 0, alignSelf: "center", transform: `rotate(${showAttach ? 45 : 0}deg)`, transition: "transform 0.2s ease" }} />
             </div>
             {input.trim() || editingMsg ? (
               <button
@@ -1200,12 +1362,12 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
                 onMouseLeave={() => clearTimeout(longPressTimer.current)}
                 onTouchStart={() => { if (!editingMsg && input.trim()) longPressTimer.current = setTimeout(() => setShowSchedule(true), 500); }}
                 onTouchEnd={() => clearTimeout(longPressTimer.current)}
-                style={{ width: 42, height: 42, borderRadius: "50%", background: t.primary, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                <Send size={17} color={t.bubbleMeText} />
+                style={{ width: Math.round(42 * composerHeight), height: Math.round(42 * composerHeight), borderRadius: "50%", background: t.primary, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                <Send size={Math.max(16, Math.round(17 * composerHeight))} color={t.bubbleMeText} />
               </button>
             ) : (
-              <button onClick={startVoiceRecording} style={{ width: 42, height: 42, borderRadius: "50%", background: t.primary, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                <Mic size={18} color={t.bubbleMeText} />
+              <button onClick={startVoiceRecording} style={{ width: Math.round(42 * composerHeight), height: Math.round(42 * composerHeight), borderRadius: "50%", background: t.primary, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                <Mic size={Math.max(16, Math.round(18 * composerHeight))} color={t.bubbleMeText} />
               </button>
             )}
           </>
@@ -1316,12 +1478,14 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         </div>
       )}
 
-      {showCamera && (
-        <div style={{ position: "absolute", inset: 0, background: "#000", zIndex: 60, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
+      {showCamera && createPortal(
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "#000", zIndex: 2147482000, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", minHeight: 48 }}>
             <span onClick={closeCamera} style={{ color: "#fff", fontSize: 15, cursor: "pointer" }}>Cancel</span>
             <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>Camera</span>
-            <span style={{ width: 50 }} />
+            <div onClick={flipChatCamera} style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <RefreshCw size={20} color="#fff" />
+            </div>
           </div>
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", minHeight: 0 }}>
             <video ref={cameraVideoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -1350,7 +1514,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
               ))}
             </div>
           )}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px calc(20px + env(safe-area-inset-bottom))", flexShrink: 0, gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: `10px 16px ${20 + navInset}px`, flexShrink: 0, gap: 16 }}>
             <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, overflowX: "auto", paddingBottom: 8, maxWidth: "60%" }}>
               {acceptedContacts.slice(0, 8).map((c) => (
                 <div key={c.uid} onClick={async () => {
@@ -1376,11 +1540,12 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
               <div style={{ width: 52, height: 52, borderRadius: "50%", background: "#fff" }} />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {fullscreenImage && createPortal(
-        <div className="nextext-overlay-backdrop" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 999999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }} onClick={() => setFullscreenImage(null)}>
+        <div className="nextext-overlay-backdrop" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.95)", zIndex: 999999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }} onClick={() => setFullscreenImage(null)}>
           <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 14, zIndex: 61 }}>
             <div onClick={async (e) => { e.stopPropagation(); try { const res = await fetch(fullscreenImage); const blob = await res.blob(); const blobUrl = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = blobUrl; a.download = `nextext-image-${Date.now()}.jpg`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(blobUrl); } catch { window.open(fullscreenImage, "_blank"); } }} style={{ width: 38, height: 38, borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -1389,7 +1554,9 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
               <X size={18} color="#fff" />
             </div>
           </div>
-          <img src={fullscreenImage} onClick={(e) => e.stopPropagation()} style={{ maxWidth: "92%", maxHeight: "80%", borderRadius: 8, objectFit: "contain" }} />
+          <div style={{ flex: 1, minHeight: 0, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: "60px 16px 30px", boxSizing: "border-box" }}>
+            <img src={fullscreenImage} onClick={(e) => e.stopPropagation()} style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain", borderRadius: 8 }} />
+          </div>
         </div>,
         document.body
       )}

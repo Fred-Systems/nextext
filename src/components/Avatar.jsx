@@ -167,21 +167,21 @@ export default React.memo(function Avatar({ photoURL, name, uid, size = 52, styl
         document.body
       )}
       {fullscreen && createPortal(
-        <div onClick={() => setFullscreen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", zIndex: 999999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+        <div onClick={() => setFullscreen(false)} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.95)", zIndex: 999999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           <div style={{ position: "absolute", top: 16, right: 16, zIndex: 1000001 }}>
             <div onClick={(e) => { e.stopPropagation(); setFullscreen(false); }} style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,0.25)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
               <X size={24} color="#fff" strokeWidth={3} />
             </div>
           </div>
           {effectivePhotoURL ? (
-            <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", padding: 24 }}>
-              <img src={effectivePhotoURL} alt={name || "avatar"} style={{ maxWidth: "90%", maxHeight: "90%", borderRadius: 8, objectFit: "contain", display: "block" }} onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }} />
+            <div onClick={(e) => e.stopPropagation()} style={{ flex: 1, minHeight: 0, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: "60px 16px 40px", boxSizing: "border-box" }}>
+              <img src={effectivePhotoURL} alt={name || "avatar"} style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", borderRadius: 8, objectFit: "contain", display: "block" }} onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }} />
               <div style={{ display: "none", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", background: "#111b21" }}>
                 <span style={{ fontSize: "min(200px, 40vw)", fontWeight: 700, color: "#fff", userSelect: "none" }}>{initial}</span>
               </div>
             </div>
           ) : (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", background: "#111b21" }}>
+            <div style={{ flex: 1, minHeight: 0, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#111b21" }}>
               <span style={{ fontSize: "min(200px, 40vw)", fontWeight: 700, color: "#fff", userSelect: "none" }}>{initial}</span>
             </div>
           )}

@@ -37,5 +37,10 @@ export function getAvatarColor(uid) {
 
 export function getAvatarInitial(name) {
   if (!name) return "?";
-  return name.charAt(0).toUpperCase();
+  // Array.from is surrogate-pair safe: names that start with an emoji (like
+  // "👥") must not be split into a lone high surrogate, which renders as the
+  // broken "�" glyph.
+  const chars = Array.from(String(name).trim());
+  if (chars.length === 0) return "?";
+  return chars[0].toUpperCase();
 }

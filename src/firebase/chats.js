@@ -125,12 +125,28 @@ export function useMessages(chatId, myUid) {
   return { messages, loading };
 }
 
+// Snapshots the sender's current display name + username onto outgoing messages
+// so that if the sender later renames, old messages keep showing the name they
+// had at send time (chat history reflects "what it used to be").
+export async function snapshotSenderName(senderUid) {
+  try {
+    const snap = await getDoc(doc(db, "users", senderUid));
+    const d = snap.data();
+    return { senderName: d?.displayName || null, senderUsername: d?.username || null };
+  } catch {
+    return { senderName: null, senderUsername: null };
+  }
+}
+
 // Sends a text message and updates the chat's lastMessage preview + unread counts.
 export async function sendTextMessage(chatId, senderUid, text, otherParticipants, options = {}) {
   const { replyTo = null, scheduledFor = null, statusRef = null } = options;
+  const sender = await snapshotSenderName(senderUid);
 
   await addDoc(collection(db, "chats", chatId, "messages"), {
     senderId: senderUid,
+    senderName: sender.senderName,
+    senderUsername: sender.senderUsername,
     type: "text",
     text,
     mediaURL: null,
@@ -245,8 +261,11 @@ export async function reactToMessage(chatId, messageId, myUid, emoji) {
 // src/supabase/media.js); this just records the message doc pointing at it.
 export async function sendMediaMessage(chatId, senderUid, type, uploadResult, otherParticipants, options = {}) {
   const { replyTo = null, durationSeconds = null, statusRef = null } = options;
+  const sender = await snapshotSenderName(senderUid);
   await addDoc(collection(db, "chats", chatId, "messages"), {
     senderId: senderUid,
+    senderName: sender.senderName,
+    senderUsername: sender.senderUsername,
     type, // "image" | "video" | "file" | "voice"
     text: null,
     mediaURL: uploadResult.url,
@@ -294,8 +313,11 @@ function mediaLabel(type) {
 }
 
 export async function sendPollMessage(chatId, senderUid, question, options) {
+  const sender = await snapshotSenderName(senderUid);
   await addDoc(collection(db, "chats", chatId, "messages"), {
     senderId: senderUid,
+    senderName: sender.senderName,
+    senderUsername: sender.senderUsername,
     type: "poll",
     text: null,
     sentAt: serverTimestamp(),

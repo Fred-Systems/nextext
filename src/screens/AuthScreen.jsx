@@ -88,7 +88,7 @@ export default function AuthScreen({ auth }) {
         await auth.signUpWithEmail(email, password, username.trim(), displayName.trim(), phone.trim() || null);
       }
     } catch (e) {
-      setError(friendlyError(e.code));
+      setError(friendlyError(e));
     }
     setBusy(false);
   };
@@ -99,7 +99,7 @@ export default function AuthScreen({ auth }) {
     try {
       await auth.signInWithGoogle();
     } catch (e) {
-      setError(friendlyError(e.code));
+      setError(friendlyError(e));
     }
     setBusy(false);
   };
@@ -107,24 +107,24 @@ export default function AuthScreen({ auth }) {
   const handleGoogleSignup = async () => {
     setError("");
     if (!username.trim()) { setError("Please choose a username for your account."); setBusy(false); return; }
+    if (!displayName.trim()) { setError("Please enter a display name for your account."); setBusy(false); return; }
     if (usernameTaken) { setError("That username is already taken."); setBusy(false); return; }
     if (!agreedToPrivacy) { setError("You must agree to the Privacy Policy to create an account."); setBusy(false); return; }
     setBusy(true);
     try {
-      await auth.signInWithGoogle();
-      if (auth.user?.uid) {
-        const lower = username.trim().toLowerCase();
-        await auth.completeGoogleSignup(username.trim(), displayName.trim(), lower, phone.trim() || null);
+      const u = await auth.signInWithGoogle(true);
+      if (u?.uid) {
+        await auth.completeGoogleSignup(username.trim(), displayName.trim(), username.trim().toLowerCase(), phone.trim() || null);
       }
     } catch (e) {
-      setError(friendlyError(e.code));
+      setError(friendlyError(e));
     }
     setBusy(false);
   };
 
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 65, display: "flex", flexDirection: "column", width: "100%", height: "100%", overflowY: "auto", boxSizing: "border-box" }}>
-      <div style={{ height: 4, background: t.primary, flexShrink: 0 }} />
+      <div style={{ height: 4, background: "#111B21", flexShrink: 0 }} />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "30px 28px 50px" }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ width: 64, height: 64, borderRadius: 18, background: t.primary, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
@@ -224,7 +224,8 @@ function btnStyle(t, filled) {
     ? { width: "100%", padding: "13px", borderRadius: 12, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 15, cursor: "pointer" }
     : { width: "100%", padding: "12px", borderRadius: 12, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 600, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 };
 }
-function friendlyError(code) {
+function friendlyError(err) {
+  const code = err?.code ?? err;
   const map = {
     "auth/email-already-in-use": "That email already has an account — try signing in instead.",
     "auth/invalid-email": "That doesn't look like a valid email.",
@@ -236,11 +237,31 @@ function friendlyError(code) {
     "auth/popup-blocked": "Pop-up was blocked by your browser. Please allow pop-ups for this site.",
     "auth/unauthorized-domain": "Google sign-in is not allowed on this device. Try signing in with email instead.",
     "auth/cancelled-popup-request": "Another pop-up request is already in progress.",
+    "auth/account-exists-with-different-credential": "This Google account is already linked to a different sign-in method for this email.",
     "USER_CANCELLED": "",
     "user-cancelled": "",
     "cancelled": "",
     "CANCELLED": "",
   };
-  console.error("[Auth Error]", code);
-  return map[code] || "Something went wrong — please try again.";
+  console.error("[Auth Error]", err);
+  const mapped = map[code];
+  if (mapped !== undefined) return mapped;
+
+  // CapGo capacitor-social-login numeric error codes (Android native path).
+  const nativeMap = {
+    "-3": "Google sign-in was cancelled.",
+    "-4": "Google sign-in is misconfigured on this device. Check the Firebase Console has the SHA-1 and SHA-256 fingerprint for this app's signing key registered.",
+    "-5": "Google sign-in failed on this device. This usually means the Firebase Console doesn't recognize this app — verify the package name (com.nextext.app) and the SHA-1/SHA-256 fingerprint of your signing key are registered.",
+    "-6": "A Google sign-in is already in progress. Please wait.",
+    "-7": "No Google account is available on this device.",
+    "-2": "Google sign-in is not implemented on this device.",
+    "-1": "Google sign-in failed (something went wrong on the device).",
+  };
+  if (nativeMap[String(code)]) return nativeMap[String(code)];
+
+  const rawMsg = typeof err?.message === "string" && err.message ? err.message.trim() : "";
+  if (rawMsg && rawMsg !== String(code)) {
+    return `Google sign-in failed: ${rawMsg}`;
+  }
+  return `Google sign-in failed (${code || "unknown error"}). Check that your Google account is available and that the app's SHA-1/SHA-256 fingerprint is registered in the Firebase Console.`;
 }

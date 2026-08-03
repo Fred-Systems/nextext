@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { X, ChevronLeft, ChevronRight, Eye, Send } from "lucide-react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase/config";
@@ -94,7 +95,12 @@ export default function StatusStoryViewer({ statuses, initialIndex = 0, myUid, o
 
   const isOwner = myUid && ownerUid && myUid === ownerUid;
   const current = statuses[idx];
-  const duration = getSlideDuration(current);
+  // Once the video's real length is known from its metadata, the auto-timer
+  // tracks THAT instead of the stored durationMs (which can be an estimate or
+  // a 10s fallback when metadata wasn't readable at post time).
+  const [liveVideoDuration, setLiveVideoDuration] = useState(null);
+  useEffect(() => { setLiveVideoDuration(null); }, [idx]);
+  const duration = current?.mediaType === "video" && liveVideoDuration ? liveVideoDuration : getSlideDuration(current);
 
   // Loop breaker + clean mount reset: reset the active index timer state to
   // zero on mount, clearing any stray timers so the first slide's filling line
@@ -303,9 +309,9 @@ export default function StatusStoryViewer({ statuses, initialIndex = 0, myUid, o
 
   const bg = current.backgroundColor || (current.mediaType === "image" || current.mediaType === "video" ? "#000" : t.primary);
 
-  return (
+  return createPortal(
     <div
-      style={{ position: "fixed", inset: 0, background: bg, zIndex: 300, display: "flex", flexDirection: "column", userSelect: "none" }}
+      style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: bg, zIndex: 300, display: "flex", flexDirection: "column", userSelect: "none" }}
       onTouchStart={(e) => { touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
       onTouchEnd={(e) => {
         const dx = e.changedTouches[0].clientX - touchStartRef.current.x;
@@ -344,29 +350,34 @@ export default function StatusStoryViewer({ statuses, initialIndex = 0, myUid, o
         <X size={22} color="#fff" onClick={(e) => { e.stopPropagation(); e.preventDefault(); fullUnmount(); }} style={{ cursor: "pointer" }} />
       </div>
 
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "60px 20px 40px" }}>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "60px 20px 40px", boxSizing: "border-box", overflow: "hidden" }}>
         {current.bgAudioURL && <audio ref={bgAudioRef} src={current.bgAudioURL} loop />}
         {current.mediaType === "video" && current.mediaURL ? (
           <div style={{ position: "relative", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-            <video ref={videoRef} src={current.mediaURL} muted playsInline loop={false} style={{ width: "100%", height: "100%", borderRadius: 8, objectFit: "contain" }} />
-            {current.textOverlay && (
+            <video ref={videoRef} src={current.mediaURL} playsInline loop={false}
+              onLoadedMetadata={(e) => { const ms = Math.round(e.target.duration * 1000); if (ms > 0) setLiveVideoDuration(ms); }}
+              onEnded={() => { setLiveVideoDuration(Math.max(liveVideoDuration || 0, 1)); advanceRef.current?.(); }}
+              style={{ width: "100%", height: "100%", borderRadius: 8, objectFit: "contain" }} />
+            {(current.textOverlay || current.text) && (
               <div style={{ position: "absolute", bottom: 16, left: 12, right: 12, background: "rgba(0,0,0,0.6)", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: 14, fontWeight: 600, textAlign: "center" }}>
-                {current.textOverlay}
+                {current.textOverlay || current.text}
               </div>
             )}
           </div>
         ) : current.mediaType === "image" && current.mediaURL ? (
           <div style={{ position: "relative", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
             <img src={current.mediaURL} alt="Status" style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: 8 }} />
-            {current.textOverlay && (
+            {(current.textOverlay || current.text) && (
               <div style={{ position: "absolute", bottom: 16, left: 12, right: 12, background: "rgba(0,0,0,0.6)", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: 14, fontWeight: 600, textAlign: "center" }}>
-                {current.textOverlay}
+                {current.textOverlay || current.text}
               </div>
             )}
           </div>
         ) : (
-          <div style={{ color: "#fff", fontSize: 22, fontWeight: 700, textAlign: "center", lineHeight: 1.4, padding: 20, fontFamily: current.fontFamily || appFont, width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
-            {current.text || "No text"}
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "80px 24px 90px", boxSizing: "border-box" }}>
+            <div style={{ color: "#fff", fontWeight: 700, textAlign: "center", lineHeight: 1.3, fontFamily: current.fontFamily || appFont, width: "100%", boxSizing: "border-box", wordBreak: "break-word", overflowY: "auto", maxHeight: "100%", fontSize: Math.max(30, Math.min(64, Math.round(200 / Math.max(1, (current.text || "No text").length / 3)))) }}>
+              {current.text || "No text"}
+            </div>
           </div>
         )}
       </div>
@@ -454,6 +465,7 @@ export default function StatusStoryViewer({ statuses, initialIndex = 0, myUid, o
           )}
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }

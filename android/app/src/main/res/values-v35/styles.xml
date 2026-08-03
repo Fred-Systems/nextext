@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- API 35+ (Android 15): opt out of the enforced edge-to-edge layout so
+         the WebView content sits BELOW the status bar and ABOVE the gesture
+         navigation bar, matching the pre-Android-15 behavior. Without this,
+         the app's top buttons overlap the status bar and the bottom bar
+         overlaps the gesture bar on phones like the Pixel 9 Pro. -->
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowBackground">#121212</item>
+        <item name="android:background">@null</item>
+        <item name="android:statusBarColor">#0B141A</item>
+        <item name="android:navigationBarColor">#0B141A</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>

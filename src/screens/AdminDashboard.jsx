@@ -121,6 +121,18 @@ export default function AdminDashboard({ myUid, onBack }) {
     }
   };
 
+  const toggleBlockNameChange = async (uid, currentlyBlocked) => {
+    setError("");
+    try {
+      const ref = doc(db, "users", uid);
+      const snap = await getDoc(ref);
+      const curRestrictions = snap.data()?.restrictions || {};
+      await updateDoc(ref, { restrictions: { ...curRestrictions, blockNameChange: !currentlyBlocked } });
+    } catch (e) {
+      setError("Couldn't update name-change setting: " + e.message);
+    }
+  };
+
   const [broadcastSending, setBroadcastSending] = useState(false);
 
   const sendSystemMessage = async () => {
@@ -385,6 +397,34 @@ export default function AdminDashboard({ myUid, onBack }) {
               Reset parental controls for this account
             </button>
             {clearedMsg && <div style={{ color: t.primary, fontSize: 12.5, marginTop: 8, textAlign: "center" }}>Done — restrictions cleared.</div>}
+          </div>
+          <div style={{ background: t.surface, borderRadius: 14, padding: 16, marginTop: 14 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>Name change</div>
+            <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
+              Block this user from changing their display name or username. Their old names are kept in chat history and shown below.
+            </div>
+            <button
+              onClick={() => toggleBlockNameChange(selectedUser.uid, !!selectedUser.restrictions?.blockNameChange)}
+              disabled={selectedUser.uid === myUid}
+              style={{ width: "100%", padding: 11, borderRadius: 10, border: "none", background: selectedUser.restrictions?.blockNameChange ? "#FFE5E5" : t.bg, color: selectedUser.restrictions?.blockNameChange ? "#FF3B30" : t.text, fontWeight: 700, cursor: selectedUser.uid === myUid ? "not-allowed" : "pointer" }}
+            >
+              {selectedUser.restrictions?.blockNameChange ? "Unblock name changes" : "Block name changes"}
+            </button>
+            {Array.isArray(selectedUser.nameHistory) && selectedUser.nameHistory.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, marginBottom: 6 }}>Previous names ({selectedUser.nameHistory.length})</div>
+                {[...selectedUser.nameHistory].reverse().map((h, i) => (
+                  <div key={i} style={{ fontSize: 12.5, color: t.text, padding: "7px 0", borderTop: `1px solid ${t.border}` }}>
+                    <div style={{ fontWeight: 600 }}>{h.displayName || "?"} <span style={{ color: t.textMuted, fontWeight: 400 }}>@{h.username || "?"}</span></div>
+                    {h.changedAt?.toDate ? (
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>changed {h.changedAt.toDate().toLocaleString()}</div>
+                    ) : (
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>changed (unknown time)</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -729,6 +769,26 @@ export default function AdminDashboard({ myUid, onBack }) {
               </div>
               <span style={{ fontWeight: 700, fontSize: 14, color: settings?.hideTechStack ? "#fff" : t.text }}>
                 {settings?.hideTechStack ? "Tech Stack HIDDEN" : "Tech Stack Visible"}
+              </span>
+            </div>
+          </div>
+          <div style={{ background: t.surface, borderRadius: 14, padding: 16, marginTop: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <UserMinus size={18} color="#FF9500" />
+              <span style={{ fontWeight: 700, fontSize: 15, color: t.text }}>Block All Name Changes</span>
+            </div>
+            <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
+              When enabled, no user can change their display name or username. Existing messages keep their old names regardless.
+            </div>
+            <div onClick={() => {
+              const newVal = !settings?.blockNameSwitching;
+              updateGlobalSettings({ blockNameSwitching: newVal }, myUid);
+            }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 10, background: settings?.blockNameSwitching ? "#FF3B30" : t.primaryLight, cursor: "pointer" }}>
+              <div style={{ width: 46, height: 26, borderRadius: 13, background: settings?.blockNameSwitching ? "#FF3B30" : t.border, position: "relative" }}>
+                <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: settings?.blockNameSwitching ? 23 : 3, transition: "left 0.15s" }} />
+              </div>
+              <span style={{ fontWeight: 700, fontSize: 14, color: settings?.blockNameSwitching ? "#fff" : t.text }}>
+                {settings?.blockNameSwitching ? "NAME CHANGES BLOCKED GLOBALLY" : "Name changes allowed"}
               </span>
             </div>
           </div>

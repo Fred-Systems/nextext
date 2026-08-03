@@ -10,10 +10,12 @@ import {
   GoogleAuthProvider,
   signOut,
 } from "firebase/auth";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
-import { Capacitor } from "@capacitor/core";
-import { SocialLogin } from "@capgo/capacitor-social-login";
-import { auth, googleProvider, db, serverClientId } from "../firebase/config";
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { Capacitor, registerPlugin } from "@capacitor/core";
+import { auth, googleProvider, db } from "../firebase/config";
+import { changeNames } from "../firebase/names";
+
+const LegacyGoogleSignIn = registerPlugin("LegacyGoogleSignIn");
 
 // One account per email: Firebase Auth itself already prevents creating a
 // second account with the same email under a different password (it'll
@@ -81,9 +83,16 @@ export function useAuth() {
     return () => { clearTimeout(safetyTimer); unsub && unsub(); };
   }, []);
 
-  async function signUpWithEmail(email, password, username, displayName) {
+  async function signUpWithEmail(email, password, username, displayName, phone) {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
-    await createUserProfile(cred.user, { email, username, displayName });
+    await createUserProfile(cred.user, { email, username, displayName }, true);
+    if (phone && phone.trim()) {
+      const digits = String(phone).replace(/[^\d+]/g, "");
+      await updateDoc(doc(db, "users", cred.user.uid), {
+        phoneNumber: phone.trim(),
+        phoneNumberNormalized: digits || null,
+      });
+    }
     return cred.user;
   }
 
@@ -91,39 +100,48 @@ export function useAuth() {
     return signInWithEmailAndPassword(auth, email, password);
   }
 
-  async function signInWithGoogle() {
+  async function signInWithGoogle(markProfileComplete = false) {
     // Native (Capacitor) builds use the real Google Sign-In plugin — no popup
     // or redirect, which do not work reliably inside the Android WebView.
     if (Capacitor.isNativePlatform()) {
+      // Prefer the legacy GoogleSignInClient flow: it works on devices with
+      // older Google Play Services and returns precise error codes. CapGo's
+      // Credential Manager path can hang ("Please wait" forever) on some
+      // devices, so it is only used as a fallback.
       try {
-        await SocialLogin.initialize({
-          google: {
-            webClientId: serverClientId,
-            iOSClientId: serverClientId,
-            iOSServerClientId: serverClientId,
-            mode: "online",
-          },
-        });
-      } catch (e) {
-        console.warn("[useAuth] SocialLogin.initialize failed (continuing):", e);
+        const legacy = await LegacyGoogleSignIn.signIn();
+        const legacyToken = legacy?.idToken;
+        if (!legacyToken) throw new Error("Google sign-in did not return an ID token.");
+        const legacyCredential = GoogleAuthProvider.credential(legacyToken);
+        const legacyCred = await signInWithCredential(auth, legacyCredential);
+        const legacyRef = doc(db, "users", legacyCred.user.uid);
+        const legacySnap = await getDoc(legacyRef);
+        if (!legacySnap.exists()) {
+          await createUserProfile(legacyCred.user, {
+            email: legacyCred.user.email,
+            username: legacyCred.user.email ? legacyCred.user.email.split("@")[0] : `user-${legacyCred.user.uid.slice(0, 6)}`,
+            displayName: legacyCred.user.displayName || legacy?.displayName || "New User",
+            photoURL: legacyCred.user.photoURL || legacy?.photoUrl || null,
+          });
+          // Sign-up flow already collected the names from the form, so skip
+          // the profile-completion screen for this session.
+          if (markProfileComplete) await updateDoc(legacyRef, { profileComplete: true });
+        }
+        return legacyCred.user;
+      } catch (legacyErr) {
+        const legacyCode = legacyErr?.code;
+        if (legacyCode === "CANCELLED") throw legacyErr;
+        if (legacyCode === "TIMEOUT") {
+          throw new Error("Google sign-in timed out. Update Google Play Services on this device, then try again, or use Email/phone sign-in.");
+        }
+        // Non-cancellation failure: surface the precise message from the
+        // legacy plugin (it includes the status code and a fix hint).
+        const msg = String(legacyErr?.message || "");
+        const enriched = new Error(msg.startsWith("Google sign-in failed") ? msg : `Google sign-in failed: ${msg || "unknown error"}`);
+        enriched.code = legacyCode;
+        enriched.native = legacyErr;
+        throw enriched;
       }
-      const loginResult = await SocialLogin.login({ provider: "google" });
-      const idToken = loginResult?.result?.idToken || loginResult?.result?.accessToken?.token;
-      if (!idToken) throw new Error("Google sign-in did not return an ID token.");
-      const credential = GoogleAuthProvider.credential(idToken);
-      const cred = await signInWithCredential(auth, credential);
-      const ref = doc(db, "users", cred.user.uid);
-      const snap = await getDoc(ref);
-      if (!snap.exists()) {
-        const profile = loginResult.result?.profile;
-        await createUserProfile(cred.user, {
-          email: cred.user.email,
-          username: cred.user.email ? cred.user.email.split("@")[0] : `user-${cred.user.uid.slice(0, 6)}`,
-          displayName: cred.user.displayName || profile?.name || "New User",
-          photoURL: cred.user.photoURL || profile?.imageUrl || null,
-        });
-      }
-      return cred.user;
     }
 
     try {
@@ -137,6 +155,7 @@ export function useAuth() {
           displayName: cred.user.displayName || "New User",
           photoURL: cred.user.photoURL || null,
         });
+        if (markProfileComplete) await updateDoc(ref, { profileComplete: true });
       }
       return cred.user;
     } catch (e) {
@@ -148,7 +167,23 @@ export function useAuth() {
     }
   }
 
-  async function createUserProfile(fbUser, { email, username, displayName, photoURL }) {
+  async function completeGoogleSignup(username, displayName, usernameLower, phone) {
+    const uid = auth.currentUser?.uid;
+    if (!uid) throw new Error("Not signed in.");
+    await changeNames(uid, { username, displayName, phone });
+    const snap = await getDoc(doc(db, "users", uid));
+    setUserDoc(snap.exists() ? snap.data() : null);
+  }
+
+  async function completeProfile(username, displayName, phone) {
+    const uid = auth.currentUser?.uid;
+    if (!uid) throw new Error("Not signed in.");
+    await changeNames(uid, { username, displayName, phone });
+    const snap = await getDoc(doc(db, "users", uid));
+    setUserDoc(snap.exists() ? snap.data() : null);
+  }
+
+  async function createUserProfile(fbUser, { email, username, displayName, photoURL }, profileComplete = false) {
     await setDoc(doc(db, "users", fbUser.uid), {
       email,
       emailLower: email.toLowerCase(),
@@ -156,6 +191,7 @@ export function useAuth() {
       usernameLower: username.toLowerCase(),
       displayName,
       photoURL: photoURL || null,
+      profileComplete,
       about: "",
       createdAt: serverTimestamp(),
       lastSeen: serverTimestamp(),
@@ -188,5 +224,5 @@ export function useAuth() {
     return signOut(auth);
   }
 
-  return { user, userDoc, loading, signUpWithEmail, signInWithEmail, signInWithGoogle, logOut };
+  return { user, userDoc, loading, signUpWithEmail, signInWithEmail, signInWithGoogle, completeGoogleSignup, completeProfile, logOut };
 }

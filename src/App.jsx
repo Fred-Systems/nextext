@@ -7,13 +7,14 @@ import { purgeExpiredStatuses, useStatuses } from "./firebase/status";
 import { useContacts } from "./firebase/contacts";
 import { useChats, purgeExpiredChatMedia } from "./firebase/chats";
 import { setGlobalWallpaper, fileToWallpaperDataUrl } from "./theme/wallpaper";
-import { ChevronLeft, Palette, Shield, Lock, MessageSquare, X, ShieldCheck, Phone, Image as ImageIcon, Users, CircleDot, RotateCcw, Camera, Settings as SettingsIcon, Bot, Sparkles, RefreshCw, Search } from "lucide-react";
+import { ChevronLeft, Palette, Shield, Lock, MessageSquare, X, ShieldCheck, Phone, Image as ImageIcon, Users, CircleDot, RotateCcw, Camera, Settings as SettingsIcon, Bot, Sparkles, RefreshCw, Search, User } from "lucide-react";
 import { FONTS } from "./theme/ThemeContext";
 import Avatar from "./components/Avatar";
 import { uploadChatFile } from "./supabase/media";
 import { doc, updateDoc, onSnapshot } from "firebase/firestore";
 import { db } from "./firebase/config";
 import AuthScreen from "./screens/AuthScreen";
+import CompleteProfileScreen from "./screens/CompleteProfileScreen";
 import ChatListScreen from "./screens/ChatListScreen";
 import ConversationScreen from "./screens/ConversationScreen";
 import PrivacyScreen from "./screens/PrivacyScreen";
@@ -28,9 +29,13 @@ import AppLockScreen from "./screens/AppLockScreen";
 import StatusScreen from "./screens/StatusScreen";
 import GroupInfoScreen from "./screens/GroupInfoScreen";
 import { initNotifications } from "./firebase/notifications";
+import { App as CapApp } from "@capacitor/app";
+import PermissionsScreen from "./screens/PermissionsScreen";
 import UpdatePrompt from "./components/UpdatePrompt";
 import { checkForUpdate, openDownloadUrl, setLastSeenRelease } from "./updater/updateChecker";
 import { updateGlobalSettings, useGlobalSettings } from "./firebase/config-settings";
+import { useSystemInsets } from "./utils/useSystemInsets";
+import { changeNames, isNameChangeBlocked, isUsernameAvailable } from "./firebase/names";
 
 const UI_SCALE_KEY = "nextext_ui_scale";
 const SCROLL_DOWN_KEY = "nextext_show_scrolldown";
@@ -52,7 +57,7 @@ function ThemeSheet({ current, onSelect, onClose }) {
     </div>
   );
 
-  return createPortal(
+  return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100000, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
       <div style={{ background: t.surface, width: "100%", borderRadius: "20px 20px 0 0", padding: "20px 20px 30px", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", boxSizing: "border-box", WebkitOverflowScrolling: "touch" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
@@ -112,8 +117,7 @@ function ThemeSheet({ current, onSelect, onClose }) {
           </div>
         )}
       </div>
-    </div>,
-    document.body
+    </div>
   );
 }
 
@@ -127,6 +131,86 @@ function formatPhoneInput(raw) {
   if (!digits) return hasPlus ? "+" : "";
   const groups = digits.match(/.{1,3}/g) || [];
   return (hasPlus ? "+" : "") + groups.join(" ");
+}
+
+function NameSetting({ myUid, userDoc, globalSettings }) {
+  const { t } = useTheme();
+  const [displayName, setDisplayName] = useState("");
+  const [username, setUsername] = useState("");
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    setDisplayName(userDoc?.displayName || "");
+    setUsername(userDoc?.username || "");
+  }, [userDoc?.displayName, userDoc?.username]);
+
+  const blocked = isNameChangeBlocked(userDoc, globalSettings);
+
+  const save = async () => {
+    setError("");
+    const dn = displayName.trim();
+    const un = username.trim().toLowerCase();
+    if (!dn) return setError("Display name is required.");
+    if (!un) return setError("Username is required.");
+    if (!/^[a-z0-9_.]+$/.test(un)) return setError("Username can only contain lowercase letters, numbers, dots, and underscores.");
+    setChecking(true);
+    try {
+      if (un !== (userDoc?.username || "").toLowerCase() && !(await isUsernameAvailable(un, myUid))) {
+        setError("That username is already taken.");
+        return;
+      }
+      await changeNames(myUid, { username: un, displayName: dn });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1800);
+    } catch (e) {
+      setError(e.message || "Couldn't save your name.");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  if (blocked) {
+    return (
+      <div style={{ marginTop: 20, marginBottom: 20 }}>
+        <div style={{ fontSize: 12.5, color: t.textMuted, lineHeight: 1.5, padding: "10px 12px", borderRadius: 10, background: t.primaryLight }}>
+          Name changes are blocked{userDoc?.restrictions?.blockNameChange ? " for your account" : " by the admin"}. Contact an admin if you need to change your name.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 20, marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <User size={16} color={t.primary} />
+        <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>Your name</div>
+      </div>
+      <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
+        Your display name is shown to everyone you chat with. Your username (&#64;name) is how people find you. Old chats keep the name you had when the message was sent — this only affects new messages.
+      </div>
+      <input
+        value={displayName}
+        onChange={(e) => setDisplayName(e.target.value)}
+        placeholder="Display name"
+        style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 14, color: t.text, background: t.bg }}
+      />
+      <div style={{ display: "flex", alignItems: "center", marginTop: 8, border: `1px solid ${t.border}`, borderRadius: 10, overflow: "hidden", background: t.bg }}>
+        <span style={{ color: t.textMuted, fontSize: 14, paddingLeft: 12 }}>&#64;</span>
+        <input
+          value={username}
+          onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_.]/g, "").toLowerCase())}
+          placeholder="username"
+          style={{ flex: 1, border: "none", outline: "none", background: "transparent", padding: "10px 12px 10px 4px", fontSize: 14, color: t.text }}
+        />
+      </div>
+      {error && <div style={{ color: "#FF3B30", fontSize: 12.5, marginTop: 6 }}>{error}</div>}
+      <button onClick={save} disabled={checking} style={{ marginTop: 10, padding: "10px 16px", borderRadius: 10, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, cursor: "pointer" }}>
+        {checking ? "Saving…" : saved ? "Saved ✓" : "Save"}
+      </button>
+    </div>
+  );
 }
 
 function PhoneNumberSetting({ myUid }) {
@@ -184,10 +268,11 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   const [photoUploading, setPhotoUploading] = useState(false);
   const [lockedChatsPassSaved, setLockedChatsPassSaved] = useState(false);
   const lockedChatsPassRef = useRef(null);
-  const [appLockEnabled, setAppLockEnabled] = useState(() => localStorage.getItem("nextext_app_lock") === "true");
-  const [appLockPassSaved, setAppLockPassSaved] = useState(false);
+  const [appLockEnabled, setAppLockEnabled] = useState(() => localStorage.getItem("nextext_app_lock") === "true" || (localStorage.getItem("nextext_app_lock") === "pending" && !!localStorage.getItem("nextext_app_lock_pass")));
+  const [appLockPassSaved, setAppLockPassSaved] = useState(() => !!localStorage.getItem("nextext_app_lock_pass"));
   const appLockPassRef = useRef(null);
   const [linkPreviewsOn, setLinkPreviewsOn] = useState(() => localStorage.getItem("nextext_link_previews") !== "off");
+  const [pinchZoomOn, setPinchZoomOn] = useState(() => localStorage.getItem("nextext_pinch_zoom") === "true");
   const sysConfig = useSystemConfigHook();
   const globalSettings = useGlobalSettings();
   const [aiRequestStatus, setAiRequestStatus] = useState("");
@@ -199,6 +284,9 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   const [openSections, setOpenSections] = useState({});
   const [resetPasswordModal, setResetPasswordModal] = useState(false);
   const [resetPasswordInput, setResetPasswordInput] = useState("");
+  const [disableLockModal, setDisableLockModal] = useState(false);
+  const [disableLockInput, setDisableLockInput] = useState("");
+  const [disableLockError, setDisableLockError] = useState(false);
   const [techStackEditing, setTechStackEditing] = useState(false);
   const [techStackDraft, setTechStackDraft] = useState(null);
 
@@ -306,7 +394,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   if (!userDoc) {
     return (
       <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 25 }}>
-        <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "calc(16px + var(--safe-top)) 16px 16px", gap: 12, background: t.primary, flexShrink: 0 }}>
           <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 18 }}>Settings</span>
         </div>
@@ -316,11 +404,11 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   }
 
   return (
-    <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 25 }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.surface, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
-        <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
-        <span style={{ color: t.text, fontWeight: 700, fontSize: 18 }}>Settings</span>
-      </div>
+      <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 25 }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "calc(16px + var(--safe-top)) 16px 16px", gap: 12, background: t.surface, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
+          <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
+          <span style={{ color: t.text, fontWeight: 700, fontSize: 18 }}>Settings</span>
+        </div>
       <div className="nx-scroll" style={{ padding: "12px 16px", paddingBottom: 100 }}>
 
         {/* ═══ ACCOUNT & PROFILE ═══ */}
@@ -336,6 +424,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
               </div>
             </div>
           </div>
+          <NameSetting myUid={myUid} userDoc={userDoc} globalSettings={globalSettings} />
           <PhoneNumberSetting myUid={myUid} />
         </SectionCard>
 
@@ -377,6 +466,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
         <SectionCard title="Privacy & Security" emoji="🔒" sectionKey="privacy">
           <Row icon={<Shield size={18} color={t.primary} />} label="Parental Controls" sub="Manage restrictions" onClick={() => onNavigate("parental")} />
           <Row icon={<Lock size={18} color={t.primary} />} label="Privacy" sub="Last seen, read receipts, status" onClick={() => onNavigate("privacy")} />
+          <Row icon={<ShieldCheck size={18} color={t.primary} />} label="Permissions" sub="Microphone, camera, notifications, contacts" onClick={() => onNavigate("permissions")} />
 
           {/* App protection lock */}
           <div style={{ padding: "13px 0", borderBottom: `1px solid ${t.border}` }}>
@@ -384,8 +474,16 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
               <div style={{ width: 36, height: 36, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={18} color={t.primary} /></div>
               <div style={{ flex: 1 }}><div style={{ fontWeight: 600, color: t.text, fontSize: 15 }}>App protection lock</div><div style={{ fontSize: 12.5, color: t.textMuted, marginTop: 1 }}>Require password when opening the app</div></div>
               <Toggle on={appLockEnabled} onClick={() => {
-                if (appLockEnabled) { setAppLockEnabled(false); localStorage.setItem("nextext_app_lock", "false"); localStorage.removeItem("nextext_app_lock_pass"); }
-                else { setAppLockEnabled(true); localStorage.setItem("nextext_app_lock", "pending"); }
+                if (appLockEnabled) {
+                  setDisableLockInput("");
+                  setDisableLockError(false);
+                  setDisableLockModal(true);
+                } else {
+                  setAppLockEnabled(true);
+                  const existingPass = localStorage.getItem("nextext_app_lock_pass");
+                  if (existingPass) { localStorage.setItem("nextext_app_lock", "true"); setAppLockPassSaved(true); }
+                  else { localStorage.setItem("nextext_app_lock", "pending"); }
+                }
               }} />
             </div>
             {appLockEnabled && !appLockPassSaved && (
@@ -480,17 +578,22 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
             <div style={{ fontWeight: 600, color: t.text, fontSize: 15, marginBottom: 4 }}>Chat text size</div>
             <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 8 }}>Scale text inside chat bubbles.</div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <input type="range" min="0.75" max="1.5" step="0.05" value={chatTextScale} onChange={(e) => setChatTextScale(Number(e.target.value))} style={{ flex: 1, accentColor: t.primary }} />
+              <input type="range" min="0.6" max="1.6" step="0.05" value={chatTextScale} onChange={(e) => setChatTextScale(Number(e.target.value))} style={{ flex: 1, accentColor: t.primary }} />
               <span style={{ fontSize: 13, fontWeight: 700, color: t.primary, minWidth: 44 }}>{Math.round(chatTextScale * 100)}%</span>
             </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: t.text }}>Pinch to zoom chat text</span>
+              <Toggle on={pinchZoomOn} onClick={() => { const next = !pinchZoomOn; setPinchZoomOn(next); localStorage.setItem("nextext_pinch_zoom", next ? "true" : "false"); }} />
+            </div>
+            {pinchZoomOn && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>In any chat, pinch the message list to make text bigger or smaller.</div>}
           </div>
 
           {/* Message box height */}
           <div style={{ padding: "13px 0" }}>
             <div style={{ fontWeight: 600, color: t.text, fontSize: 15, marginBottom: 4 }}>Message box size</div>
-            <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 8 }}>Make the message input taller and easier to tap.</div>
+            <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 8 }}>Make the message input taller, shorter, or easier to tap.</div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <input type="range" min="1" max="2.5" step="0.25" value={composerHeight} onChange={(e) => setComposerHeight(Number(e.target.value))} style={{ flex: 1, accentColor: t.primary }} />
+              <input type="range" min="0.6" max="2.5" step="0.05" value={composerHeight} onChange={(e) => setComposerHeight(Number(e.target.value))} style={{ flex: 1, accentColor: t.primary }} />
               <span style={{ fontSize: 13, fontWeight: 700, color: t.primary, minWidth: 44 }}>{composerHeight === 1 ? "Default" : `${Math.round(composerHeight * 100)}%`}</span>
             </div>
           </div>
@@ -704,6 +807,30 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
           </div>
         </div>
 )}
+      {disableLockModal && (
+        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 71, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => { setDisableLockModal(false); setDisableLockInput(""); setDisableLockError(false); }}>
+          <div style={{ background: t.surface, borderRadius: 16, padding: 20, maxWidth: 350, width: "100%" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+              <span style={{ fontWeight: 700, fontSize: 17, color: t.text }}>Turn off App protection lock</span>
+              <span onClick={() => { setDisableLockModal(false); setDisableLockInput(""); setDisableLockError(false); }} style={{ cursor: "pointer", color: t.textMuted, fontSize: 18 }}>×</span>
+            </div>
+            <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 16 }}>Enter your current password to turn off the app protection lock.</div>
+            <input
+              type="password"
+              value={disableLockInput}
+              onChange={(e) => { setDisableLockInput(e.target.value); setDisableLockError(false); }}
+              placeholder="Current password"
+              autoFocus
+              style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: `1px solid ${disableLockError ? "#FF3B30" : t.border}`, fontSize: 14.5, color: t.text, background: t.surface, outline: "none", boxSizing: "border-box", marginBottom: 16 }}
+            />
+            {disableLockError && <div style={{ color: "#FF3B30", fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>Incorrect password.</div>}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <div onClick={() => { setDisableLockModal(false); setDisableLockInput(""); setDisableLockError(false); }} style={{ padding: "9px 16px", borderRadius: 10, cursor: "pointer", fontSize: 13.5, fontWeight: 600, color: t.textMuted }}>Cancel</div>
+              <div onClick={() => { const old = localStorage.getItem("nextext_app_lock_pass"); if (disableLockInput !== old) { setDisableLockError(true); return; } setAppLockEnabled(false); setAppLockPassSaved(false); localStorage.setItem("nextext_app_lock", "false"); localStorage.removeItem("nextext_app_lock_pass"); setDisableLockModal(false); setDisableLockInput(""); setDisableLockError(false); }} style={{ padding: "9px 16px", borderRadius: 10, background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>Turn off</div>
+            </div>
+          </div>
+        </div>
+)}
       </div>
     </div>
   );
@@ -714,6 +841,7 @@ const DEFAULT_NAV_CONFIG = [{ key: "chats" }, { key: "status" }, { key: "groups"
 function AppShell({ appLocked, setAppLocked }) {
   const { t, themeKey, setThemeKey, hideNav, appFont } = useTheme();
   const auth = useAuth();
+  useSystemInsets();
   const globalSettings = useGlobalSettings();
   const [screen, setScreen] = useState("list");
   const [activeChat, setActiveChat] = useState(null);
@@ -750,7 +878,15 @@ function AppShell({ appLocked, setAppLocked }) {
   usePresenceHeartbeat(myUid);
 
   useEffect(() => {
-    if (myUid) initNotifications(myUid);
+    if (!myUid) return;
+    // Ask for notification permission once per user (a short delay after login
+    // so it doesn't interrupt first paint). They can manage it later from
+    // Settings → Privacy & Security → Permissions.
+    const key = `nextext_notif_asked_${myUid}`;
+    if (localStorage.getItem(key) === "true") return;
+    localStorage.setItem(key, "true");
+    const t = setTimeout(() => { initNotifications(myUid).catch(() => {}); }, 5000);
+    return () => clearTimeout(t);
   }, [myUid]);
 
   const { contacts } = useContacts(myUid);
@@ -811,19 +947,30 @@ function AppShell({ appLocked, setAppLocked }) {
     return () => { clearTimeout(fadeTimer); clearTimeout(dismissTimer); };
   }, [showSplash]);
 
-  // Auto-check for app updates once after login (delayed 5s to not block load)
+  // Auto-check for app updates once after login (delayed 5s to not block load).
+  // On transient failure (network blip, GitHub rate limit on a shared mobile
+  // IP) retry a few times instead of silently treating it as "no update".
   useEffect(() => {
     if (!myUid) return;
-    const timer = setTimeout(async () => {
+    let cancelled = false;
+    let attempt = 0;
+    const run = async () => {
+      if (cancelled) return;
       try {
         const update = await checkForUpdate();
+        if (cancelled) return;
         if (update) {
           setPendingUpdate(update);
           setShowUpdatePrompt(true);
         }
-      } catch { /* silent */ }
-    }, 5000);
-    return () => clearTimeout(timer);
+      } catch {
+        if (cancelled || attempt >= 3) return;
+        attempt++;
+        setTimeout(run, 15000);
+      }
+    };
+    const timer = setTimeout(run, 5000);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [myUid]);
 
   const handleManualUpdateCheck = async () => {
@@ -839,8 +986,8 @@ function AppShell({ appLocked, setAppLocked }) {
         setUpdateStatus("Your app is up to date!");
         setTimeout(() => setUpdateStatus(""), 3000);
       }
-    } catch {
-      setUpdateStatus("Could not check for updates.");
+    } catch (err) {
+      setUpdateStatus(err?.code === "RATE_LIMITED" ? err.message : "Could not check for updates.");
       setTimeout(() => setUpdateStatus(""), 3000);
     }
     setCheckingUpdate(false);
@@ -865,9 +1012,8 @@ function AppShell({ appLocked, setAppLocked }) {
   useEffect(() => { localStorage.setItem(SCROLL_DOWN_KEY, String(showScrollDown)); }, [showScrollDown]);
 
   // Re-lock app whenever the user returns to it from the background.
-  // Only visibilitychange is used (NOT window focus): focus fires spuriously
-  // in the WebView (keyboard open/close, returning after unlock) and would
-  // immediately re-lock the app right after the user enters their PIN.
+  // Uses Capacitor's appStateChange (fires reliably on Android WebView when the
+  // app is backgrounded) plus visibilitychange as a fallback for browsers.
   useEffect(() => {
     const relock = () => {
       if (document.visibilityState !== "hidden") return;
@@ -876,8 +1022,23 @@ function AppShell({ appLocked, setAppLocked }) {
       const shouldLock = enabled && !!pass;
       if (shouldLock) setAppLocked(true);
     };
+    const relockNative = ({ isActive }) => {
+      if (isActive) return;
+      const enabled = localStorage.getItem("nextext_app_lock") === "true";
+      const pass = localStorage.getItem("nextext_app_lock_pass");
+      const shouldLock = enabled && !!pass;
+      if (shouldLock) setAppLocked(true);
+    };
     document.addEventListener("visibilitychange", relock);
-    return () => document.removeEventListener("visibilitychange", relock);
+    let capListener = null;
+    if (window.Capacitor?.isNativePlatform?.()) {
+      CapApp.getState().then(({ isActive }) => { if (!isActive) relockNative({ isActive: false }); }).catch(() => {});
+      CapApp.addListener("appStateChange", relockNative).then((l) => { capListener = l; }).catch(() => {});
+    }
+    return () => {
+      document.removeEventListener("visibilitychange", relock);
+      capListener?.remove();
+    };
   }, []);
 
   const [initialViewStatuses, setInitialViewStatuses] = useState(null);
@@ -919,6 +1080,8 @@ function AppShell({ appLocked, setAppLocked }) {
     fontFamily: appFont,
     width: "100%",
     height: "100%",
+    paddingTop: "var(--safe-top)",
+    paddingBottom: "var(--safe-bottom)",
     ...(uiScale !== 1 ? { transform: `scale(${uiScale})`, transformOrigin: "top left" } : {}),
   };
 
@@ -934,6 +1097,9 @@ function AppShell({ appLocked, setAppLocked }) {
   if (!auth.user) {
     return <div style={containerStyle}><AuthScreen auth={auth} /></div>;
   }
+  if (auth.userDoc?.profileComplete === false) {
+    return <div style={containerStyle}><CompleteProfileScreen auth={auth} /></div>;
+  }
   const isAdmin = auth.userDoc?.role === "admin" || auth.userDoc?.isAdmin === true;
 
   return (
@@ -941,20 +1107,30 @@ function AppShell({ appLocked, setAppLocked }) {
     <div
       id="nextext-app-shell"
       style={{ ...containerStyle }}
-      onTouchStart={(e) => { swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
+      onTouchStart={(e) => { swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, onChatRow: !!e.target.closest?.(".nextext-chat-row") }; }}
       onTouchEnd={(e) => {
-        if (screen !== "list" || storyViewerOpen) return;
-        const dx = e.changedTouches[0].clientX - swipeStartRef.current.x;
-        const dy = e.changedTouches[0].clientY - swipeStartRef.current.y;
-        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 60) {
-          const tabs = navConfig.map((n) => n.key);
-          const currentIdx = tabs.indexOf(activeNavTab);
-          if (dx < 0 && currentIdx < tabs.length - 1) {
-            setActiveNavTab(tabs[currentIdx + 1]);
-          } else if (dx > 0 && currentIdx > 0) {
-            setActiveNavTab(tabs[currentIdx - 1]);
-          }
-        }
+        if ((screen !== "list" && screen !== "status") || storyViewerOpen) return;
+        const start = swipeStartRef.current;
+        // Horizontal swipes that start on a chat row belong to the row's own
+        // Lock/Archive/Delete gesture — never hijack those for tab switching.
+        if (!start || start.onChatRow) return;
+        const dx = e.changedTouches[0].clientX - start.x;
+        const dy = e.changedTouches[0].clientY - start.y;
+        if (Math.abs(dx) <= Math.abs(dy) || Math.abs(dx) <= 60) return;
+        const swipeTabs = navConfig.filter((n) => {
+          if (n.key === "status" && userRestrictions?.blockStatus === true) return false;
+          if (n.key === "groups" && userRestrictions?.blockGroups === true) return false;
+          return n.key === "chats" || n.key === "status" || n.key === "groups";
+        }).map((n) => n.key);
+        if (swipeTabs.length < 2) return;
+        const currentKey = screen === "status" ? "status" : activeNavTab;
+        const currentIdx = swipeTabs.indexOf(currentKey);
+        if (currentIdx === -1) return;
+        const next = dx < 0
+          ? swipeTabs[Math.min(currentIdx + 1, swipeTabs.length - 1)]
+          : swipeTabs[Math.max(currentIdx - 1, 0)];
+        if (next === "status") { setStatusOrigin("status"); setScreen("status"); }
+        else { setActiveNavTab(next); setScreen("list"); }
       }}
     >
       <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab={activeNavTab} compactList={compactList} searchMode={searchMode} topBarVisible={topBarVisible} />
@@ -1031,6 +1207,7 @@ function AppShell({ appLocked, setAppLocked }) {
         />
       )}
       {screen === "privacy" && <PrivacyScreen myUid={myUid} onBack={() => setScreen("settings")} />}
+      {screen === "permissions" && <PermissionsScreen myUid={myUid} onBack={() => setScreen("settings")} />}
       {screen === "parental" && <ParentalControlsScreen myUid={myUid} onBack={() => setScreen("settings")} />}
       {screen === "feedback" && <FeedbackScreen myUid={myUid} myUsername={auth.userDoc?.username} onBack={() => setScreen("settings")} />}
       {screen === "admin" && isAdmin && <AdminDashboard myUid={myUid} onBack={() => setScreen("settings")} />}
@@ -1068,7 +1245,7 @@ function AppShell({ appLocked, setAppLocked }) {
         }
         if (!navTabs.length) return null;
         return (
-          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", background: t.surface, borderTop: `1px solid ${t.border}`, zIndex: 1000 }}>
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", background: t.surface, borderTop: `1px solid ${t.border}`, zIndex: 1000, paddingBottom: "max(0px, calc(var(--safe-bottom)))" }}>
             {navTabs.map(({ key, icon: Icon, label }) => {
               const isActive = key === "settings" ? screen === "settings" : key === "status" ? screen === "status" : (screen === "list" && activeNavTab === key);
               return (
@@ -1127,158 +1304,15 @@ function AppShell({ appLocked, setAppLocked }) {
 
 export default function App() {
   const [appLocked, setAppLocked] = useState(() => {
-    const enabled = localStorage.getItem("nextext_app_lock") === "true";
+    const lockState = localStorage.getItem("nextext_app_lock");
     const pass = localStorage.getItem("nextext_app_lock_pass");
+    const enabled = lockState === "true" || (lockState === "pending" && !!pass);
     return enabled && !!pass;
   });
-  const [showPermissionDialog, setShowPermissionDialog] = useState(false);
-  const [permissionStep, setPermissionStep] = useState(0);
-  const permissions = [
-    { name: "Contacts", desc: "Used to find friends and sync your contact list", permission: "contacts" },
-    { name: "Microphone", desc: "Used for voice messages and voice calls", permission: "microphone" },
-    { name: "Camera", desc: "Used for photos, videos, and profile pictures", permission: "camera" },
-    { name: "Files & Media", desc: "Used to save and send images, videos, and files", permission: "files" },
-    { name: "Notifications", desc: "Used for message alerts and status updates", permission: "notifications" },
-  ];
-
-  useEffect(() => {
-    const checkPermissions = async () => {
-      // Check if we've already shown the permission dialog
-      const hasShown = localStorage.getItem("nextext_permissions_shown");
-      if (!hasShown) {
-        setShowPermissionDialog(true);
-      }
-    };
-    checkPermissions();
-  }, []);
-
-  const requestPermission = async (perm) => {
-    try {
-      switch (perm) {
-        case "contacts":
-          try {
-            if (navigator.contacts && navigator.contacts.select) {
-              await Promise.race([
-                navigator.contacts.select(['name', 'email', 'tel'], { multiple: true }),
-                new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000))
-              ]);
-            }
-          } catch {}
-          break;
-        case "microphone":
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            stream.getTracks().forEach((t) => t.stop());
-          } catch {}
-          break;
-        case "camera":
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            stream.getTracks().forEach((t) => t.stop());
-          } catch {}
-          break;
-        case "files":
-          try {
-            if (navigator.storage?.persist) {
-              await navigator.storage.persist();
-            }
-            const input = document.createElement("input");
-            input.type = "file";
-            input.accept = "image/*,video/*";
-            const focusHandler = () => {};
-            window.addEventListener("focus", focusHandler, { once: true });
-            input.click();
-            await Promise.race([
-              new Promise((resolve) => { input.addEventListener("change", resolve, { once: true }); }),
-              new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000))
-            ]);
-            window.removeEventListener("focus", focusHandler);
-          } catch {}
-          break;
-        case "notifications":
-          try {
-            if ("Notification" in window && Notification.permission === "default") {
-              await Notification.requestPermission();
-            }
-          } catch {}
-          break;
-      }
-    } catch (e) {
-      console.warn("Permission request failed:", e);
-    }
-    setPermissionStep((prev) => prev + 1);
-  };
-
-  const skipAllPermissions = () => {
-    finishPermissions();
-  };
-
-  const skipPermission = () => {
-    setPermissionStep((prev) => prev + 1);
-  };
-
-  const finishPermissions = () => {
-    localStorage.setItem("nextext_permissions_shown", "true");
-    setShowPermissionDialog(false);
-  };
-
-  const PermissionDialog = () => (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 999999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => {}}>
-      <div style={{ background: "#121B22", borderRadius: 20, width: "100%", maxWidth: 400, maxHeight: "90%", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ padding: "24px 20px 16px", textAlign: "center", borderBottom: "1px solid #2a3a4a" }}>
-          <div style={{ fontSize: 20, fontWeight: 700, color: "#fff", marginBottom: 8 }}>Welcome to NexText</div>
-          <div style={{ fontSize: 14, color: "#8a9aa8", marginBottom: 12 }}>We need a few permissions to give you the best experience</div>
-          <div onClick={skipAllPermissions} style={{ padding: "8px 16px", borderRadius: 8, background: "transparent", color: "#8a9aa8", fontWeight: 600, fontSize: 12, border: "1px solid rgba(255,255,255,0.15)", cursor: "pointer", display: "inline-block" }}>
-            Skip all — I'll do it later
-          </div>
-        </div>
-        <div style={{ padding: "16px 20px 8px", maxHeight: "60vh", overflowY: "auto" }}>
-          {permissions.map((p, i) => (
-            <div key={p.permission} style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px", background: i < permissionStep ? "rgba(0,168,132,0.1)" : "rgba(255,255,255,0.03)", borderRadius: 12, marginBottom: 8, border: `1px solid ${i < permissionStep ? "#00A884" : "rgba(255,255,255,0.1)"}`, transition: "all 0.3s" }}>
-              <div style={{ width: 40, height: 40, borderRadius: "50%", background: i < permissionStep ? "#00A884" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                {i < permissionStep ? (
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                ) : (
-                  <span style={{ fontSize: 18, color: "#8a9aa8" }}>{i + 1}</span>
-                )}
-              </div>
-              <div style={{ flex: 1, textAlign: "left" }}>
-                <div style={{ fontSize: 15, fontWeight: 600, color: "#fff" }}>{p.name}</div>
-                <div style={{ fontSize: 12, color: "#8a9aa8", marginTop: 2 }}>{p.desc}</div>
-              </div>
-              {i === permissionStep && (
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={() => requestPermission(p.permission)} style={{ padding: "10px 20px", borderRadius: 8, background: "#00A884", color: "#fff", fontWeight: 700, fontSize: 13, border: "none", cursor: "pointer" }}>
-                    Allow
-                  </button>
-                  <button onClick={skipPermission} style={{ padding: "10px 14px", borderRadius: 8, background: "transparent", color: "#8a9aa8", fontWeight: 600, fontSize: 12, border: "1px solid rgba(255,255,255,0.15)", cursor: "pointer" }}>
-                    Skip
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-        <div style={{ padding: "12px 20px", textAlign: "center", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
-          <div onClick={skipAllPermissions} style={{ padding: "10px 16px", borderRadius: 8, background: "transparent", color: "#8a9aa8", fontWeight: 600, fontSize: 13, border: "1px solid rgba(255,255,255,0.15)", cursor: "pointer", display: "inline-block" }}>
-            Skip all — I'll do it later
-          </div>
-        </div>
-        {permissionStep >= permissions.length && (
-          <div style={{ padding: "20px", textAlign: "center", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 8 }}>All set!</div>
-            <div style={{ fontSize: 13, color: "#8a9aa8", marginBottom: 16 }}>Thanks for enabling permissions. You can change these anytime in settings.</div>
-            <button onClick={finishPermissions} style={{ padding: "14px 40px", borderRadius: 10, background: "#00A884", color: "#fff", fontWeight: 700, fontSize: 15, border: "none", cursor: "pointer" }}>Continue</button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
 
   return (
     <ThemeProvider>
       <AppShell appLocked={appLocked} setAppLocked={setAppLocked} />
-      {showPermissionDialog && <PermissionDialog />}
       {appLocked && <AppLockScreen onUnlock={() => setAppLocked(false)} />}
     </ThemeProvider>
   );

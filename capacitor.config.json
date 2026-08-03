@@ -2,5 +2,15 @@
   "appId": "com.nextext.app",
   "appName": "NexText",
   "webDir": "dist",
-  "androidBackgroundColor": "#121212"
+  "androidBackgroundColor": "#121212",
+  "plugins": {
+    "SocialLogin": {
+      "google": {
+        "webClientId": "406410965292-jlh37tmtcsnucerqbv4ofp9je24mkeok.apps.googleusercontent.com"
+      }
+    },
+    "LegacyGoogleSignIn": {
+      "webClientId": "406410965292-jlh37tmtcsnucerqbv4ofp9je24mkeok.apps.googleusercontent.com"
+    }
+  }
 }

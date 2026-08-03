@@ -1,7 +1,7 @@
 const GITHUB_REPO = "Fred-Systems/nextext";
-const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPO}/releases`;
 const LAST_SEEN_KEY = "nextext_last_seen_release";
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.1.6";
 
 function compareVersions(a, b) {
   const pa = a.replace(/^v/, "").split(".").map(Number);
@@ -22,29 +22,51 @@ export function getCurrentVersion() {
 export async function checkForUpdate() {
   const currentVersion = getCurrentVersion();
   try {
-    const res = await fetch(GITHUB_API, {
+    const res = await fetch(`${GITHUB_API}?per_page=10`, {
       headers: { Accept: "application/vnd.github.v3+json" },
     });
-    if (!res.ok) return null;
-    const release = await res.json();
-    const tag = release.tag_name || "";
-    const latestVersion = tag.replace(/^v/i, "");
-    if (!latestVersion || compareVersions(latestVersion, currentVersion) <= 0) {
-      return null;
+    if (!res.ok) {
+      // GitHub rate limiting is common on mobile networks (shared IP, 60 req/hr
+      // unauthenticated). Treating it as "no update" is wrong — surface it so
+      // the UI can say "could not check" instead of "up to date".
+      const remaining = res.headers.get("x-ratelimit-remaining");
+      const limited = res.status === 403 && remaining === "0";
+      const err = new Error(
+        limited
+          ? "GitHub's update API is rate-limited on this network. Please try again later."
+          : `Update check failed (HTTP ${res.status}).`
+      );
+      err.code = limited ? "RATE_LIMITED" : `HTTP_${res.status}`;
+      throw err;
     }
-    const apkAsset = (release.assets || []).find(
-      (a) => a.name && a.name.endsWith(".apk")
-    );
+    const releases = await res.json();
+    if (!Array.isArray(releases)) throw new Error("Update check returned unexpected data.");
+    // Pick the newest non-prerelease tag that has an APK and is newer than us.
+    const candidates = releases
+      .filter((r) => !r.draft && !r.prerelease)
+      .map((r) => ({
+        tag: r.tag_name || "",
+        name: r.name || `Version ${(r.tag_name || "").replace(/^v/i, "")}`,
+        body: r.body || "No changelog provided.",
+        apk: (r.assets || []).find((a) => a.name && a.name.endsWith(".apk")),
+        html_url: r.html_url,
+      }))
+      .filter((r) => r.tag && compareVersions(r.tag, currentVersion) > 0 && r.apk);
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => compareVersions(b.tag, a.tag));
+    const best = candidates[0];
     return {
-      version: latestVersion,
-      name: release.name || `Version ${latestVersion}`,
-      body: release.body || "No changelog provided.",
-      downloadUrl: apkAsset ? apkAsset.browser_download_url : null,
-      releaseUrl: release.html_url,
+      version: best.tag.replace(/^v/i, ""),
+      name: best.name,
+      body: best.body,
+      downloadUrl: best.apk.browser_download_url,
+      releaseUrl: best.html_url,
     };
   } catch (e) {
     console.error("[updater] checkForUpdate failed:", e);
-    return null;
+    const err = new Error(e?.message || "Could not check for updates.");
+    err.code = e?.code || "NETWORK";
+    throw err;
   }
 }
 

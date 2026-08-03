@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import { ChevronLeft, Plus, Camera, X, Video, Type, Palette, Eye, Trash2, Play, Pause } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ChevronLeft, Plus, Camera, X, Video, Type, Palette, Eye, Trash2, Play, Pause, RefreshCw } from "lucide-react";
 import { useTheme, FONTS } from "../theme/ThemeContext";
 import { postStatus, useStatuses, viewStatus, useStatusViewers, deleteStatus } from "../firebase/status";
 import { useContacts } from "../firebase/contacts";
@@ -162,6 +163,7 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
   const [viewedMap, setViewedMap] = useState(() => getStoredViewed());
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState("");
+  const [postError, setPostError] = useState("");
   const [durationSeconds, setDurationSeconds] = useState(5);
   const [textOverlay, setTextOverlay] = useState("");
   const [bgAudioFile, setBgAudioFile] = useState(null);
@@ -183,7 +185,34 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
   const cameraVideoRef = useRef(null);
   const cameraRecordingRef = useRef(null);
   const cameraTimerRef = useRef(null);
+  const [cameraFacing, setCameraFacing] = useState("user");
+  const [cameraMode, setCameraMode] = useState("photo");
   const photoInputRef = useRef(null);
+  const [previewZoom, setPreviewZoom] = useState(1);
+  const [showZoomHint, setShowZoomHint] = useState(false);
+  const pinchRef = useRef(null);
+
+  const onPreviewTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      pinchRef.current = {
+        dist: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY),
+        scale: previewZoom,
+      };
+    }
+  };
+
+  const onPreviewTouchMove = (e) => {
+    if (e.touches.length === 2 && pinchRef.current) {
+      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      if (pinchRef.current.dist > 0) {
+        const next = Math.min(3, Math.max(1, pinchRef.current.scale * (dist / pinchRef.current.dist)));
+        setPreviewZoom(next);
+        setShowZoomHint(true);
+      }
+    }
+  };
+
+  const onPreviewTouchEnd = () => { pinchRef.current = null; };
 
   const acceptedContacts = contacts.filter((c) => c.status === "accepted");
   const contactUids = acceptedContacts.map((c) => c.uid);
@@ -256,36 +285,40 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
     setPostText("");
     setPostMedia(null);
     setPostMediaType(null);
+    setPostImages([]);
     setDurationSeconds(5);
     setTextOverlay("");
     setBgAudioFile(null);
     setBgAudioVolume(70);
     setVideoVolume(100);
     setMuteOriginal(false);
+    setPreviewZoom(1);
+    setShowZoomHint(false);
+    setPostError("");
     setShowPost(true);
   };
 
   const handlePost = async () => {
     if (postMode === "text" && !postText.trim()) return;
     if (postMode === "media" && !postMedia && postImages.length === 0) {
-      setSendError("Please select an image, video, or record something.");
+      setPostError("Please select an image, video, or record something.");
       return;
     }
     setPosting(true);
+    setPostError("");
     try {
       // Handle multiple images - send as separate status updates
-      if (postImages.length > 0) {
+      if (postMode === "media" && postImages.length > 0) {
         for (let i = 0; i < postImages.length; i++) {
           const img = postImages[i];
           const file = new File([img], `status-${Date.now()}-${i}.jpg`, { type: "image/jpeg" });
           const result = await uploadChatFile(`status-${myUid}`, myUid, file, { compress: true });
-          const mediaURL = result.url;
-await postStatus(myUid, {
+          await postStatus(myUid, {
             text: postText.trim() || null,
-            mediaURL,
+            mediaURL: result.url,
             mediaType: "image",
-            backgroundColor: bgColor,
-            fontFamily,
+            backgroundColor: null,
+            fontFamily: null,
             durationMs: durationSeconds * 1000,
             textOverlay: textOverlay.trim() || null,
           });
@@ -294,53 +327,76 @@ await postStatus(myUid, {
       }
 
       // Handle single video or single image from postMedia
-      let mediaURL = null;
-      let mediaType = null;
-      let durationMs = null;
-      if (postMedia) {
-        const ext = postMediaType === "video" ? "mp4" : "jpg";
-        const mime = postMediaType === "video" ? "video/mp4" : "image/jpeg";
+      if (postMode === "media" && postMedia) {
+        const isVideo = postMediaType === "video";
+        const ext = isVideo ? "mp4" : "jpg";
+        const mime = isVideo ? "video/mp4" : "image/jpeg";
         const file = new File([postMedia], `status-${Date.now()}.${ext}`, { type: mime });
-        const result = await uploadChatFile(`status-${myUid}`, myUid, file, { compress: postMediaType !== "video" });
-        mediaURL = result.url;
-        mediaType = postMediaType;
-        if (postMediaType === "video") {
+        const result = await uploadChatFile(`status-${myUid}`, myUid, file, { compress: !isVideo });
+        let durationMs = null;
+        if (isVideo) {
           durationMs = await getVideoDuration(postMedia);
         }
+        let bgAudioURL = null;
+        let bgAudioVol = null;
+        let vidVol = null;
+        if (bgAudioFile) {
+          const audioFile = new File([bgAudioFile], `status-audio-${Date.now()}.mp3`, { type: bgAudioFile.type || "audio/mpeg" });
+          const audioResult = await uploadChatFile(`status-${myUid}`, myUid, audioFile, { compress: false });
+          bgAudioURL = audioResult.url;
+          bgAudioVol = bgAudioVolume;
+          vidVol = muteOriginal ? 0 : videoVolume;
+        }
+        await postStatus(myUid, {
+          text: postText.trim() || null,
+          mediaURL: result.url,
+          mediaType: isVideo ? "video" : "image",
+          backgroundColor: null,
+          fontFamily: null,
+          durationMs: durationMs || durationSeconds * 1000,
+          textOverlay: textOverlay.trim() || null,
+          bgAudioURL,
+          bgAudioVolume: bgAudioVol,
+          videoVolume: vidVol,
+        });
       }
-      let bgAudioURL = null;
-      let bgAudioVol = null;
-      let vidVol = null;
-      if (bgAudioFile) {
-        const audioFile = new File([bgAudioFile], `status-audio-${Date.now()}.mp3`, { type: bgAudioFile.type || "audio/mpeg" });
-        const audioResult = await uploadChatFile(`status-${myUid}`, myUid, audioFile, { compress: false });
-        bgAudioURL = audioResult.url;
-        bgAudioVol = bgAudioVolume;
-        vidVol = muteOriginal ? 0 : videoVolume;
+
+      // Handle text status (with optional background audio)
+      if (postMode === "text") {
+        let bgAudioURL = null;
+        let bgAudioVol = null;
+        if (bgAudioFile) {
+          const audioFile = new File([bgAudioFile], `status-audio-${Date.now()}.mp3`, { type: bgAudioFile.type || "audio/mpeg" });
+          const audioResult = await uploadChatFile(`status-${myUid}`, myUid, audioFile, { compress: false });
+          bgAudioURL = audioResult.url;
+          bgAudioVol = bgAudioVolume;
+        }
+        await postStatus(myUid, {
+          text: postText.trim(),
+          mediaURL: null,
+          mediaType: null,
+          backgroundColor: STATUS_BG_COLORS[bgColorIdx],
+          fontFamily: FONTS[fontIdx].value,
+          durationMs: durationSeconds * 1000,
+          textOverlay: null,
+          bgAudioURL,
+          bgAudioVolume: bgAudioVol,
+          videoVolume: null,
+        });
       }
-      const bgColor = postMode === "text" ? STATUS_BG_COLORS[bgColorIdx] : null;
-      const fontFamily = postMode === "text" ? FONTS[fontIdx].value : null;
-      const finalDuration = postMode === "text" ? durationSeconds * 1000 : (durationMs || (mediaType === "video" ? durationSeconds * 1000 : durationSeconds * 1000));
-      await postStatus(myUid, {
-        text: postText.trim() || (postMode === "text" ? " " : null),
-        mediaURL,
-        mediaType,
-        backgroundColor: bgColor,
-        fontFamily,
-        durationMs: finalDuration,
-        textOverlay: textOverlay.trim() || null,
-        bgAudioURL,
-        bgAudioVolume: bgAudioVol,
-        videoVolume: vidVol,
-      });
+
       setPostText("");
       setPostMedia(null);
       setPostMediaType(null);
       setPostImages([]);
       setTextOverlay("");
       setBgAudioFile(null);
+      setPostError("");
       setShowPost(false);
-    } catch { /* silent */ }
+      setPostMode("text");
+    } catch (err) {
+      setPostError("Couldn't post status: " + (err?.message || err || "unknown error"));
+    }
     setPosting(false);
   };
 
@@ -364,15 +420,22 @@ await postStatus(myUid, {
     e.target.value = "";
   };
 
-  const startCamera = async (captureMode) => {
+  const startCamera = async (captureMode, facing = cameraFacing) => {
     setCameraError("");
     try {
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach((tr) => tr.stop());
+        cameraStreamRef.current = null;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 1280 } },
+        video: { facingMode: facing, width: { ideal: 720 }, height: { ideal: 1280 } },
         audio: captureMode === "video",
       });
       cameraStreamRef.current = stream;
+      setCameraFacing(facing);
+      setCameraMode(captureMode);
       setShowCamera(true);
+      if (cameraVideoRef.current) cameraVideoRef.current.srcObject = stream;
       if (captureMode === "video") {
         cameraRecordingRef.current = new MediaRecorder(stream, { mimeType: "video/webm" });
         const chunks = [];
@@ -391,6 +454,11 @@ await postStatus(myUid, {
     } catch {
       setCameraError("Camera access denied or unavailable.");
     }
+  };
+
+  const flipCamera = () => {
+    if (cameraRecordingRef.current && cameraRecordingRef.current.state === "recording") return;
+    startCamera(cameraMode, cameraFacing === "user" ? "environment" : "user");
   };
 
   const capturePhotoFromCamera = () => {
@@ -465,7 +533,7 @@ await postStatus(myUid, {
 
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40, display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.surface, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "calc(16px + var(--safe-top)) 16px 16px", gap: 12, background: t.surface, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
         <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
         <span style={{ color: t.text, fontWeight: 700, fontSize: 18 }}>Status</span>
       </div>
@@ -573,10 +641,13 @@ await postStatus(myUid, {
       )}
 
       {/* Camera overlay */}
-      {showCamera && (
-        <div style={{ position: "absolute", inset: 0, background: "#000", zIndex: 60, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", minHeight: 44, flexShrink: 0 }}>
+      {showCamera && createPortal(
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "#000", zIndex: 2147482000, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "calc(12px + var(--safe-top)) 16px 12px", minHeight: 44, flexShrink: 0 }}>
             <X size={22} color="#fff" onClick={() => { setShowCamera(false); stopCameraStream(); }} style={{ cursor: "pointer" }} />
+            <div onClick={flipCamera} style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <RefreshCw size={20} color="#fff" />
+            </div>
           </div>
           <video
             ref={(el) => {
@@ -589,11 +660,11 @@ await postStatus(myUid, {
             autoPlay
             playsInline
             muted
-            style={{ flex: 1, width: "100%", objectFit: "cover", minHeight: 0 }}
+            style={{ flex: 1, width: "100%", height: "100%", objectFit: "cover", minHeight: 0, background: "#000" }}
           />
           {cameraError && <div style={{ position: "absolute", bottom: 100, left: 0, right: 0, textAlign: "center", color: "#FF3B30", fontSize: 13, fontWeight: 600 }}>{cameraError}</div>}
-          <div style={{ position: "absolute", bottom: 40, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 28, zIndex: 10, paddingBottom: "env(safe-area-inset-bottom)" }}>
-            <div onClick={capturePhotoFromCamera} style={{ width: 64, height: 64, borderRadius: "50%", border: "4px solid #fff", background: "rgba(255,255,255,0.15)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "absolute", bottom: "calc(28px + var(--safe-bottom))", left: 0, right: 0, display: "flex", justifyContent: "center", gap: "min(28px, 7vw)", zIndex: 10 }}>
+            <div onClick={capturePhotoFromCamera} style={{ width: "min(64px, 16vw)", height: "min(64px, 16vw)", borderRadius: "50%", border: "4px solid #fff", background: "rgba(255,255,255,0.15)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Camera size={26} color="#fff" />
             </div>
             <div
@@ -604,18 +675,19 @@ await postStatus(myUid, {
                   startCamera("video");
                 }
               }}
-              style={{ width: 64, height: 64, borderRadius: "50%", border: "4px solid #FF3B30", background: cameraRecordingRef.current?.state === "recording" ? "rgba(255,59,48,0.3)" : "rgba(255,255,255,0.15)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+              style={{ width: "min(64px, 16vw)", height: "min(64px, 16vw)", borderRadius: "50%", border: "4px solid #FF3B30", background: cameraRecordingRef.current?.state === "recording" ? "rgba(255,59,48,0.3)" : "rgba(255,255,255,0.15)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
             >
               <Video size={26} color="#FF3B30" />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Post status sheet */}
-      {showPost && (
-        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50, display: "flex", alignItems: "flex-end" }} onClick={() => { setShowPost(false); setPostMedia(null); setPostText(""); setPostMode("text"); }}>
-          <div style={{ background: t.surface, width: "100%", boxSizing: "border-box", borderRadius: "20px 20px 0 0", padding: "20px 24px 30px", maxHeight: "95vh", overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
+      {showPost && createPortal(
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.4)", zIndex: 2147481000, display: "flex", alignItems: "flex-end" }} onClick={() => { setShowPost(false); setPostMedia(null); setPostText(""); setPostMode("text"); }}>
+          <div style={{ background: t.surface, width: "100%", boxSizing: "border-box", borderRadius: "20px 20px 0 0", padding: "20px 24px 30px", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <span style={{ fontWeight: 700, fontSize: 17, color: t.text }}>New Status</span>
               <X size={20} color={t.textMuted} onClick={() => { setShowPost(false); setPostMedia(null); setPostText(""); setPostMode("text"); }} style={{ cursor: "pointer" }} />
@@ -633,16 +705,32 @@ await postStatus(myUid, {
 
             {postMode === "text" ? (
               <div>
-                <div style={{ padding: 16, boxSizing: "border-box", overflow: "hidden", borderRadius: 12, background: STATUS_BG_COLORS[bgColorIdx], minHeight: 110, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12, transition: "background 0.2s" }}>
-                  <textarea
-                    ref={postTextRef}
-                    autoFocus
-                    value={postText}
-                    onChange={(e) => setPostText(e.target.value)}
-                    placeholder="What's on your mind?"
-                    rows={3}
-                    style={{ width: "100%", boxSizing: "border-box", background: "transparent", border: "none", outline: "none", color: "#fff", fontSize: 18, fontWeight: 700, textAlign: "center", resize: "none", fontFamily: FONTS[fontIdx].value, lineHeight: 1.4, caretColor: "#fff" }}
-                  />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Preview ({previewZoom > 1 ? `${Math.round(previewZoom * 100)}%` : "pinch to zoom"})</span>
+                  {previewZoom > 1 && (
+                    <div onClick={() => { setPreviewZoom(1); setShowZoomHint(false); }} style={{ fontSize: 11, color: t.primary, fontWeight: 700, cursor: "pointer", padding: "2px 8px", borderRadius: 8, background: t.primaryLight }}>Reset zoom</div>
+                  )}
+                </div>
+                <div
+                  onTouchStart={onPreviewTouchStart}
+                  onTouchMove={onPreviewTouchMove}
+                  onTouchEnd={onPreviewTouchEnd}
+                  style={{ position: "relative", boxSizing: "border-box", overflow: "hidden", borderRadius: 12, background: STATUS_BG_COLORS[bgColorIdx], width: "100%", height: 300, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", transition: "background 0.2s", touchAction: "pan-x pan-y" }}
+                >
+                  <div style={{ transform: `scale(${previewZoom})`, transformOrigin: "center center", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <textarea
+                      ref={postTextRef}
+                      autoFocus
+                      value={postText}
+                      onChange={(e) => setPostText(e.target.value)}
+                      placeholder="What's on your mind?"
+                      rows={3}
+                      style={{ width: "100%", height: "100%", boxSizing: "border-box", background: "transparent", border: "none", outline: "none", color: "#fff", fontSize: 20, fontWeight: 700, textAlign: "center", resize: "none", fontFamily: FONTS[fontIdx].value, lineHeight: 1.4, caretColor: "#fff", padding: 12 }}
+                    />
+                  </div>
+                  {showZoomHint && previewZoom > 1 && (
+                    <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, textAlign: "center", fontSize: 10.5, color: "rgba(255,255,255,0.85)", background: "rgba(0,0,0,0.45)", padding: "3px 8px", borderRadius: 10, width: "fit-content", margin: "0 auto" }}>Zoomed — drag with two fingers</div>
+                  )}
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
@@ -716,12 +804,14 @@ await postStatus(myUid, {
 
                 {/* Single video/image fallback when no multiple images */}
                 {(postMedia || postImages.length === 0) && postMedia && (
-                  <div style={{ position: "relative", marginBottom: 12, width: "100%" }}>
-                    {postMediaType === "video" ? (
-                      <video src={URL.createObjectURL(postMedia)} style={{ width: "100%", aspectRatio: "9/16", maxHeight: "70vh", borderRadius: 10, objectFit: "cover", background: "#000", display: "block" }} />
-                    ) : (
-                      <img src={URL.createObjectURL(postMedia)} alt="" style={{ width: "100%", aspectRatio: "9/16", maxHeight: "70vh", borderRadius: 10, objectFit: "cover", display: "block" }} />
-                    )}
+                  <div style={{ position: "relative", marginBottom: 12, width: "100%", display: "flex", justifyContent: "center", alignItems: "center" }}>
+                    <div style={{ width: "100%", maxWidth: "none", height: "min(62vh, 520px)", borderRadius: 10, overflow: "hidden", background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {postMediaType === "video" ? (
+                        <video src={URL.createObjectURL(postMedia)} controls playsInline style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                      ) : (
+                        <img src={URL.createObjectURL(postMedia)} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                      )}
+                    </div>
                     <div onClick={() => { setPostMedia(null); setPostMediaType(null); setPostMode("text"); }} style={{ position: "absolute", top: 8, right: 8, width: 22, height: 22, borderRadius: "50%", background: "#FF3B30", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
                       <X size={12} color="#fff" />
                     </div>
@@ -739,19 +829,19 @@ await postStatus(myUid, {
             )}
 
             {/* Duration slider */}
-            <div style={{ marginBottom: 12, padding: "10px 12px", boxSizing: "border-box", width: "100%", overflowX: "auto", whiteSpace: "nowrap", borderRadius: 10, background: t.bg, border: `1px solid ${t.border}` }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: t.text, whiteSpace: "nowrap" }}>Status lifespan duration</span>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: t.primary, flexShrink: 0, marginLeft: 8 }}>{durationSeconds}s</span>
+            <div style={{ marginBottom: 12, padding: "14px 16px", boxSizing: "border-box", width: "100%", overflowX: "auto", whiteSpace: "nowrap", borderRadius: 12, background: t.bg, border: `1px solid ${t.border}` }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: t.text, whiteSpace: "nowrap" }}>Status lifespan duration</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: t.primary, flexShrink: 0, marginLeft: 8 }}>{durationSeconds}s</span>
               </div>
-              <input type="range" min="1" max="15" step="1" value={durationSeconds} onChange={(e) => setDurationSeconds(Number(e.target.value))} style={{ width: "100%", boxSizing: "border-box", accentColor: t.primary }} />
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: t.textMuted, marginTop: 2 }}>
+              <input type="range" min="1" max="15" step="1" value={durationSeconds} onChange={(e) => setDurationSeconds(Number(e.target.value))} style={{ width: "100%", boxSizing: "border-box", accentColor: t.primary, height: 30, minHeight: 30 }} />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: t.textMuted, marginTop: 4 }}>
                 <span>1s</span><span>15s</span>
               </div>
             </div>
 
             {/* Text overlay for media mode */}
-            {postMode === "media" && postMedia && (
+            {postMode === "media" && (postMedia || postImages.length > 0) && (
               <div style={{ marginBottom: 12 }}>
                 <input
                   value={textOverlay}
@@ -821,6 +911,10 @@ await postStatus(myUid, {
 
             <div style={{ flex: 1, minHeight: 0 }} />
 
+            {postError && (
+              <div style={{ color: "#FF3B30", fontSize: 12.5, fontWeight: 600, marginBottom: 8, lineHeight: 1.4 }}>{postError}</div>
+            )}
+
             <button
               onClick={handlePost}
               disabled={posting || (postMode === "text" && !postText.trim()) || (postMode === "media" && !postMedia && postImages.length === 0)}
@@ -829,7 +923,8 @@ await postStatus(myUid, {
               {posting ? "Posting…" : "Post Status"}
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
