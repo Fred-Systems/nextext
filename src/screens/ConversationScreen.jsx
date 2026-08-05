@@ -55,6 +55,14 @@ function formatDayLabel(date) {
   return d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
 }
 
+// A scheduled message was composed at sentAt but delivered at scheduledFor;
+// the timestamp shown on the bubble (and day separators) should reflect the
+// actual delivery time, matching what a real-time send would show.
+function msgDisplayDate(m) {
+  if (m?.isScheduled && m?.scheduledFor?.toDate) return m.scheduledFor.toDate();
+  return m?.sentAt?.toDate ? m.sentAt.toDate() : null;
+}
+
 function getMediaExpiryText(sentAt, mediaExpiryDays) {
   if (mediaExpiryDays == null) return "Permanent Storage";
   if (!sentAt?.toDate) return "";
@@ -1269,8 +1277,8 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
             const groupedWithPrev = prev && prev.senderId === m.senderId && !prev.deletedForEveryone;
             const groupedWithNext = next && next.senderId === m.senderId && !next.deletedForEveryone;
             const isMine = m.senderId === myUid;
-            const mDate = m.sentAt?.toDate ? m.sentAt.toDate() : null;
-            const prevDate = prev?.sentAt?.toDate ? prev.sentAt.toDate() : null;
+            const mDate = msgDisplayDate(m);
+            const prevDate = msgDisplayDate(prev);
             const newDay = mDate && (!prevDate || prevDate.toDateString() !== mDate.toDateString());
             return (
             <React.Fragment key={m.id}>
@@ -1299,7 +1307,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
                 {renderBubble(m)}
                 <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, marginTop: 3 }}>
                   <span style={{ fontSize: 10.5, opacity: 0.65 }}>
-                    {m.sentAt?.toDate ? m.sentAt.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "sending…"}
+                    {msgDisplayDate(m) ? msgDisplayDate(m).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "sending…"}
                   </span>
                   <StatusTicks mine={m.senderId === myUid} deliveredTo={m.deliveredTo} readBy={m.readBy} otherParticipants={otherParticipants} />
                 </div>

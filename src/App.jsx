@@ -33,6 +33,7 @@ import { initNotifications } from "./firebase/notifications";
 import { App as CapApp } from "@capacitor/app";
 import PermissionsScreen from "./screens/PermissionsScreen";
 import UpdatePrompt from "./components/UpdatePrompt";
+import PageErrorBoundary from "./components/PageErrorBoundary";
 import { checkForUpdate, downloadUpdate, getCurrentVersion, openDownloadUrl, setLastSeenRelease } from "./updater/updateChecker";
 import { updateGlobalSettings, useGlobalSettings } from "./firebase/config-settings";
 import { useSystemInsets } from "./utils/useSystemInsets";
@@ -1264,22 +1265,29 @@ function AppShell({ appLocked, setAppLocked }) {
           const pageStyle = { position: "relative", width: "100%", height: "100%", flex: "0 0 100%", overflow: "hidden" };
           if (key === "chats") return (
             <div key="chats" style={pageStyle}>
-              <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab="chats" compactList={compactList} searchMode={searchMode} topBarVisible={topBarVisible} />
+              <PageErrorBoundary label="Chats">
+                <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab="chats" compactList={compactList} searchMode={searchMode} topBarVisible={topBarVisible} />
+              </PageErrorBoundary>
             </div>
           );
           if (key === "groups") return (
             <div key="groups" style={pageStyle}>
-              <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab="groups" compactList={compactList} searchMode={searchMode} topBarVisible={topBarVisible} />
+              <PageErrorBoundary label="Groups">
+                <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab="groups" compactList={compactList} searchMode={searchMode} topBarVisible={topBarVisible} />
+              </PageErrorBoundary>
             </div>
           );
           if (key === "status") return (
             <div key="status" style={pageStyle}>
-              <StatusScreen myUid={myUid} myName={auth.userDoc?.displayName || auth.userDoc?.username} onBack={() => { setScreen("list"); setActiveNavTab("chats"); setStoryViewerOpen(false); }} onStoryViewerChange={setStoryViewerOpen} initialViewStatuses={initialViewStatuses} statusOrigin={statusOrigin} />
+              <PageErrorBoundary label="Status">
+                <StatusScreen myUid={myUid} myName={auth.userDoc?.displayName || auth.userDoc?.username} onBack={() => { setScreen("list"); setActiveNavTab("chats"); setStoryViewerOpen(false); }} onStoryViewerChange={setStoryViewerOpen} initialViewStatuses={initialViewStatuses} statusOrigin={statusOrigin} />
+              </PageErrorBoundary>
             </div>
           );
           if (key === "settings") return (
             <div key="settings" style={pageStyle}>
-              <SettingsScreen
+              <PageErrorBoundary label="Settings">
+                <SettingsScreen
                 myUid={myUid}
                 isAdmin={isAdmin}
                 themeKey={themeKey}
@@ -1310,6 +1318,7 @@ function AppShell({ appLocked, setAppLocked }) {
                 checkingUpdate={checkingUpdate}
                 updateStatus={updateStatus}
               />
+              </PageErrorBoundary>
             </div>
           );
           return null;

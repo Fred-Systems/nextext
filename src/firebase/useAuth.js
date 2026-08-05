@@ -139,8 +139,8 @@ export function useAuth() {
       try {
         const legacy = await withTimeout(
           LegacyGoogleSignIn.signIn(),
-          20000,
-          "Google sign-in timed out. Google Play Services may be missing or disabled on this device."
+          8000,
+          "Google Play Services didn't respond on this device. It may be missing, disabled, or outdated. Update Google Play Services and add a Google account, then try again — or use Email/phone sign-in."
         );
         const legacyToken = legacy?.idToken;
         if (!legacyToken) throw new Error("Google sign-in did not return an ID token.");
@@ -158,8 +158,8 @@ export function useAuth() {
       try {
         const capgoRes = await withTimeout(
           CapgoSocialLogin.login({ provider: "google", options: { scopes: ["email", "openid", "profile"] } }),
-          25000,
-          "Google sign-in timed out on this device."
+          8000,
+          "Google Play Services didn't respond on this device. It may be missing, disabled, or outdated. Update Google Play Services and add a Google account, then try again — or use Email/phone sign-in."
         );
         const capgoToken = capgoRes?.response?.idToken;
         if (!capgoToken) throw new Error("Google sign-in did not return an ID token.");
