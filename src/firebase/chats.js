@@ -235,6 +235,19 @@ export async function setTypingHeartbeat(chatId, myUid) {
   });
 }
 
+export async function setVoiceRecordingHeartbeat(chatId, myUid) {
+  await updateDoc(doc(db, "chats", chatId), {
+    [`voiceRecordingUsers.${myUid}`]: serverTimestamp(),
+  });
+}
+
+export async function clearVoiceRecordingStatus(chatId, myUid) {
+  if (!chatId) return;
+  await updateDoc(doc(db, "chats", chatId), {
+    [`voiceRecordingUsers.${myUid}`]: deleteField(),
+  });
+}
+
 export async function reactToMessage(chatId, messageId, myUid, emoji) {
   const messageRef = doc(db, "chats", chatId, "messages", messageId);
   const snap = await getDoc(messageRef);

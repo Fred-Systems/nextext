@@ -85,6 +85,20 @@ p {
   to   { height: 18px; }
 }
 
+/* NexText: live recording indicator (recording pulse + mic waver) */
+@keyframes nextext-rec-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@keyframes nextext-mic-waver {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.6); }
+}
+.nextext-mic-waver {
+  animation: nextext-mic-waver 0.7s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+
 /* Screen root: flex column layout filling the positioned parent.
    Each screen applies position:absolute,inset:0 on its own root div;
    this class only provides the flex column so header + content + nav stack. */

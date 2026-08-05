@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Search, Settings, Camera, Plus, Users, Star, Archive, BellOff, X, Smartphone, Lock, Trash2, CheckCheck, MessageCircle, Info, Image as ImageIcon } from "lucide-react";
+import { Search, Settings, Camera, Plus, Users, Star, Archive, BellOff, X, Smartphone, Lock, Trash2, CheckCheck, MessageCircle, Info, Image as ImageIcon, Mic } from "lucide-react";
 import { useTheme } from "../theme/ThemeContext";
 import { useChats, toggleArchive, toggleFavorite, toggleLocked, deleteChatCompletely } from "../firebase/chats";
 import { useContacts, searchUsersByUsername, sendContactRequest, acceptContactRequest } from "../firebase/contacts";
@@ -30,6 +30,7 @@ function highlightText(text, query, color) {
 function ChatRowMeta({ myUid, otherUid, chatId, t, compact }) {
   const presence = usePresence(otherUid, myUid);
   const [theyTyping, setTheyTyping] = useState(false);
+  const [theyRecordingVoice, setTheyRecordingVoice] = useState(false);
 
   useEffect(() => {
     if (!chatId) return;
@@ -46,10 +47,30 @@ function ChatRowMeta({ myUid, otherUid, chatId, t, compact }) {
         }
       }
       setTheyTyping(false);
+      const vrMap = snap.data()?.voiceRecordingUsers || {};
+      const vrOthers = Object.entries(vrMap).filter(([uid]) => uid !== myUid);
+      if (vrOthers.length > 0) {
+        const vrMostRecent = vrOthers.reduce((a, b) => (a[1]?.toMillis?.() || 0) > (b[1]?.toMillis?.() || 0) ? a : b);
+        const vrAge = Date.now() - (vrMostRecent[1]?.toMillis?.() || 0);
+        if (vrAge < 10000) {
+          setTheyRecordingVoice(true);
+          const timer = setTimeout(() => setTheyRecordingVoice(false), 10000 - vrAge);
+          return () => clearTimeout(timer);
+        }
+      }
+      setTheyRecordingVoice(false);
     });
     return unsub;
   }, [chatId, myUid]);
 
+  if (theyRecordingVoice) {
+    return (
+      <div style={{ fontSize: compact ? 11 : 12, color: t.textMuted, marginTop: compact ? 0 : 1, display: "flex", alignItems: "center", gap: 4 }}>
+        <Mic size={compact ? 10 : 12} className="nextext-mic-waver" color="#2BB579" />
+        <span>recording voice…</span>
+      </div>
+    );
+  }
   const statusText = theyTyping ? "typing…" : presence.visible ? (presence.isOnline ? "online" : formatLastSeen(presence.lastSeen)) : "";
   if (!statusText) return null;
   return <div style={{ fontSize: compact ? 11 : 12, color: t.textMuted, marginTop: compact ? 0 : 1 }}>{statusText}</div>;

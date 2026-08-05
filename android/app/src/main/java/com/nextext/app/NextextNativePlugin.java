@@ -230,6 +230,132 @@ public class NextextNativePlugin extends Plugin {
         return getContext().checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
     }
 
+    private android.media.MediaRecorder activeRecorder = null;
+    private File activeRecorderFile = null;
+
+    @PluginMethod
+    public void startVoiceRecording(final PluginCall call) {
+        if (!micGranted()) {
+            requestPermissionForAlias("microphone", call, "micPermissionForVoice");
+            return;
+        }
+        try {
+            stopAndReleaseRecorder();
+            File out = new File(getContext().getCacheDir(), "nextext_voice_" + System.currentTimeMillis() + ".m4a");
+            android.media.MediaRecorder r = new android.media.MediaRecorder();
+            r.setAudioSource(android.media.MediaRecorder.AudioSource.MIC);
+            r.setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4);
+            r.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC);
+            r.setAudioEncodingBitRate(96000);
+            r.setAudioSamplingRate(44100);
+            r.setOutputFile(out.getAbsolutePath());
+            r.prepare();
+            r.start();
+            activeRecorder = r;
+            activeRecorderFile = out;
+            call.resolve();
+        } catch (final Exception e) {
+            stopAndReleaseRecorder();
+            call.reject("start failed: " + (e.getMessage() == null ? String.valueOf(e) : e.getMessage()));
+        }
+    }
+
+    @PermissionCallback
+    private void micPermissionForVoice(PluginCall call) {
+        if (!micGranted()) {
+            JSObject ret = new JSObject();
+            ret.put("granted", false);
+            call.resolve(ret);
+            return;
+        }
+        startVoiceRecording(call);
+    }
+
+    @PluginMethod
+    public void pauseVoiceRecording(PluginCall call) {
+        try {
+            if (activeRecorder == null) { call.resolve(); return; }
+            activeRecorder.pause();
+            call.resolve();
+        } catch (final Exception e) {
+            call.reject("pause failed: " + (e.getMessage() == null ? String.valueOf(e) : e.getMessage()));
+        }
+    }
+
+    @PluginMethod
+    public void resumeVoiceRecording(PluginCall call) {
+        try {
+            if (activeRecorder == null) { call.resolve(); return; }
+            activeRecorder.resume();
+            call.resolve();
+        } catch (final Exception e) {
+            call.reject("resume failed: " + (e.getMessage() == null ? String.valueOf(e) : e.getMessage()));
+        }
+    }
+
+    @PluginMethod
+    public void stopVoiceRecording(final PluginCall call) {
+        // Stop + read the recorded file off the UI thread; stop() can block for
+        // a moment and base64-encoding a multi-MB file must never run on the
+        // main thread.
+        new Thread(() -> {
+            File out = activeRecorderFile;
+            android.media.MediaRecorder r = activeRecorder;
+            activeRecorder = null;
+            activeRecorderFile = null;
+            try {
+                if (r != null) {
+                    try { r.stop(); } catch (Exception ignored) {}
+                    try { r.release(); } catch (Exception ignored) {}
+                }
+                if (out == null || !out.exists() || out.length() == 0) {
+                    call.reject("no recording");
+                    return;
+                }
+                byte[] bytes = new byte[(int) out.length()];
+                java.io.FileInputStream fis = new java.io.FileInputStream(out);
+                try {
+                    int off = 0;
+                    while (off < bytes.length) {
+                        int n = fis.read(bytes, off, bytes.length - off);
+                        if (n < 0) break;
+                        off += n;
+                    }
+                } finally {
+                    fis.close();
+                }
+                out.delete();
+                JSObject ret = new JSObject();
+                ret.put("base64", android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP));
+                ret.put("mimeType", "audio/mp4");
+                call.resolve(ret);
+            } catch (final Exception e) {
+                if (out != null) { try { out.delete(); } catch (Exception ignored) {} }
+                call.reject("stop failed: " + (e.getMessage() == null ? String.valueOf(e) : e.getMessage()));
+            }
+        }).start();
+    }
+
+    @PluginMethod
+    public void cancelVoiceRecording(PluginCall call) {
+        stopAndReleaseRecorder();
+        call.resolve();
+    }
+
+    private void stopAndReleaseRecorder() {
+        android.media.MediaRecorder r = activeRecorder;
+        activeRecorder = null;
+        File out = activeRecorderFile;
+        activeRecorderFile = null;
+        if (r != null) {
+            try { r.stop(); } catch (Exception ignored) {}
+            try { r.release(); } catch (Exception ignored) {}
+        }
+        if (out != null) {
+            try { out.delete(); } catch (Exception ignored) {}
+        }
+    }
+
     private boolean camGranted() {
         return getContext().checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
     }

@@ -276,6 +276,8 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   const appLockPassRef = useRef(null);
   const [linkPreviewsOn, setLinkPreviewsOn] = useState(() => localStorage.getItem("nextext_link_previews") !== "off");
   const [pinchZoomOn, setPinchZoomOn] = useState(() => localStorage.getItem("nextext_pinch_zoom") !== "false");
+  const [voicePingsOn, setVoicePingsOn] = useState(() => localStorage.getItem("nextext_voice_pings") !== "off");
+  const [swipeAnimationOn, setSwipeAnimationOn] = useState(() => localStorage.getItem("nextext_swipe_animation") !== "off");
   const sysConfig = useSystemConfigHook();
   const globalSettings = useGlobalSettings();
   const [aiRequestStatus, setAiRequestStatus] = useState("");
@@ -593,6 +595,16 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
               <Toggle on={pinchZoomOn} onClick={() => { const next = !pinchZoomOn; setPinchZoomOn(next); localStorage.setItem("nextext_pinch_zoom", next ? "true" : "false"); }} />
             </div>
             {pinchZoomOn && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>In any chat, pinch the message list to make text bigger or smaller.</div>}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: t.text }}>Voice note chime</span>
+              <Toggle on={voicePingsOn} onClick={() => { const next = !voicePingsOn; setVoicePingsOn(next); localStorage.setItem("nextext_voice_pings", next ? "on" : "off"); }} />
+            </div>
+            {voicePingsOn && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>Play a short chime when a voice note finishes playing.</div>}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: t.text }}>Page swipe animation</span>
+              <Toggle on={swipeAnimationOn} onClick={() => { const next = !swipeAnimationOn; setSwipeAnimationOn(next); localStorage.setItem("nextext_swipe_animation", next ? "on" : "off"); }} />
+            </div>
+            {swipeAnimationOn && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>Slide animation when swiping between tabs.</div>}
           </div>
 
           {/* Message box height */}
@@ -886,6 +898,10 @@ function AppShell({ appLocked, setAppLocked }) {
   const shellRef = useRef(null);
   const pageRefs = useRef({});
   const pagerDragRef = useRef(null);
+
+  const swipeAnimationEnabled = () => {
+    try { return localStorage.getItem("nextext_swipe_animation") !== "off"; } catch { return true; }
+  };
 
   const myUid = auth.user?.uid;
   usePresenceHeartbeat(myUid);
@@ -1198,7 +1214,7 @@ function AppShell({ appLocked, setAppLocked }) {
       if (el) {
         // Snap each page into place, then let React own the left after the
         // next render (pageIndex will match `target`).
-        el.style.transition = "left 0.28s cubic-bezier(0.32, 0.72, 0, 1)";
+        el.style.transition = swipeAnimationEnabled() ? "left 0.28s cubic-bezier(0.32, 0.72, 0, 1)" : "none";
         el.style.left = `${(i - target) * 100}%`;
       }
     });
@@ -1274,7 +1290,7 @@ function AppShell({ appLocked, setAppLocked }) {
             position: "absolute", top: 0, bottom: 0, width: "100%",
             overflow: "hidden",
             left: `${(idx - pageIndex) * 100}%`,
-            transition: pagerDragging ? "none" : "left 0.28s cubic-bezier(0.32, 0.72, 0, 1)",
+            transition: pagerDragging ? "none" : (swipeAnimationEnabled() ? "left 0.28s cubic-bezier(0.32, 0.72, 0, 1)" : "none"),
           };
           const pageRef = (el) => { pageRefs.current[key] = el; };
           if (key === "chats") return (

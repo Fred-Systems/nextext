@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, Send, Smile, Check, CheckCheck, CornerUpLeft, X, BarChart2, Plus, MoreVertical, Bell, BellOff, Star, ArrowDown, ArrowUp, Search, Image as ImageIcon, Paperclip, Mic, Play, Pause, FileText, Camera, Lock, Archive, Trash2, MessageSquare, UserPlus, Users, ImageOff, VideoOff, MicOff, FileX, RefreshCw } from "lucide-react";
+import { ChevronLeft, Send, Smile, Check, CheckCheck, CornerUpLeft, X, BarChart2, Plus, MoreVertical, Bell, BellOff, Star, ArrowDown, ArrowUp, Search, Image as ImageIcon, Paperclip, Mic, Play, Pause, FileText, Camera, Lock, Archive, Trash2, MessageSquare, UserPlus, Users, ImageOff, VideoOff, MicOff, FileX, RefreshCw, RotateCcw } from "lucide-react";
 import { useTheme } from "../theme/ThemeContext";
 import {
   useMessages, sendTextMessage, markChatRead, setTypingHeartbeat, reactToMessage,
   getOrCreateDirectChat, markMessagesDelivered, markMessagesRead, sendPollMessage,
   voteOnPoll, editMessage, deleteMessageForSelf, deleteMessageForEveryone,
   toggleFavorite, setMute, clearMute, sendMediaMessage, toggleLocked, toggleArchive, deleteChatCompletely,
-  isMediaExpired,
+  isMediaExpired, setVoiceRecordingHeartbeat, clearVoiceRecordingStatus,
 } from "../firebase/chats";
 import { getWallpaperForChat, setWallpaperForChat, fileToWallpaperDataUrl } from "../theme/wallpaper";
 import { usePresence, formatLastSeen } from "../firebase/presence";
@@ -212,7 +212,32 @@ function PollCreateSheet({ t, onClose, onCreate }) {
   );
 }
 
-function VoicePlayer({ url, duration, mine, t }) {
+let pingCtx = null;
+function playVoicePing() {
+  // Short, pleasant two-tone chime (like WhatsApp's) played via Web Audio so
+  // no audio asset has to ship with the app. Respects the voice-ping setting.
+  try {
+    if (localStorage.getItem("nextext_voice_pings") === "off") return;
+    pingCtx = pingCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (pingCtx.state === "suspended") pingCtx.resume().catch(() => {});
+    const now = pingCtx.currentTime;
+    [[880, 0, 0.13], [1318.5, 0.1, 0.2]].forEach(([freq, offset, dur]) => {
+      const osc = pingCtx.createOscillator();
+      const gain = pingCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.14, now + offset + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + dur);
+      osc.connect(gain);
+      gain.connect(pingCtx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + dur + 0.05);
+    });
+  } catch { /* ping is best-effort */ }
+}
+
+function VoicePlayer({ url, duration, mine, t, msgId, onEnded, autoPlayToken, isAutoPlayTarget, nowPlayingId, onPlayStart }) {
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [totalDuration, setTotalDuration] = useState(duration || 0);
@@ -225,8 +250,29 @@ function VoicePlayer({ url, duration, mine, t }) {
     e.stopPropagation();
     if (!audioRef.current) return;
     if (playing) audioRef.current.pause();
-    else audioRef.current.play().catch(() => setError(true));
+    else { onPlayStart?.(msgId); audioRef.current.play().catch(() => setError(true)); }
   };
+
+  // Auto-advance: when the parent flags this note as the next one to play and
+  // bumps the token, start it automatically.
+  useEffect(() => {
+    if (!isAutoPlayTarget || !autoPlayToken || !audioRef.current) return;
+    onPlayStart?.(msgId);
+    if (audioRef.current.readyState >= 1) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(() => setError(true));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPlayToken]);
+
+  // Exclusivity: only one voice note plays at a time. If another note starts,
+  // pause this one.
+  useEffect(() => {
+    if (nowPlayingId && nowPlayingId !== msgId && playing && audioRef.current) {
+      audioRef.current.pause();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nowPlayingId, msgId]);
 
   const seekTo = (fraction) => {
     if (!audioRef.current || !totalDuration) return;
@@ -268,7 +314,7 @@ function VoicePlayer({ url, duration, mine, t }) {
         src={url}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
-        onEnded={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); onPlayStart?.(null); playVoicePing(); onEnded?.(msgId); }}
         onError={() => setError(true)}
         onLoadedMetadata={() => { if (audioRef.current) setTotalDuration(audioRef.current.duration || duration || 0); }}
         onTimeUpdate={() => { if (!dragging.current && audioRef.current) setCurrentTime(audioRef.current.currentTime); }}
@@ -374,6 +420,14 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [recording, setRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
+  const [recordingPaused, setRecordingPaused] = useState(false);
+  const [recordingHold, setRecordingHold] = useState(false);
+  const [recordingTapMode, setRecordingTapMode] = useState(false);
+  const [recordingSlideCancel, setRecordingSlideCancel] = useState(false);
+  const [theyRecordingVoice, setTheyRecordingVoice] = useState(false);
+  const [voiceAutoPlayId, setVoiceAutoPlayId] = useState(null);
+  const [voiceAutoPlayNonce, setVoiceAutoPlayNonce] = useState(0);
+  const [nowPlayingId, setNowPlayingId] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [navInset, setNavInset] = useState(0);
@@ -401,7 +455,10 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   }, []);
 
   const pinchEnabled = () => {
-    try { return localStorage.getItem("nextext_pinch_zoom") === "true"; } catch { return false; }
+    // Defaults ON (matches the Settings toggle: anything except an explicit
+    // "false" means enabled). The old `=== "true"` check made the toggle look
+    // on by default while pinch stayed dead until it was toggled off and on.
+    try { return localStorage.getItem("nextext_pinch_zoom") !== "false"; } catch { return true; }
   };
 
   const onMessagesTouchStart = (e) => {
@@ -439,6 +496,11 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
   const recordTimerRef = useRef(null);
+  const recordingNativeRef = useRef(false);
+  const recordHoldStartRef = useRef(null);
+  const recordHoldCancelRef = useRef(false);
+  const voiceHeartbeatRef = useRef(null);
+  const voiceSessionTokenRef = useRef(0);
   const wallpaperInputRef = useRef(null);
   const longPressTimer = useRef(null);
   const scrollRef = useRef(null);
@@ -447,6 +509,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const pinchStartRef = useRef(null);
   const prevMessageCount = useRef(0);
   const typingClearTimer = useRef(null);
+  const voiceRecordingClearTimer = useRef(null);
   const readTimer = useRef(null);
   const { messages: rawMessages } = useMessages(chatId, myUid);
   const messages = rawMessages || [];
@@ -479,6 +542,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       const data = snap.data();
       setChatMeta(data);
       evaluateTyping(data?.typingUsers || {});
+      evaluateVoiceRecording(data?.voiceRecordingUsers || {});
     });
     return unsub;
 
@@ -494,9 +558,24 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         setTheyTyping(false);
       }
     }
+
+    // Same pattern as the typing indicator but for an in-progress voice note.
+    function evaluateVoiceRecording(vrMap) {
+      clearTimeout(voiceRecordingClearTimer.current);
+      const others = Object.entries(vrMap).filter(([uid]) => uid !== myUid);
+      const freshest = others.reduce((max, [, ts]) => Math.max(max, ts?.toMillis?.() || 0), 0);
+      const age = Date.now() - freshest;
+      if (freshest && age < 10000) {
+        setTheyRecordingVoice(true);
+        voiceRecordingClearTimer.current = setTimeout(() => setTheyRecordingVoice(false), 10000 - age);
+      } else {
+        setTheyRecordingVoice(false);
+      }
+    }
   }, [chatId, myUid]);
 
   useEffect(() => () => clearTimeout(typingClearTimer.current), []);
+  useEffect(() => () => { clearTimeout(voiceRecordingClearTimer.current); clearInterval(voiceHeartbeatRef.current); }, []);
 
   // Delivered fires immediately -- this chat's listener having the message
   // is a reasonable proxy for "the recipient's device has received it."
@@ -912,13 +991,65 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     return parts.join(" | ");
   };
 
+  const isNativePlatform = () => window.Capacitor?.isNativePlatform && window.Capacitor.isNativePlatform();
+  const nativeSupportsRecording = () => isNativePlatform() && typeof NextextNative.startVoiceRecording === "function";
+
+  const base64ToBlob = (b64, mimeType) => {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mimeType || "audio/mp4" });
+  };
+
+  // Mirrors setTypingHeartbeat but signals "recording a voice note right now"
+  // so other users see the wavering mic indicator. Heartbeats every 4s.
+  const startVoiceHeartbeat = () => {
+    if (!chatId || !myUid) return;
+    clearInterval(voiceHeartbeatRef.current);
+    setVoiceRecordingHeartbeat(chatId, myUid).catch(() => {});
+    voiceHeartbeatRef.current = setInterval(() => {
+      setVoiceRecordingHeartbeat(chatId, myUid).catch(() => {});
+    }, 4000);
+  };
+
+  const stopVoiceHeartbeat = () => {
+    clearInterval(voiceHeartbeatRef.current);
+    if (chatId && myUid) clearVoiceRecordingStatus(chatId, myUid).catch(() => {});
+  };
+
+  const beginRecordTimer = () => {
+    clearInterval(recordTimerRef.current);
+    recordTimerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
+  };
+
   const startVoiceRecording = async () => {
+    setSendError("");
+    const token = ++voiceSessionTokenRef.current;
     try {
+      // Native-first: the Android WebView media path (getUserMedia + web
+      // MediaRecorder) is unreliable on some devices, so record through the
+      // NextextNative plugin (real OS MediaRecorder -> m4a) whenever possible.
+      if (nativeSupportsRecording()) {
+        try {
+          await NextextNative.startVoiceRecording();
+          if (token !== voiceSessionTokenRef.current) {
+            await NextextNative.cancelVoiceRecording().catch(() => {});
+            return;
+          }
+          recordingNativeRef.current = true;
+          setRecording(true);
+          setRecordingPaused(false);
+          setRecordSeconds(0);
+          beginRecordTimer();
+          startVoiceHeartbeat();
+          return;
+        } catch { /* fall through to the WebView path */ }
+      }
       if (!navigator.mediaDevices?.getUserMedia) {
         setSendError("Voice recording is not supported on this browser or device.");
         return;
       }
-      if (window.Capacitor?.isNativePlatform && window.Capacitor.isNativePlatform()) {
+      if (isNativePlatform()) {
         try {
           const perm = await NextextNative.requestMicrophone();
           if (perm && perm.granted === false) {
@@ -928,6 +1059,11 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         } catch { /* fall through to WebView permission flow */ }
       }
       const stream = await getMicrophoneStream();
+      if (token !== voiceSessionTokenRef.current) {
+        stream.getTracks().forEach((tr) => tr.stop());
+        return;
+      }
+      recordingNativeRef.current = false;
       recordedChunksRef.current = [];
       let mimeType = "audio/webm";
       if (!MediaRecorder.isTypeSupported("audio/webm")) {
@@ -944,8 +1080,10 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       recorder.start();
       mediaRecorderRef.current = recorder;
       setRecording(true);
+      setRecordingPaused(false);
       setRecordSeconds(0);
-      recordTimerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
+      beginRecordTimer();
+      startVoiceHeartbeat();
     } catch (err) {
       let msg = "Microphone access denied or unavailable. Please check your device settings and ensure microphone permission is granted for NexText, then try again.";
       if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
@@ -965,30 +1103,180 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     }
   };
 
+  const resetRecordingUi = () => {
+    voiceSessionTokenRef.current++;
+    setRecording(false);
+    setRecordingHold(false);
+    setRecordingTapMode(false);
+    setRecordingPaused(false);
+    setRecordingSlideCancel(false);
+    setRecordSeconds(0);
+    recordHoldStartRef.current = null;
+    recordHoldCancelRef.current = false;
+  };
+
   const stopVoiceRecording = async (send) => {
     clearInterval(recordTimerRef.current);
-    const recorder = mediaRecorderRef.current;
-    if (!recorder) { setRecording(false); return; }
+    stopVoiceHeartbeat();
     const finalDuration = recordSeconds;
-    await new Promise((resolve) => {
-      recorder.onstop = resolve;
-      recorder.stop();
-      recorder.stream.getTracks().forEach((tr) => tr.stop());
-    });
-    setRecording(false);
-    setRecordSeconds(0);
-    if (!send || finalDuration === 0 || !chatId) return;
-    const blob = new Blob(recordedChunksRef.current, { type: "audio/webm" });
-    const file = new File([blob], `voice-${Date.now()}.webm`, { type: "audio/webm" });
+    let blob = null;
+    try {
+      if (recordingNativeRef.current) {
+        const res = await NextextNative.stopVoiceRecording();
+        if (res?.base64) blob = base64ToBlob(res.base64, res.mimeType || "audio/mp4");
+      } else {
+        const recorder = mediaRecorderRef.current;
+        if (recorder) {
+          await new Promise((resolve) => {
+            recorder.onstop = resolve;
+            recorder.stop();
+            recorder.stream.getTracks().forEach((tr) => tr.stop());
+          });
+          mediaRecorderRef.current = null;
+          blob = new Blob(recordedChunksRef.current, { type: "audio/webm" });
+        }
+      }
+    } catch (err) {
+      setSendError("Couldn't stop recording: " + err.message);
+    }
+    const wasNative = recordingNativeRef.current;
+    recordingNativeRef.current = false;
+    resetRecordingUi();
+    if (!send || !blob || !chatId || blob.size === 0) return;
+    const file = new File([blob], `voice-${Date.now()}.${wasNative ? "m4a" : "webm"}`, { type: blob.type || (wasNative ? "audio/mp4" : "audio/webm") });
     setUploading(true);
     try {
       const result = await uploadChatFile(chatId, myUid, file);
-      await sendMediaMessage(chatId, myUid, "voice", result, otherParticipants, { durationSeconds: finalDuration });
+      await sendMediaMessage(chatId, myUid, "voice", result, otherParticipants, { durationSeconds: Math.max(1, Math.round(finalDuration)) });
     } catch (err) {
       if (err instanceof FileTooLargeError) setSendError("Voice note too large (over 50MB).");
       else setSendError("Couldn't send voice note: " + err.message);
     }
     setUploading(false);
+  };
+
+  const cancelVoiceRecording = async () => {
+    clearInterval(recordTimerRef.current);
+    stopVoiceHeartbeat();
+    try {
+      if (recordingNativeRef.current) {
+        await NextextNative.cancelVoiceRecording().catch(() => {});
+      } else if (mediaRecorderRef.current) {
+        try { if (mediaRecorderRef.current.state !== "inactive") mediaRecorderRef.current.stop(); } catch {}
+        mediaRecorderRef.current.stream?.getTracks?.().forEach((tr) => tr.stop());
+        mediaRecorderRef.current = null;
+      }
+    } catch {}
+    recordingNativeRef.current = false;
+    resetRecordingUi();
+  };
+
+  const pauseVoiceRecording = async () => {
+    try {
+      if (recordingNativeRef.current) {
+        await NextextNative.pauseVoiceRecording();
+      } else if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        mediaRecorderRef.current.pause();
+      }
+      clearInterval(recordTimerRef.current);
+      setRecordingPaused(true);
+    } catch { /* keep recording */ }
+  };
+
+  const resumeVoiceRecording = async () => {
+    try {
+      if (recordingNativeRef.current) {
+        await NextextNative.resumeVoiceRecording();
+      } else if (mediaRecorderRef.current && mediaRecorderRef.current.state === "paused") {
+        mediaRecorderRef.current.resume();
+      }
+      beginRecordTimer();
+      setRecordingPaused(false);
+    } catch { /* keep paused */ }
+  };
+
+  const restartVoiceRecording = async () => {
+    clearInterval(recordTimerRef.current);
+    try {
+      if (recordingNativeRef.current) {
+        await NextextNative.cancelVoiceRecording().catch(() => {});
+      } else if (mediaRecorderRef.current) {
+        try { if (mediaRecorderRef.current.state !== "inactive") mediaRecorderRef.current.stop(); } catch {}
+        mediaRecorderRef.current.stream?.getTracks?.().forEach((tr) => tr.stop());
+        mediaRecorderRef.current = null;
+      }
+    } catch {}
+    recordedChunksRef.current = [];
+    setRecordSeconds(0);
+    setRecordingPaused(false);
+    setRecordingSlideCancel(false);
+    await startVoiceRecording();
+  };
+
+  // ── Hold-to-record / tap-to-record gesture handling on the mic button ──
+  const micPointerDown = (e) => {
+    e.preventDefault();
+    if (recording) return;
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch {}
+    recordHoldStartRef.current = { x: e.clientX, y: e.clientY, t: Date.now() };
+    recordHoldCancelRef.current = false;
+    setRecordingHold(true);
+    setRecordingSlideCancel(false);
+    startVoiceRecording();
+  };
+
+  const micPointerMove = (e) => {
+    const start = recordHoldStartRef.current;
+    if (!start || !recordingHold) return;
+    const dx = e.clientX - start.x;
+    if (dx < -70) {
+      recordHoldCancelRef.current = true;
+      setRecordingSlideCancel(true);
+    } else {
+      recordHoldCancelRef.current = false;
+      setRecordingSlideCancel(false);
+    }
+  };
+
+  const micPointerUp = () => {
+    const start = recordHoldStartRef.current;
+    const wasHolding = recordingHold;
+    const heldMs = start ? Date.now() - start.t : 0;
+    recordHoldStartRef.current = null;
+    setRecordingHold(false);
+    setRecordingSlideCancel(false);
+    if (!wasHolding) return;
+    if (recordHoldCancelRef.current) {
+      recordHoldCancelRef.current = false;
+      cancelVoiceRecording();
+      return;
+    }
+    if (heldMs >= 350) {
+      // Long hold -> release to send.
+      stopVoiceRecording(true);
+    } else {
+      // Quick tap -> keep recording in bar mode with pause/restart/cancel/send.
+      setRecordingTapMode(true);
+    }
+  };
+
+  const handleBack = () => {
+    if (recording) {
+      clearInterval(recordTimerRef.current);
+      stopVoiceHeartbeat();
+      if (recordingNativeRef.current) {
+        NextextNative.cancelVoiceRecording().catch(() => {});
+        recordingNativeRef.current = false;
+      } else if (mediaRecorderRef.current) {
+        try { if (mediaRecorderRef.current.state !== "inactive") mediaRecorderRef.current.stop(); } catch {}
+        mediaRecorderRef.current.stream?.getTracks?.().forEach((tr) => tr.stop());
+        mediaRecorderRef.current = null;
+      }
+      resetRecordingUi();
+    } else {
+      stopVoiceHeartbeat();
+    }
+    onBack();
   };
 
   const openCamera = async () => {
@@ -1070,6 +1358,20 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     return contact?.profile?.displayName || "…";
   };
 
+  // When a voice note finishes, ping and auto-advance to the next note — but
+  // only if it's the IMMEDIATELY following message (2+ messages apart = stop).
+  const handleVoiceEnded = (msgId) => {
+    const idx = visibleMessages.findIndex((m) => m.id === msgId);
+    if (idx === -1) return;
+    const next = visibleMessages[idx + 1];
+    if (next && next.type === "voice" && !next.deletedForEveryone && next.mediaURL) {
+      setVoiceAutoPlayId(next.id);
+      setVoiceAutoPlayNonce((n) => n + 1);
+    }
+  };
+
+  const handleVoicePlayStart = (msgId) => setNowPlayingId(msgId);
+
   const renderBubble = (m) => {
     const expiryText = getMediaExpiryText(m.sentAt, globalSettings?.mediaExpiryDays);
     if (m.deletedForEveryone) return <div style={{ fontSize: 13, fontStyle: "italic", opacity: 0.6 }}>This message was deleted</div>;
@@ -1129,7 +1431,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     if (m.type === "voice") return (
       <div>
         <StatusReplyBlock statusRef={m.statusRef} mine={m.senderId === myUid} t={t} />
-        <VoicePlayer url={m.mediaURL} duration={m.mediaDurationSeconds} mine={m.senderId === myUid} t={t} />
+        <VoicePlayer url={m.mediaURL} duration={m.mediaDurationSeconds} mine={m.senderId === myUid} t={t} msgId={m.id} onEnded={handleVoiceEnded} autoPlayToken={voiceAutoPlayNonce} isAutoPlayTarget={m.id === voiceAutoPlayId} nowPlayingId={nowPlayingId} onPlayStart={handleVoicePlayStart} />
         {expiryText && <div style={{ fontSize: 10, opacity: 0.55, marginTop: 2, fontStyle: "italic" }}>{expiryText}</div>}
       </div>
     );
@@ -1166,7 +1468,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "calc(14px + var(--safe-top)) 12px 14px", background: "#111B21", position: "relative", flexShrink: 0 }}>
-        <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
+        <ChevronLeft size={22} color="#fff" onClick={handleBack} style={{ cursor: "pointer" }} />
         <div onClick={onOpenProfile} style={{ cursor: "pointer" }}>
           {isGroup && chatMeta?.groupPhotoURL ? (
             <img src={chatMeta.groupPhotoURL} alt="" style={{ width: 38, height: 38, borderRadius: "50%", objectFit: "cover", cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); setFullscreenImage(chatMeta.groupPhotoURL); }} />
@@ -1189,8 +1491,13 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
             {isLocked && <Lock size={13} color="rgba(255,255,255,0.8)" />}
             {isMuted && <BellOff size={13} color="rgba(255,255,255,0.7)" />}
           </div>
-          <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 12, minHeight: 16 }}>
-            {theyTyping ? "typing…" : isGroup ? (
+          <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 12, minHeight: 16, display: "flex", alignItems: "center", gap: 5 }}>
+            {theyRecordingVoice ? (
+              <>
+                <Mic size={13} className="nextext-mic-waver" color="#7EE2B8" />
+                <span>recording voice note…</span>
+              </>
+            ) : theyTyping ? "typing…" : isGroup ? (
               `${chatMeta?.participants?.length || "…"} members`
             ) : isSelfChat ? "Your private space" : !presence.visible ? "" : presence.isOnline ? "online" : formatLastSeen(presence.lastSeen)}
           </div>
@@ -1236,12 +1543,12 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
               <Lock size={16} color={isLocked ? t.accent : t.text} />
               <span style={{ fontSize: 14, color: isLocked ? t.accent : t.text }}>{isLocked ? "Unlock chat" : "Lock chat"}</span>
             </div>
-            <div onClick={async () => { await toggleArchive(chatId, myUid, false); setShowOverflow(false); onBack(); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
+            <div onClick={async () => { await toggleArchive(chatId, myUid, false); setShowOverflow(false); handleBack(); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
               <Archive size={16} color={t.text} />
               <span style={{ fontSize: 14, color: t.text }}>Archive chat</span>
             </div>
 
-            <div onClick={async () => { if (window.confirm("Are you sure? This will permanently delete this chat history forever.")) { await deleteChatCompletely(chatId).catch(() => {}); setShowOverflow(false); onBack(); } }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer" }}>
+            <div onClick={async () => { if (window.confirm("Are you sure? This will permanently delete this chat history forever.")) { await deleteChatCompletely(chatId).catch(() => {}); setShowOverflow(false); handleBack(); } }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer" }}>
               <Trash2 size={16} color="#FF3B30" />
               <span style={{ fontSize: 14, color: "#FF3B30" }}>Delete chat</span>
             </div>
@@ -1366,14 +1673,37 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
           </div>
         ) : recording ? (
           <>
-            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, background: t.surface, borderRadius: 24, padding: "10px 16px" }}>
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#FF3B30" }} />
-              <span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Recording… {Math.floor(recordSeconds / 60)}:{String(recordSeconds % 60).padStart(2, "0")}</span>
-              <span onClick={() => stopVoiceRecording(false)} style={{ marginLeft: "auto", color: t.textMuted, fontSize: 12.5, cursor: "pointer" }}>Cancel</span>
-            </div>
-            <button onClick={() => stopVoiceRecording(true)} style={{ width: 42, height: 42, borderRadius: "50%", background: t.primary, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-              <Send size={17} color={t.bubbleMeText} />
-            </button>
+            {recordingHold && !recordingSlideCancel && (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, background: t.surface, borderRadius: 24, padding: "10px 16px" }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#FF3B30", flexShrink: 0, animation: "nextext-rec-pulse 1s ease-in-out infinite" }} />
+                <span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>{Math.floor(recordSeconds / 60)}:{String(recordSeconds % 60).padStart(2, "0")}</span>
+                <span style={{ marginLeft: "auto", fontSize: 12, color: t.textMuted }}>hold to record · release to send</span>
+              </div>
+            )}
+            {recordingHold && recordingSlideCancel && (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, background: "#FF3B30", borderRadius: 24, padding: "10px 16px" }}>
+                <X size={16} color="#fff" />
+                <span style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>Release to cancel</span>
+              </div>
+            )}
+            {recordingTapMode && (
+              <>
+                <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, background: t.surface, borderRadius: 24, padding: "6px 10px", minWidth: 0 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: recordingPaused ? "#F5A623" : "#FF3B30", flexShrink: 0, animation: recordingPaused ? "none" : "nextext-rec-pulse 1s ease-in-out infinite" }} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: t.text, minWidth: 40, fontVariantNumeric: "tabular-nums" }}>{Math.floor(recordSeconds / 60)}:{String(recordSeconds % 60).padStart(2, "0")}</span>
+                  <div onClick={recordingPaused ? resumeVoiceRecording : pauseVoiceRecording} style={{ width: 30, height: 30, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                    {recordingPaused ? <Play size={13} color={t.primary} /> : <Pause size={13} color={t.primary} />}
+                  </div>
+                  <div onClick={restartVoiceRecording} title="Restart" style={{ width: 30, height: 30, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                    <RotateCcw size={13} color={t.primary} />
+                  </div>
+                  <span onClick={() => cancelVoiceRecording()} style={{ marginLeft: "auto", color: t.textMuted, fontSize: 12.5, cursor: "pointer", flexShrink: 0 }}>Cancel</span>
+                </div>
+                <button onClick={() => stopVoiceRecording(true)} style={{ width: 42, height: 42, borderRadius: "50%", background: t.primary, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                  <Send size={17} color={t.bubbleMeText} />
+                </button>
+              </>
+            )}
           </>
         ) : uploading ? (
           <div style={{ flex: 1, textAlign: "center", padding: "12px", color: t.textMuted, fontSize: 13 }}>Uploading…</div>
@@ -1458,7 +1788,14 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
                 <Send size={Math.max(16, Math.round(17 * composerHeight))} color={t.bubbleMeText} />
               </button>
             ) : (
-              <button onClick={startVoiceRecording} style={{ width: Math.round(42 * composerHeight), height: Math.round(42 * composerHeight), borderRadius: "50%", background: t.primary, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+              <button
+                onPointerDown={micPointerDown}
+                onPointerMove={micPointerMove}
+                onPointerUp={micPointerUp}
+                onPointerCancel={() => cancelVoiceRecording()}
+                onContextMenu={(e) => e.preventDefault()}
+                title="Hold to record, release to send. Tap to record with controls. Swipe left while holding to cancel."
+                style={{ width: Math.max(36, Math.round(42 * composerHeight)), height: Math.max(36, Math.round(42 * composerHeight)), borderRadius: "50%", background: t.primary, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, touchAction: "none", WebkitTapHighlightColor: "transparent" }}>
                 <Mic size={Math.max(16, Math.round(18 * composerHeight))} color={t.bubbleMeText} />
               </button>
             )}
