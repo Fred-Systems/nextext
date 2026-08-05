@@ -92,7 +92,7 @@ export function useAuth() {
       console.error("[useAuth] onAuthStateChanged failed:", e);
       setLoading(false);
     }
-    return () => { clearTimeout(safetyTimer); unsub && unsub(); };
+    return () => { clearTimeout(safetyTimer); if (unsub) unsub(); };
   }, []);
 
   async function signUpWithEmail(email, password, username, displayName, phone) {
@@ -132,68 +132,68 @@ export function useAuth() {
 
     // Native (Capacitor) builds use the real Google Sign-In plugin — no popup
     // or redirect, which do not work reliably inside the Android WebView.
+    // Native (Capacitor) builds try native Play Services first, but fall back
+    // seamlessly to Web-based Google OAuth if Play Services/Play Store is disabled or missing.
     if (Capacitor.isNativePlatform()) {
-      let lastError = null;
-      // 1) Legacy GoogleSignInClient flow: works on devices with older Google
-      //    Play Services and returns precise error codes.
       try {
         const legacy = await withTimeout(
           LegacyGoogleSignIn.signIn(),
-          8000,
-          "Google Play Services didn't respond on this device. It may be missing, disabled, or outdated. Update Google Play Services and add a Google account, then try again — or use Email/phone sign-in."
+          4000,
+          "Play Services unavailable"
         );
         const legacyToken = legacy?.idToken;
-        if (!legacyToken) throw new Error("Google sign-in did not return an ID token.");
-        const legacyUser = await signInWithCredential(auth, GoogleAuthProvider.credential(legacyToken));
-        return await ensureProfile(legacyUser, legacy);
+        if (legacyToken) {
+          const legacyUser = await signInWithCredential(auth, GoogleAuthProvider.credential(legacyToken));
+          return await ensureProfile(legacyUser, legacy);
+        }
       } catch (legacyErr) {
-        lastError = legacyErr;
-        if (legacyErr?.code === "CANCELLED") throw legacyErr;
-        // Anything else: fall through to the modern Credential Manager path.
+        if (legacyErr?.code === "CANCELLED" || legacyErr?.message?.includes("cancelled")) {
+          throw legacyErr;
+        }
       }
 
-      // 2) CapGo's Google provider (Credential Manager on Android 13+,
-      //    GoogleSignInClient fallback on older devices). Never blocks the UI —
-      //    bounded by a timeout so it surfaces a clear error instead of hanging.
       try {
         const capgoRes = await withTimeout(
           CapgoSocialLogin.login({ provider: "google", options: { scopes: ["email", "openid", "profile"] } }),
-          8000,
-          "Google Play Services didn't respond on this device. It may be missing, disabled, or outdated. Update Google Play Services and add a Google account, then try again — or use Email/phone sign-in."
+          4000,
+          "Play Services unavailable"
         );
         const capgoToken = capgoRes?.response?.idToken;
-        if (!capgoToken) throw new Error("Google sign-in did not return an ID token.");
-        const capgoUser = await signInWithCredential(auth, GoogleAuthProvider.credential(capgoToken));
-        return await ensureProfile(capgoUser, capgoRes?.response);
+        if (capgoToken) {
+          const capgoUser = await signInWithCredential(auth, GoogleAuthProvider.credential(capgoToken));
+          return await ensureProfile(capgoUser, capgoRes?.response);
+        }
       } catch (capgoErr) {
-        const msg = String((lastError && lastError.message) || capgoErr?.message || "");
-        const enriched = new Error(
-          msg.startsWith("Google sign-in failed")
-            ? `${msg} (alternate sign-in method also failed)`
-            : `Google sign-in failed: ${msg || "unknown error"}`
-        );
-        enriched.code = capgoErr?.code || lastError?.code;
-        enriched.native = capgoErr || lastError;
-        throw enriched;
+        if (capgoErr?.code === "CANCELLED" || capgoErr?.message?.includes("cancelled")) {
+          throw capgoErr;
+        }
       }
     }
 
+    // Web-based Google OAuth flow (works on all devices including those without Play Services).
+    // - On a normal desktop browser, signInWithPopup opens the OAuth window.
+    // - On a mobile browser, popup may be blocked; we fall back to redirect.
+    // - On a Capacitor/Android WebView *without* Play Services, both native
+    //   paths above already failed silently — signInWithRedirect opens the
+    //   system browser (or an embedded Web View with the OAuth consent page),
+    //   completes the standard Google OAuth 2.0 web flow, and on return the
+    //   getRedirectResult() handler in onAuthStateChanged resolves the credential.
     try {
       const cred = await signInWithPopup(auth, googleProvider);
-      const ref = doc(db, "users", cred.user.uid);
-      const snap = await getDoc(ref);
-      if (!snap.exists()) {
-        await createUserProfile(cred.user, {
-          email: cred.user.email,
-          username: cred.user.email.split("@")[0],
-          displayName: cred.user.displayName || "New User",
-          photoURL: cred.user.photoURL || null,
-        });
-        if (markProfileComplete) await updateDoc(ref, { profileComplete: true });
-      }
-      return cred.user;
+      return await ensureProfile(cred.user, null);
     } catch (e) {
-      if (e.code === "auth/popup-blocked" || e.code === "auth/popup-closed-by-user" || e.code === "auth/unauthorized-domain") {
+      if (
+        e.code === "auth/popup-blocked" ||
+        e.code === "auth/popup-closed-by-user" ||
+        e.code === "auth/unauthorized-domain" ||
+        e.code === "auth/operation-not-supported-in-this-environment" ||
+        e.code === "auth/cancelled-popup-request" ||
+        e.code === "auth/internal-error"
+      ) {
+        // signInWithRedirect is the Play-Store-independent web fallback:
+        // it works inside WebViews and on devices where the popup API is
+        // unavailable. Resolution happens asynchronously via getRedirectResult
+        // in the onAuthStateChanged effect above (see lines ~60-78).
         await signInWithRedirect(auth, googleProvider);
         return null;
       }

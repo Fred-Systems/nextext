@@ -9,6 +9,11 @@ export const PING_SOUNDS = [
   { id: "bubble", label: "Bubble" },
   { id: "ding", label: "Ding" },
   { id: "triple", label: "Triple tone" },
+  { id: "warm", label: "Warm chime" },
+  { id: "sparkle", label: "Sparkle" },
+  { id: "celesta", label: "Celesta" },
+  { id: "marimba", label: "Marimba" },
+  { id: "harp", label: "Harp sweep" },
 ];
 
 const PATTERNS = {
@@ -19,6 +24,11 @@ const PATTERNS = {
   bubble: [[659.25, 0, 0.09, 0.12], [987.77, 0.09, 0.16, 0.11]],
   ding: [[1174.66, 0, 0.45, 0.09]],
   triple: [[784, 0, 0.08, 0.1], [1046.5, 0.09, 0.08, 0.1], [1318.5, 0.18, 0.22, 0.1]],
+  warm: [[392, 0, 0.12, 0.11], [587.33, 0.08, 0.2, 0.12], [784, 0.18, 0.28, 0.1]],
+  sparkle: [[1318.5, 0, 0.09, 0.08], [1568, 0.06, 0.09, 0.08], [2093, 0.14, 0.22, 0.09]],
+  celesta: [[1318.5, 0, 0.18, 0.12], [1760, 0.06, 0.32, 0.1]],
+  marimba: [[784, 0, 0.1, 0.13], [988, 0.08, 0.14, 0.12], [1318.5, 0.16, 0.22, 0.12]],
+  harp: [[523.25, 0, 0.08, 0.09], [659.25, 0.05, 0.08, 0.09], [784, 0.1, 0.08, 0.09], [1046.5, 0.15, 0.28, 0.1]],
 };
 
 let pingCtx = null;

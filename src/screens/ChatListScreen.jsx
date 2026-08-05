@@ -76,7 +76,7 @@ function ChatRowMeta({ myUid, otherUid, chatId, t, compact }) {
   return <div style={{ fontSize: compact ? 11 : 12, color: t.textMuted, marginTop: compact ? 0 : 1 }}>{statusText}</div>;
 }
 
-export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroupInfo, onOpenSettings, hideNav, navTab, compactList, searchMode = "visible", topBarVisible = true }) {
+export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroupInfo, onOpenSettings, hideNav, navTab, compactList, searchMode = "visible", topBarVisible = true, searchBarScale = 1 }) {
   const { t } = useTheme();
   const { chats } = useChats(myUid);
   const { contacts } = useContacts(myUid);
@@ -432,11 +432,11 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
       </div>}
 
       {(topBarVisible && showSearch) && (
-        <div style={{ padding: "0 16px 8px", background: t.surface, flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", background: t.bg, borderRadius: 10, padding: "7px 12px", gap: 8 }}>
-            <Search size={14} color={t.textMuted} />
-            <input autoFocus value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search chats and messages…" style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 13, color: t.text }} />
-            {searchQuery && <X size={14} color={t.textMuted} onClick={() => setSearchQuery("")} style={{ cursor: "pointer" }} />}
+        <div style={{ padding: `0 16px ${Math.round(8 * searchBarScale)}px`, background: t.surface, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", background: t.bg, borderRadius: 9999, padding: `${Math.round(9 * searchBarScale)}px ${Math.round(14 * searchBarScale)}px`, gap: 8, fontSize: `${14 * searchBarScale}px`, transformOrigin: "left center" }}>
+            <Search size={Math.round(14 * searchBarScale)} color={t.textMuted} />
+            <input autoFocus value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search chats and messages…" style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: `${14 * searchBarScale}px`, color: t.text }} />
+            {searchQuery && <X size={Math.round(14 * searchBarScale)} color={t.textMuted} onClick={() => setSearchQuery("")} style={{ cursor: "pointer" }} />}
           </div>
         </div>
       )}

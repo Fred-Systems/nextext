@@ -7,19 +7,41 @@ import { db } from "./config";
 
 const VAPID_KEY = "BDPG3EWg1tJKh1nN_yOnWgK3BYJjQ-fpYTk1NQrGqU0EHTRZWMWhOUNyANHv52BnUvPBmZFK8ssfsOKWLtqJasA";
 
+export function triggerNotificationVibration() {
+  try {
+    if ("vibrate" in navigator) {
+      navigator.vibrate([200, 100, 200]);
+    }
+  } catch {}
+}
+
+export function showLocalNotification(title, body, tag = "nextext-msg") {
+  triggerNotificationVibration();
+  try {
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification(title || "NexText", {
+        body: body || "You have a new message.",
+        icon: "/icon.png",
+        badge: "/icon.png",
+        tag,
+        vibrate: [200, 100, 200],
+      });
+    }
+  } catch (e) {
+    console.warn("[notifications] Notification error:", e);
+  }
+}
+
 export async function initNotifications(myUid) {
   if (!myUid) return null;
   try {
     if (Capacitor.isNativePlatform()) {
       let perm = await PushNotifications.checkPermissions();
-      if (perm.receive === "prompt") {
+      if (perm.receive === "prompt" || perm.receive === "denied") {
         perm = await PushNotifications.requestPermissions();
       }
       if (perm.receive !== "granted") return null;
-      // Attach listeners BEFORE register(): register() resolves immediately
-      // and the token arrives asynchronously via the "registration" event.
-      // Attaching after register() can miss the event entirely, so the token
-      // never gets written to Firestore and pushes never reach this device.
+
       PushNotifications.addListener("registration", ({ value }) => {
         if (value) {
           updateDoc(doc(db, "users", myUid), { fcmTokens: arrayUnion(value) }).catch(() => {});
@@ -28,6 +50,14 @@ export async function initNotifications(myUid) {
       PushNotifications.addListener("registrationError", ({ err }) => {
         console.error("[notifications] FCM registration error:", err);
       }).catch(() => {});
+      PushNotifications.addListener("pushNotificationReceived", (notification) => {
+        triggerNotificationVibration();
+        const title = (notification && (notification.title || notification.data?.title)) || "NexText";
+        const body = (notification && (notification.body || notification.data?.body)) || "You have a new message";
+        const tag = (notification && (notification.data?.chatId || notification.id)) || "nextext-native";
+        showLocalNotification(title, body, tag);
+      }).catch(() => {});
+
       await PushNotifications.register();
       return null;
     }
@@ -36,20 +66,17 @@ export async function initNotifications(myUid) {
     const messaging = getMessaging(app);
     const permission = await Notification.requestPermission();
     if (permission !== "granted") return null;
-    const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+    const token = await getToken(messaging, { vapidKey: VAPID_KEY }).catch(() => null);
     if (token) {
       await updateDoc(doc(db, "users", myUid), {
         fcmTokens: arrayUnion(token),
       });
     }
     onMessage(messaging, (payload) => {
-      const { notification } = payload;
-      if (notification?.title) {
-        new Notification(notification.title, {
-          body: notification.body,
-          icon: "/icon.png",
-        });
-      }
+      const { notification, data } = payload;
+      const title = notification?.title || data?.title || "New Message";
+      const body = notification?.body || data?.body || "You received a new message";
+      showLocalNotification(title, body, data?.chatId || "nextext");
     });
     return token;
   } catch {

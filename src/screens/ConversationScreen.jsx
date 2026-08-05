@@ -235,6 +235,9 @@ function VoicePlayer({ url, duration, mine, t, msgId, onEnded, autoPlayToken, is
   const toggle = (e) => {
     e.stopPropagation();
     if (!audioRef.current) return;
+    if (analyserRef.current?.ac && analyserRef.current.ac.state === "suspended") {
+      analyserRef.current.ac.resume().catch(() => {});
+    }
     if (playing) audioRef.current.pause();
     else { onPlayStart?.(msgId); audioRef.current.play().catch(() => setError(true)); }
   };
@@ -262,6 +265,9 @@ function VoicePlayer({ url, duration, mine, t, msgId, onEnded, autoPlayToken, is
 
   const startSampling = () => {
     stopSampling();
+    if (analyserRef.current?.ac && analyserRef.current.ac.state === "suspended") {
+      analyserRef.current.ac.resume().catch(() => {});
+    }
     const loop = () => {
       const audio = audioRef.current;
       const analyser = analyserRef.current;
@@ -276,7 +282,7 @@ function VoicePlayer({ url, duration, mine, t, msgId, onEnded, autoPlayToken, is
         const dur = audio.duration || 0;
         if (dur > 0) {
           const idx = Math.min(39, Math.floor((audio.currentTime / dur) * 40));
-          binsRef.current[idx] = Math.max(binsRef.current[idx], Math.min(1, peak * 2.4));
+          binsRef.current[idx] = Math.max(binsRef.current[idx] || 0, Math.min(1, peak * 2.8 || 0.35));
           setWave(Array.from(binsRef.current));
         }
       }
@@ -1111,7 +1117,12 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       }
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       recorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
-      recorder.start();
+      // Request a 250ms timeslice so dataavailable fires periodically during
+      // the recording (not only at stop). This guarantees the audio stream
+      // is written incrementally to recordedChunks and protects against the
+      // final-stop chunk being dropped on WebViews that race onstop vs.
+      // dataavailable ordering — the cause of silent-wave voice notes.
+      recorder.start(250);
       mediaRecorderRef.current = recorder;
       setRecording(true);
       setRecordingPaused(false);
@@ -1163,10 +1174,16 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       } else {
         const recorder = mediaRecorderRef.current;
         if (recorder) {
+          // Critical ordering: stop() the recorder FIRST and wait for the
+          // onstop event (which only fires AFTER the recorder has flushed its
+          // final dataavailable chunk). Stopping the media tracks before
+          // onstop was cutting the last ~200ms of audio and producing
+          // silent-tail / flat-wave voice notes on several Android WebViews.
           await new Promise((resolve) => {
             recorder.onstop = resolve;
-            recorder.stop();
-            recorder.stream.getTracks().forEach((tr) => tr.stop());
+            try { recorder.stop(); } catch { resolve(); }
+          }).finally(() => {
+            try { recorder.stream?.getTracks?.().forEach((tr) => tr.stop()); } catch {}
           });
           mediaRecorderRef.current = null;
           blob = new Blob(recordedChunksRef.current, { type: "audio/webm" });
@@ -1253,20 +1270,54 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const micPointerDown = (e) => {
     e.preventDefault();
     if (recordingRef.current) return;
-    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch {}
-    recordHoldStartRef.current = { x: e.clientX, y: e.clientY, t: Date.now() };
+    const clientX = e.clientX || e.touches?.[0]?.clientX || 0;
+    const clientY = e.clientY || e.touches?.[0]?.clientY || 0;
+    recordHoldStartRef.current = { x: clientX, y: clientY, t: Date.now() };
     recordHoldCancelRef.current = false;
     recordingRef.current = true;
     recordingHoldRef.current = true;
     setRecordingHold(true);
     setRecordingSlideCancel(false);
+
+    const onPointerMove = (ev) => {
+      const start = recordHoldStartRef.current;
+      if (!start || !recordingHoldRef.current) return;
+      const curX = ev.clientX || ev.touches?.[0]?.clientX || 0;
+      const dx = curX - start.x;
+      if (dx < -70) {
+        recordHoldCancelRef.current = true;
+        setRecordingSlideCancel(true);
+      } else {
+        recordHoldCancelRef.current = false;
+        setRecordingSlideCancel(false);
+      }
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+      window.removeEventListener("touchmove", onPointerMove);
+      window.removeEventListener("touchend", onPointerUp);
+      window.removeEventListener("touchcancel", onPointerUp);
+      micPointerUp();
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+    window.addEventListener("touchmove", onPointerMove, { passive: false });
+    window.addEventListener("touchend", onPointerUp);
+    window.addEventListener("touchcancel", onPointerUp);
+
     startVoiceRecording();
   };
 
   const micPointerMove = (e) => {
     const start = recordHoldStartRef.current;
     if (!start || !recordingHoldRef.current) return;
-    const dx = e.clientX - start.x;
+    const clientX = e.clientX || e.touches?.[0]?.clientX || 0;
+    const dx = clientX - start.x;
     if (dx < -70) {
       recordHoldCancelRef.current = true;
       setRecordingSlideCancel(true);
@@ -1716,7 +1767,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
               <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, background: t.surface, borderRadius: 24, padding: "10px 16px" }}>
                 <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#FF3B30", flexShrink: 0, animation: "nextext-rec-pulse 1s ease-in-out infinite" }} />
                 <span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>{Math.floor(recordSeconds / 60)}:{String(recordSeconds % 60).padStart(2, "0")}</span>
-                <span style={{ marginLeft: "auto", fontSize: 12, color: t.textMuted }}>hold to record · release to send</span>
+                <span style={{ marginLeft: "auto", fontSize: 12, color: t.textMuted }}>‹ Slide to cancel</span>
               </div>
             )}
             {recordingHold && recordingSlideCancel && (
@@ -1724,6 +1775,17 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
                 <X size={16} color="#fff" />
                 <span style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>Release to cancel</span>
               </div>
+            )}
+            {recordingHold && (
+              <button
+                onPointerDown={micPointerDown}
+                onPointerMove={micPointerMove}
+                onPointerUp={micPointerUp}
+                onPointerCancel={() => cancelVoiceRecording()}
+                onContextMenu={(e) => e.preventDefault()}
+                style={{ width: Math.max(36, Math.round(42 * composerHeight)), height: Math.max(36, Math.round(42 * composerHeight)), borderRadius: "50%", background: "#FF3B30", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, touchAction: "none", animation: "nextext-rec-pulse 1s ease-in-out infinite" }}>
+                <Mic size={Math.max(16, Math.round(18 * composerHeight))} color="#fff" />
+              </button>
             )}
             {recordingTapMode && (
               <>
@@ -1803,7 +1865,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
                 ref={composerRef}
                 value={input}
                 onChange={(e) => handleInputChange(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); editingMsg ? saveEdit() : send(); } }}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (editingMsg) saveEdit(); else send(); } }}
                 placeholder={editingMsg ? "Edit message…" : "Message"}
                 rows={1}
                 style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: Math.max(14, Math.round(16.5 * composerHeight * 10) / 10), color: t.text, resize: "none", maxHeight: Math.round((42 + composerHeight * 42) * composerHeight), lineHeight: 1.4, paddingTop: Math.round(7 * composerHeight), paddingBottom: Math.round(7 * composerHeight), fontFamily: "inherit", minWidth: 0 }}

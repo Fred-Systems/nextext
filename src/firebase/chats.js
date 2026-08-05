@@ -85,6 +85,9 @@ export function useChats(myUid) {
         .sort((a, b) => (b.lastMessage?.sentAt?.toMillis?.() || 0) - (a.lastMessage?.sentAt?.toMillis?.() || 0));
       setChats(rows);
       setLoading(false);
+    }, (err) => {
+      console.warn("[useChats] snapshot error:", err?.message || err);
+      setLoading(false);
     });
     return unsub;
   }, [myUid]);

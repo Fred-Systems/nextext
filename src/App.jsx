@@ -35,7 +35,7 @@ import PermissionsScreen from "./screens/PermissionsScreen";
 import UpdatePrompt from "./components/UpdatePrompt";
 import PageErrorBoundary from "./components/PageErrorBoundary";
 import { checkForUpdate, downloadUpdate, getCurrentVersion, getLastSeenRelease, openDownloadUrl, saveApkToDevice, setLastSeenRelease } from "./updater/updateChecker";
-import { PING_SOUNDS } from "./utils/pingSounds";
+import { PING_SOUNDS, playVoicePing } from "./utils/pingSounds";
 import { updateGlobalSettings, useGlobalSettings } from "./firebase/config-settings";
 import { useSystemInsets } from "./utils/useSystemInsets";
 import { changeNames, isNameChangeBlocked, isUsernameAvailable } from "./firebase/names";
@@ -263,7 +263,7 @@ function PhoneNumberSetting({ myUid }) {
   );
 }
 
-function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiScale, showScrollDown, setShowScrollDown, animatedScrollEntry, setAnimatedScrollEntry, compactList, setCompactList, onBack, onNavigate, onLogout, userDoc, navConfig, setNavConfig, aiSidebarOn, setAiSidebarOn, showSplash, setShowSplash, searchMode, setSearchMode, topBarVisible, setTopBarVisible, onCheckUpdate, checkingUpdate, updateStatus }) {
+function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiScale, showScrollDown, setShowScrollDown, animatedScrollEntry, setAnimatedScrollEntry, compactList, setCompactList, onBack, onNavigate, onLogout, userDoc, navConfig, setNavConfig, aiSidebarOn, setAiSidebarOn, showSplash, setShowSplash, searchMode, setSearchMode, topBarVisible, setTopBarVisible, onCheckUpdate, checkingUpdate, updateStatus, animateOnTap, setAnimateOnTap, searchBarScale, setSearchBarScale }) {
   const { t, hideNav, setHideNav, chatTextScale, setChatTextScale, appFontId, setAppFontId, composerHeight, setComposerHeight } = useTheme();
   const wallpaperInputRef = useRef(null);
   const profilePhotoRef = useRef(null);
@@ -620,6 +620,10 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
                     onClick={() => {
                       setPingSoundId(s.id);
                       localStorage.setItem("nextext_voice_ping_sound", s.id);
+                      // Play an immediate preview so the user hears the chime
+                      // they're selecting — playVoicePing reads the just-set
+                      // localStorage value to choose the pattern.
+                      playVoicePing();
                     }}
                     style={{
                       padding: "5px 10px",
@@ -637,6 +641,11 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
                 ))}
               </div>
             )}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: t.text }}>Animate tab taps (animateOnTap)</span>
+              <Toggle on={animateOnTap} onClick={() => setAnimateOnTap(!animateOnTap)} />
+            </div>
+            <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>Force page animation when tapping bottom or top bar navigation buttons. (Default: off)</div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
               <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: t.text }}>Page swipe animation</span>
               <Toggle on={swipeAnimationOn} onClick={() => { const next = !swipeAnimationOn; setSwipeAnimationOn(next); localStorage.setItem("nextext_swipe_animation", next ? "on" : "off"); }} />
@@ -675,8 +684,22 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
             )}
           </div>
 
+          {/* Search bar size */}
+          <div style={{ padding: "13px 0", borderTop: `1px solid ${t.border}` }}>
+            <div style={{ fontWeight: 600, color: t.text, fontSize: 15, marginBottom: 4 }}>Main search bar size</div>
+            <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 8 }}>Adjust the scale and height of the top search bar.</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <input type="range" min="0.6" max="2.0" step="0.05" value={searchBarScale} onChange={(e) => setSearchBarScale(Number(e.target.value))} style={{ flex: 1, accentColor: t.primary }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: t.primary, minWidth: 44 }}>{searchBarScale === 1 ? "Default" : `${Math.round(searchBarScale * 100)}%`}</span>
+              <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, color: t.textMuted, cursor: "pointer" }}>
+                <input type="checkbox" checked={searchBarScale === 1} onChange={() => setSearchBarScale(1)} style={{ accentColor: t.primary, width: 15, height: 15, cursor: "pointer" }} />
+                Default
+              </label>
+            </div>
+          </div>
+
           {/* Message box height */}
-          <div style={{ padding: "13px 0" }}>
+          <div style={{ padding: "13px 0", borderTop: `1px solid ${t.border}` }}>
             <div style={{ fontWeight: 600, color: t.text, fontSize: 15, marginBottom: 4 }}>Message box size</div>
             <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 8 }}>Make the message input taller, shorter, or easier to tap.</div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -965,6 +988,8 @@ function AppShell({ appLocked, setAppLocked }) {
   const [aiSidebarOn, setAiSidebarOn] = useState(() => localStorage.getItem("nextext_ai_sidebar") !== "off");
   const [searchMode, setSearchMode] = useState(() => localStorage.getItem("nextext_search_mode") || "visible");
   const [topBarVisible, setTopBarVisible] = useState(() => localStorage.getItem("nextext_top_bar_visible") !== "false");
+  const [animateOnTap, setAnimateOnTap] = useState(() => localStorage.getItem("nextext_animate_on_tap") === "true");
+  const [searchBarScale, setSearchBarScale] = useState(() => { try { return Number(localStorage.getItem("nextext_search_bar_scale")) || 1; } catch { return 1; } });
   const [pendingUpdate, setPendingUpdate] = useState(null);
   const [showUpdatePrompt, setShowUpdatePrompt] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -976,6 +1001,11 @@ function AppShell({ appLocked, setAppLocked }) {
   const shellRef = useRef(null);
   const pageRefs = useRef({});
   const pagerDragRef = useRef(null);
+  // Remain true until the first committed render, so the very first paint
+  // uses the *derived* active index (see pageStyle below) instead of the
+  // stale pageIndex(0). After commit, the useEffect will have synced
+  // pageIndex to the active tab and we can stop using the derived value.
+  const firstRenderRef = useRef(true);
 
   const swipeAnimationEnabled = () => {
     try { return localStorage.getItem("nextext_swipe_animation") !== "off"; } catch { return true; }
@@ -991,7 +1021,20 @@ function AppShell({ appLocked, setAppLocked }) {
     } catch { return 0.28; }
   };
 
-  const swipeTransition = () => (swipeAnimationEnabled() ? `left ${swipeDuration()}s cubic-bezier(0.32, 0.72, 0, 1)` : "none");
+  // WhatsApp-style snap curve: critically damped, no overshoot.
+  // Tuned for fast, fluid horizontal swiping.
+  const swipeBezier = () => "cubic-bezier(0.22, 0.61, 0.36, 1)";
+
+  const swipeTransition = () => (swipeAnimationEnabled() ? `left ${swipeDuration()}s ${swipeBezier()}` : "none");
+
+  // Tap navigation transitions — by default OFF (instant page jump).
+  // The "Animate tab taps (animateOnTap)" Setting overrides this so that
+  // tapping a bottom or top bar nav button uses the same slide animation
+  // as a swipe would.
+  const tapTransition = () => {
+    if (!animateOnTap) return "none";
+    return `left ${swipeDuration()}s ${swipeBezier()}`;
+  };
 
   const myUid = auth.user?.uid;
   usePresenceHeartbeat(myUid);
@@ -1154,6 +1197,8 @@ function AppShell({ appLocked, setAppLocked }) {
 
   useEffect(() => { localStorage.setItem(UI_SCALE_KEY, String(uiScale)); }, [uiScale]);
   useEffect(() => { localStorage.setItem(SCROLL_DOWN_KEY, String(showScrollDown)); }, [showScrollDown]);
+  useEffect(() => { localStorage.setItem("nextext_animate_on_tap", String(animateOnTap)); }, [animateOnTap]);
+  useEffect(() => { localStorage.setItem("nextext_search_bar_scale", String(searchBarScale)); }, [searchBarScale]);
 
   // Re-lock app whenever the user returns to it from the background.
   // Uses Capacitor's appStateChange (fires reliably on Android WebView when the
@@ -1243,6 +1288,9 @@ function AppShell({ appLocked, setAppLocked }) {
   useEffect(() => {
     if (currentTabIndex === -1) return;
     if (!pagerDragRef.current?.active) setPageIndex(currentTabIndex);
+    // First committed render is done — switch to pageIndex-driven placement
+    // so swipe handlers and tap navigation animate around the active index.
+    firstRenderRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTabKey, screen, orderedTabs.join(",")]);
 
@@ -1395,24 +1443,42 @@ function AppShell({ appLocked, setAppLocked }) {
       onTouchCancel={pagerTouchCancel}
     >
         {orderedTabs.map((key, idx) => {
+          // Use currentTabIndex (derived from screen/activeNavTab) as the
+          // initial placement so the first paint already shows the right
+          // page at left:0% instead of leaving it blank until the sync
+          // useEffect runs. Without this, a reordered navConfig (where the
+          // active tab isn't index 0) shows an empty pager for one render
+          // cycle — which was the cause of "UI missing until navigating to
+          // Settings forces a re-render" on launch.
+          const activeIdx = currentTabIndex >= 0 ? currentTabIndex : 0;
+          const effectiveIndex = firstRenderRef.current ? activeIdx : pageIndex;
           const pageStyle = {
             position: "absolute", top: 0, bottom: 0, width: "100%",
             overflow: "hidden",
-            left: `${(idx - pageIndex) * 100}%`,
-            transition: pagerDragging ? "none" : swipeTransition(),
+            left: `${(idx - effectiveIndex) * 100}%`,
+            // During a swipe drag: no CSS transition (we drive `left` directly).
+            // After the drag ends / a tap jumps to a new page:
+            //   - default (animateOnTap=false): instant "none"
+            //   - animateOnTap:=true: animated slide matching the swipe bezier
+            transition: pagerDragging ? "none" : tapTransition(),
+            // Will-change: optimizes compositor for fast horizontal swiping.
+            willChange: "left, transform",
+            // GPU layer promotion keeps the swiping pages buttery smooth.
+            backfaceVisibility: "hidden",
+            transform: "translateZ(0)",
           };
           const pageRef = (el) => { pageRefs.current[key] = el; };
           if (key === "chats") return (
             <div key="chats" ref={pageRef} style={pageStyle}>
               <PageErrorBoundary label="Chats">
-                <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab="chats" compactList={compactList} searchMode={searchMode} topBarVisible={topBarVisible} />
+                <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab="chats" compactList={compactList} searchMode={searchMode} topBarVisible={topBarVisible} searchBarScale={searchBarScale} />
               </PageErrorBoundary>
             </div>
           );
           if (key === "groups") return (
             <div key="groups" ref={pageRef} style={pageStyle}>
               <PageErrorBoundary label="Groups">
-                <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab="groups" compactList={compactList} searchMode={searchMode} topBarVisible={topBarVisible} />
+                <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab="groups" compactList={compactList} searchMode={searchMode} topBarVisible={topBarVisible} searchBarScale={searchBarScale} />
               </PageErrorBoundary>
             </div>
           );
@@ -1456,6 +1522,10 @@ function AppShell({ appLocked, setAppLocked }) {
                 onCheckUpdate={handleManualUpdateCheck}
                 checkingUpdate={checkingUpdate}
                 updateStatus={updateStatus}
+                animateOnTap={animateOnTap}
+                setAnimateOnTap={setAnimateOnTap}
+                searchBarScale={searchBarScale}
+                setSearchBarScale={setSearchBarScale}
               />
               </PageErrorBoundary>
             </div>

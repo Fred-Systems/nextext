@@ -33,6 +33,39 @@ function buildMsg(overrides) {
   return { ...MSG_FIELDS, ...overrides, sentAt: overrides.sentAt || serverTimestamp() };
 }
 
+// Ordinal suffix (1st, 2nd, 3rd, 4th, …) for date divider labels.
+function getOrdinalSuffix(day) {
+  if (day > 3 && day < 21) return "th";
+  switch (day % 10) {
+    case 1: return "st";
+    case 2: return "nd";
+    case 3: return "rd";
+    default: return "th";
+  }
+}
+
+// WhatsApp-style divider label: "Today", "Yesterday", or "Friday, July 24th".
+// Includes the year only when the message is from a previous calendar year.
+function formatAIDateDivider(date) {
+  if (!date) return "";
+  const d = new Date(date);
+  const today = new Date();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const startOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((startOfToday - startOfDay) / 86400000);
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  const weekday = d.toLocaleDateString("en-US", { weekday: "long" });
+  const month = d.toLocaleDateString("en-US", { month: "long" });
+  const dayNum = d.getDate();
+  const ordinal = getOrdinalSuffix(dayNum);
+  const year = d.getFullYear();
+  if (year !== today.getFullYear()) {
+    return `${weekday}, ${month} ${dayNum}${ordinal}, ${year}`;
+  }
+  return `${weekday}, ${month} ${dayNum}${ordinal}`;
+}
+
 export default function AIChatScreen({ myUid, onBack }) {
   const { t } = useTheme();
   const [messages, setMessages] = useState([]);
@@ -382,43 +415,59 @@ export default function AIChatScreen({ myUid, onBack }) {
             <div style={{ marginTop: 8 }}>Ask me anything!</div>
           </div>
         )}
-        {messages.map((m) => {
+        {messages.map((m, i) => {
           const isMine = m.senderId === myUid;
-          if (m.type === "image") {
-            const expired = m.mediaExpiresAt && m.mediaExpiresAt < Date.now();
-            return (
-              <div key={m.id} style={{ display: "flex", justifyContent: isMine ? "flex-end" : "flex-start", marginTop: 8 }}>
-                <div style={{ position: "relative", maxWidth: "78%" }}>
-                  {!expired && m.mediaURL ? (
-                    <img
-                      src={m.mediaURL}
-                      alt="Sent photo"
-                      style={{ maxWidth: 220, maxHeight: 280, borderRadius: 8, display: "block", cursor: "pointer" }}
-                      onClick={() => setFullscreenImage(m.mediaURL)}
-                    />
-                  ) : (
-                    <div style={{ padding: "18px 22px", borderRadius: 10, background: t.bubbleThem, color: t.bubbleThemText, fontSize: 13, opacity: 0.8 }}>📷 Media expired</div>
-                  )}
-                  <div
-                    onClick={() => deleteAIMediaMessage(m.id, m.mediaPath)}
-                    title="Delete image"
-                    style={{ position: "absolute", top: 4, right: 4, width: 26, height: 26, borderRadius: "50%", background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 2 }}
-                  >
-                    <Trash2 size={14} color="#fff" />
+          const mDate = m.sentAt?.toDate ? m.sentAt.toDate() : null;
+          const prevDate = i > 0 && messages[i - 1].sentAt?.toDate ? messages[i - 1].sentAt.toDate() : null;
+          const newDay = mDate && (!prevDate || prevDate.toDateString() !== mDate.toDateString());
+
+          return (
+            <React.Fragment key={m.id}>
+              {newDay && (
+                <div style={{ display: "flex", justifyContent: "center", margin: "14px 0 6px" }}>
+                  <div style={{ background: t.surface, color: t.textMuted, fontSize: 11.5, fontWeight: 600, padding: "4px 12px", borderRadius: 12, boxShadow: "0 1px 2px rgba(0,0,0,0.06)", border: `1px solid ${t.border}` }}>
+                    {formatAIDateDivider(mDate)}
                   </div>
                 </div>
-              </div>
-            );
-          }
-          return (
-              <div key={m.id} style={{ display: "flex", justifyContent: isMine ? "flex-end" : "flex-start", marginTop: 8 }}>
-              <div style={{ maxWidth: "78%", padding: "10px 14px", borderRadius: isMine ? "14px 14px 4px 14px" : "14px 14px 14px 4px", background: isMine ? t.bubbleMe : t.bubbleThem, color: isMine ? t.bubbleMeText : t.bubbleThemText, fontSize: 14 * aiTextScale, lineHeight: 1.4, boxShadow: "0 1px 2px rgba(0,0,0,0.08)", wordBreak: "break-word", overflowWrap: "break-word", minWidth: 0 }}>
-                {m.text}
-                <div style={{ fontSize: 10.5, opacity: 0.55, marginTop: 4, textAlign: "right" }}>
-                  {m.sentAt?.toDate ? m.sentAt.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+              )}
+              {m.type === "image" ? (
+                (() => {
+                  const expired = m.mediaExpiresAt && m.mediaExpiresAt < Date.now();
+                  return (
+                    <div style={{ display: "flex", justifyContent: isMine ? "flex-end" : "flex-start", marginTop: 8 }}>
+                      <div style={{ position: "relative", maxWidth: "78%" }}>
+                        {!expired && m.mediaURL ? (
+                          <img
+                            src={m.mediaURL}
+                            alt="Sent photo"
+                            style={{ maxWidth: 220, maxHeight: 280, borderRadius: 8, display: "block", cursor: "pointer" }}
+                            onClick={() => setFullscreenImage(m.mediaURL)}
+                          />
+                        ) : (
+                          <div style={{ padding: "18px 22px", borderRadius: 10, background: t.bubbleThem, color: t.bubbleThemText, fontSize: 13, opacity: 0.8 }}>📷 Media expired</div>
+                        )}
+                        <div
+                          onClick={() => deleteAIMediaMessage(m.id, m.mediaPath)}
+                          title="Delete image"
+                          style={{ position: "absolute", top: 4, right: 4, width: 26, height: 26, borderRadius: "50%", background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 2 }}
+                        >
+                          <Trash2 size={14} color="#fff" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div style={{ display: "flex", justifyContent: isMine ? "flex-end" : "flex-start", marginTop: 8 }}>
+                  <div style={{ maxWidth: "78%", padding: "10px 14px", borderRadius: isMine ? "14px 14px 4px 14px" : "14px 14px 14px 4px", background: isMine ? t.bubbleMe : t.bubbleThem, color: isMine ? t.bubbleMeText : t.bubbleThemText, fontSize: 14 * aiTextScale, lineHeight: 1.4, boxShadow: "0 1px 2px rgba(0,0,0,0.08)", wordBreak: "break-word", overflowWrap: "break-word", minWidth: 0 }}>
+                    {m.text}
+                    <div style={{ fontSize: 10.5, opacity: 0.55, marginTop: 4, textAlign: "right" }}>
+                      {m.sentAt?.toDate ? m.sentAt.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              )}
+            </React.Fragment>
           );
         })}
         {(sending || summarizingExternal) && (
