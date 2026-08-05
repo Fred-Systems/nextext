@@ -33,7 +33,7 @@ import { initNotifications } from "./firebase/notifications";
 import { App as CapApp } from "@capacitor/app";
 import PermissionsScreen from "./screens/PermissionsScreen";
 import UpdatePrompt from "./components/UpdatePrompt";
-import { checkForUpdate, downloadUpdate, openDownloadUrl, setLastSeenRelease } from "./updater/updateChecker";
+import { checkForUpdate, downloadUpdate, getCurrentVersion, openDownloadUrl, setLastSeenRelease } from "./updater/updateChecker";
 import { updateGlobalSettings, useGlobalSettings } from "./firebase/config-settings";
 import { useSystemInsets } from "./utils/useSystemInsets";
 import { changeNames, isNameChangeBlocked, isUsernameAvailable } from "./firebase/names";
@@ -734,6 +734,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
             {updateStatus && (
               <div style={{ fontSize: 12.5, color: updateStatus.includes("up to date") ? t.primary : "#FF3B30", fontWeight: 600, marginTop: 6, textAlign: "center" }}>{updateStatus}</div>
             )}
+            <div style={{ fontSize: 11, color: t.textMuted, marginTop: 8, textAlign: "center" }}>NexText v{getCurrentVersion()}</div>
           </div>
 
           <div style={{ padding: "13px 0" }}>
@@ -881,7 +882,6 @@ function AppShell({ appLocked, setAppLocked }) {
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
   const [pagerDragging, setPagerDragging] = useState(false);
-  const [mountedPages, setMountedPages] = useState(() => new Set());
   const pagerTrackRef = useRef(null);
   const pagerDragRef = useRef(null);
 
@@ -1109,27 +1109,12 @@ function AppShell({ appLocked, setAppLocked }) {
     : null;
   const currentTabIndex = currentTabKey ? Math.max(0, orderedTabs.indexOf(currentTabKey)) : -1;
 
-  const mountPage = (idx) => {
-    setMountedPages((prev) => {
-      if (prev.has(idx)) return prev;
-      const next = new Set(prev);
-      next.add(idx);
-      return next;
-    });
-  };
-
   // Sync the pager position whenever the active tab changes via bottom bar,
   // top-bar buttons, or programmatic navigation (e.g. opening a status).
-  const prevTabsKeyRef = useRef(orderedTabs.join(","));
+  // All tabs stay mounted in the track (they're just translated off-screen),
+  // so a failed mount can never silently blank the pages.
   useEffect(() => {
-    const tabsKey = orderedTabs.join(",");
-    if (prevTabsKeyRef.current !== tabsKey) {
-      // Nav config changed — prune stale page mounts to avoid index drift.
-      prevTabsKeyRef.current = tabsKey;
-      if (currentTabIndex !== -1) setMountedPages(new Set([currentTabIndex]));
-    }
     if (currentTabIndex === -1) return;
-    mountPage(currentTabIndex);
     if (!pagerDragRef.current?.active) setPageIndex(currentTabIndex);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTabKey, screen, orderedTabs.join(",")]);
@@ -1137,7 +1122,6 @@ function AppShell({ appLocked, setAppLocked }) {
   const navigateToTab = (key) => {
     const idx = orderedTabs.indexOf(key);
     if (idx === -1) return;
-    mountPage(idx);
     setPageIndex(idx);
     if (key === "status") { setStatusOrigin("status"); setScreen("status"); }
     else if (key === "settings") setScreen("settings");
@@ -1188,8 +1172,6 @@ function AppShell({ appLocked, setAppLocked }) {
     if (drag.startIndex === 0 && offset > 0) offset *= 0.35; // edge resistance
     if (drag.startIndex === len - 1 && offset < 0) offset *= 0.35;
     drag.offset = offset;
-    const targetIdx = offset < 0 ? drag.startIndex + 1 : drag.startIndex - 1;
-    if (targetIdx >= 0 && targetIdx < len) mountPage(targetIdx);
     const track = pagerTrackRef.current;
     if (track) {
       track.style.transition = "none";
@@ -1216,7 +1198,6 @@ function AppShell({ appLocked, setAppLocked }) {
     if (target !== drag.startIndex) {
       const key = orderedTabs[target];
       if (key) {
-        mountPage(target);
         setPageIndex(target);
         if (key === "status") { setStatusOrigin("status"); setScreen("status"); }
         else if (key === "settings") setScreen("settings");
@@ -1280,7 +1261,6 @@ function AppShell({ appLocked, setAppLocked }) {
         }}
       >
         {orderedTabs.map((key, idx) => {
-          if (!mountedPages.has(idx)) return null;
           const pageStyle = { position: "relative", width: "100%", height: "100%", flex: "0 0 100%", overflow: "hidden" };
           if (key === "chats") return (
             <div key="chats" style={pageStyle}>
