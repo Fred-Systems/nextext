@@ -43,6 +43,18 @@ const EMOJI_PICKER_SET = [
 ];
 const READ_DELAY_MS = 1500; // deliberate small gap so "delivered" is actually visible before "read"
 
+// WhatsApp-style day divider label: "Today", "Yesterday", or "Friday, July 16".
+function formatDayLabel(date) {
+  const d = new Date(date);
+  const today = new Date();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const startOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((startOfToday - startOfDay) / 86400000);
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+}
+
 function getMediaExpiryText(sentAt, mediaExpiryDays) {
   if (mediaExpiryDays == null) return "Permanent Storage";
   if (!sentAt?.toDate) return "";
@@ -329,6 +341,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const [showAttach, setShowAttach] = useState(false);
   const [attachRendered, setAttachRendered] = useState(false);
   const [attachClosing, setAttachClosing] = useState(false);
+  const [galleryActive, setGalleryActive] = useState(false);
   const openAttach = () => { setAttachClosing(false); setAttachRendered(true); setShowAttach(true); };
   const closeAttach = () => {
     if (!attachRendered) return;
@@ -719,7 +732,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const handlePhotoOrVideoPick = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow picking the same file again later
-    if (!file || !chatId) return;
+    if (!file || !chatId) { setGalleryActive(false); return; }
     setSendError("");
     setUploading(true);
     try {
@@ -732,6 +745,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       else setSendError("Couldn't send: " + err.message);
     }
     setUploading(false);
+    setGalleryActive(false);
     closeAttach();
   };
 
@@ -1255,8 +1269,17 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
             const groupedWithPrev = prev && prev.senderId === m.senderId && !prev.deletedForEveryone;
             const groupedWithNext = next && next.senderId === m.senderId && !next.deletedForEveryone;
             const isMine = m.senderId === myUid;
+            const mDate = m.sentAt?.toDate ? m.sentAt.toDate() : null;
+            const prevDate = prev?.sentAt?.toDate ? prev.sentAt.toDate() : null;
+            const newDay = mDate && (!prevDate || prevDate.toDateString() !== mDate.toDateString());
             return (
-              <div key={m.id} className="nextext-message-in" style={{ display: "flex", justifyContent: isMine ? "flex-end" : "flex-start", marginTop: groupedWithPrev ? 2 : 12 }}>
+            <React.Fragment key={m.id}>
+              {newDay && (
+                <div style={{ display: "flex", justifyContent: "center", margin: "16px 0 4px", flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, padding: "4px 12px", boxShadow: "0 1px 2px rgba(0,0,0,0.08)", textTransform: "capitalize" }}>{formatDayLabel(mDate)}</span>
+                </div>
+              )}
+              <div className="nextext-message-in" style={{ display: "flex", justifyContent: isMine ? "flex-end" : "flex-start", marginTop: groupedWithPrev ? 2 : 12 }}>
                 <div onClick={() => !m.deletedForEveryone && setActiveMsg(m)} style={{
                   position: "relative", maxWidth: "74%", padding: "8px 12px", cursor: "pointer", boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
                   background: isMine ? t.bubbleMe : t.bubbleThem, color: isMine ? t.bubbleMeText : t.bubbleThemText,
@@ -1289,6 +1312,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
                 )}
               </div>
             </div>
+            </React.Fragment>
             );
           })}
           {theyTyping && (
@@ -1383,11 +1407,21 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
               </>,
               document.body
             )}
-            <input ref={photoInputRef} type="file" accept="image/*,video/*" style={{ display: "none" }} onChange={handlePhotoOrVideoPick} />
+            <input ref={photoInputRef} type="file" accept="image/*,video/*" style={{ display: "none" }} onChange={handlePhotoOrVideoPick} onCancel={() => setGalleryActive(false)} />
             <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={handleFilePick} />
-            <div style={{ flex: 1, display: "flex", alignItems: "center", background: t.surface, borderRadius: 24, padding: `${Math.round(8 * composerHeight)}px 6px ${Math.round(8 * composerHeight)}px 10px`, gap: 8 }}>
-              <Smile size={Math.max(22, Math.round(25 * composerHeight))} color={t.textMuted} onClick={() => setShowEmojiPicker(!showEmojiPicker)} style={{ cursor: "pointer", flexShrink: 0, alignSelf: "center" }} />
-              <ImageIcon size={Math.max(22, Math.round(25 * composerHeight))} color={t.textMuted} onClick={() => photoInputRef.current?.click()} style={{ cursor: "pointer", flexShrink: 0, alignSelf: "center" }} />
+            <div style={{ flex: 1, display: "flex", alignItems: "center", background: t.surface, borderRadius: 24, padding: `${Math.round(8 * composerHeight)}px 6px ${Math.round(8 * composerHeight)}px 10px`, gap: 2 }}>
+              <div
+                onClick={() => { if (showEmojiPicker) setShowEmojiPicker(false); else { closeAttach(); setShowEmojiPicker(true); } }}
+                style={{ width: Math.max(30, Math.round(32 * composerHeight)), height: Math.max(30, Math.round(32 * composerHeight)), borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, background: showEmojiPicker ? t.primaryLight : "transparent" }}
+              >
+                <Smile size={Math.max(22, Math.round(25 * composerHeight))} color={showEmojiPicker ? t.primary : t.textMuted} />
+              </div>
+              <div
+                onClick={() => { setGalleryActive(true); setShowEmojiPicker(false); photoInputRef.current?.click(); }}
+                style={{ width: Math.max(30, Math.round(32 * composerHeight)), height: Math.max(30, Math.round(32 * composerHeight)), borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, background: galleryActive ? t.primaryLight : "transparent" }}
+              >
+                <ImageIcon size={Math.max(22, Math.round(25 * composerHeight))} color={galleryActive ? t.primary : t.textMuted} />
+              </div>
               <textarea
                 ref={composerRef}
                 value={input}
@@ -1397,7 +1431,12 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
                 rows={1}
                 style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: Math.max(14, Math.round(16.5 * composerHeight * 10) / 10), color: t.text, resize: "none", maxHeight: Math.round((42 + composerHeight * 42) * composerHeight), lineHeight: 1.4, paddingTop: Math.round(7 * composerHeight), paddingBottom: Math.round(7 * composerHeight), fontFamily: "inherit" }}
               />
-              <Plus size={Math.max(22, Math.round(25 * composerHeight))} color={t.textMuted} onClick={() => (showAttach ? closeAttach() : openAttach())} style={{ cursor: "pointer", flexShrink: 0, alignSelf: "center", transform: `rotate(${showAttach ? 45 : 0}deg)`, transition: "transform 0.2s ease" }} />
+              <div
+                onClick={() => { if (showAttach) closeAttach(); else { setShowEmojiPicker(false); openAttach(); } }}
+                style={{ width: Math.max(30, Math.round(32 * composerHeight)), height: Math.max(30, Math.round(32 * composerHeight)), borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, background: showAttach ? t.primaryLight : "transparent", transform: `rotate(${showAttach ? 45 : 0}deg)`, transition: "transform 0.2s ease" }}
+              >
+                <Plus size={Math.max(22, Math.round(25 * composerHeight))} color={showAttach ? t.primary : t.textMuted} />
+              </div>
             </div>
             {input.trim() || editingMsg ? (
               <button

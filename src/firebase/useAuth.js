@@ -12,10 +12,22 @@ import {
 } from "firebase/auth";
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { Capacitor, registerPlugin } from "@capacitor/core";
+import { SocialLogin as CapgoSocialLogin } from "@capgo/capacitor-social-login";
 import { auth, googleProvider, db } from "../firebase/config";
 import { changeNames } from "../firebase/names";
 
 const LegacyGoogleSignIn = registerPlugin("LegacyGoogleSignIn");
+
+// Rejects the promise if it hasn't settled within ms, so a broken native
+// Google sign-in can never leave the UI stuck on "Please wait…" forever.
+const withTimeout = (promise, ms, message) =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); }
+    );
+  });
 
 // One account per email: Firebase Auth itself already prevents creating a
 // second account with the same email under a different password (it'll
@@ -101,45 +113,67 @@ export function useAuth() {
   }
 
   async function signInWithGoogle(markProfileComplete = false) {
+    // Creates the Firestore profile for a brand-new Google account and marks it
+    // complete when this was the sign-up flow (which already collected names).
+    const ensureProfile = async (user, extra) => {
+      const ref = doc(db, "users", user.uid);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await createUserProfile(user, {
+          email: user.email,
+          username: user.email ? user.email.split("@")[0] : `user-${user.uid.slice(0, 6)}`,
+          displayName: user.displayName || extra?.displayName || "New User",
+          photoURL: user.photoURL || extra?.photoUrl || extra?.photoURL || null,
+        });
+        if (markProfileComplete) await updateDoc(ref, { profileComplete: true });
+      }
+      return user;
+    };
+
     // Native (Capacitor) builds use the real Google Sign-In plugin — no popup
     // or redirect, which do not work reliably inside the Android WebView.
     if (Capacitor.isNativePlatform()) {
-      // Prefer the legacy GoogleSignInClient flow: it works on devices with
-      // older Google Play Services and returns precise error codes. CapGo's
-      // Credential Manager path can hang ("Please wait" forever) on some
-      // devices, so it is only used as a fallback.
+      let lastError = null;
+      // 1) Legacy GoogleSignInClient flow: works on devices with older Google
+      //    Play Services and returns precise error codes.
       try {
-        const legacy = await LegacyGoogleSignIn.signIn();
+        const legacy = await withTimeout(
+          LegacyGoogleSignIn.signIn(),
+          20000,
+          "Google sign-in timed out. Google Play Services may be missing or disabled on this device."
+        );
         const legacyToken = legacy?.idToken;
         if (!legacyToken) throw new Error("Google sign-in did not return an ID token.");
-        const legacyCredential = GoogleAuthProvider.credential(legacyToken);
-        const legacyCred = await signInWithCredential(auth, legacyCredential);
-        const legacyRef = doc(db, "users", legacyCred.user.uid);
-        const legacySnap = await getDoc(legacyRef);
-        if (!legacySnap.exists()) {
-          await createUserProfile(legacyCred.user, {
-            email: legacyCred.user.email,
-            username: legacyCred.user.email ? legacyCred.user.email.split("@")[0] : `user-${legacyCred.user.uid.slice(0, 6)}`,
-            displayName: legacyCred.user.displayName || legacy?.displayName || "New User",
-            photoURL: legacyCred.user.photoURL || legacy?.photoUrl || null,
-          });
-          // Sign-up flow already collected the names from the form, so skip
-          // the profile-completion screen for this session.
-          if (markProfileComplete) await updateDoc(legacyRef, { profileComplete: true });
-        }
-        return legacyCred.user;
+        const legacyUser = await signInWithCredential(auth, GoogleAuthProvider.credential(legacyToken));
+        return await ensureProfile(legacyUser, legacy);
       } catch (legacyErr) {
-        const legacyCode = legacyErr?.code;
-        if (legacyCode === "CANCELLED") throw legacyErr;
-        if (legacyCode === "TIMEOUT") {
-          throw new Error("Google sign-in timed out. Update Google Play Services on this device, then try again, or use Email/phone sign-in.");
-        }
-        // Non-cancellation failure: surface the precise message from the
-        // legacy plugin (it includes the status code and a fix hint).
-        const msg = String(legacyErr?.message || "");
-        const enriched = new Error(msg.startsWith("Google sign-in failed") ? msg : `Google sign-in failed: ${msg || "unknown error"}`);
-        enriched.code = legacyCode;
-        enriched.native = legacyErr;
+        lastError = legacyErr;
+        if (legacyErr?.code === "CANCELLED") throw legacyErr;
+        // Anything else: fall through to the modern Credential Manager path.
+      }
+
+      // 2) CapGo's Google provider (Credential Manager on Android 13+,
+      //    GoogleSignInClient fallback on older devices). Never blocks the UI —
+      //    bounded by a timeout so it surfaces a clear error instead of hanging.
+      try {
+        const capgoRes = await withTimeout(
+          CapgoSocialLogin.login({ provider: "google", options: { scopes: ["email", "openid", "profile"] } }),
+          25000,
+          "Google sign-in timed out on this device."
+        );
+        const capgoToken = capgoRes?.response?.idToken;
+        if (!capgoToken) throw new Error("Google sign-in did not return an ID token.");
+        const capgoUser = await signInWithCredential(auth, GoogleAuthProvider.credential(capgoToken));
+        return await ensureProfile(capgoUser, capgoRes?.response);
+      } catch (capgoErr) {
+        const msg = String((lastError && lastError.message) || capgoErr?.message || "");
+        const enriched = new Error(
+          msg.startsWith("Google sign-in failed")
+            ? `${msg} (alternate sign-in method also failed)`
+            : `Google sign-in failed: ${msg || "unknown error"}`
+        );
+        enriched.code = capgoErr?.code || lastError?.code;
+        enriched.native = capgoErr || lastError;
         throw enriched;
       }
     }

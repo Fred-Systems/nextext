@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { ThemeProvider, useTheme, themes, ROTATE_INTERVALS } from "./theme/ThemeContext";
 import { useAuth } from "./firebase/useAuth";
@@ -33,7 +33,7 @@ import { initNotifications } from "./firebase/notifications";
 import { App as CapApp } from "@capacitor/app";
 import PermissionsScreen from "./screens/PermissionsScreen";
 import UpdatePrompt from "./components/UpdatePrompt";
-import { checkForUpdate, openDownloadUrl, setLastSeenRelease } from "./updater/updateChecker";
+import { checkForUpdate, downloadUpdate, openDownloadUrl, setLastSeenRelease } from "./updater/updateChecker";
 import { updateGlobalSettings, useGlobalSettings } from "./firebase/config-settings";
 import { useSystemInsets } from "./utils/useSystemInsets";
 import { changeNames, isNameChangeBlocked, isUsernameAvailable } from "./firebase/names";
@@ -878,6 +878,7 @@ function AppShell({ appLocked, setAppLocked }) {
   const [showUpdatePrompt, setShowUpdatePrompt] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState("");
+  const [downloadingUpdate, setDownloadingUpdate] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
   const [pagerDragging, setPagerDragging] = useState(false);
   const [mountedPages, setMountedPages] = useState(() => new Set());
@@ -1003,14 +1004,20 @@ function AppShell({ appLocked, setAppLocked }) {
     setCheckingUpdate(false);
   };
 
-  const handleDownloadUpdate = () => {
-    if (pendingUpdate?.downloadUrl) {
-      openDownloadUrl(pendingUpdate.downloadUrl);
-    } else if (pendingUpdate?.releaseUrl) {
-      openDownloadUrl(pendingUpdate.releaseUrl);
+  const handleDownloadUpdate = async () => {
+    setDownloadingUpdate(true);
+    try {
+      const url = pendingUpdate?.downloadUrl;
+      if (url) {
+        await downloadUpdate(url);
+      } else if (pendingUpdate?.releaseUrl) {
+        openDownloadUrl(pendingUpdate.releaseUrl);
+      }
+      if (pendingUpdate?.version) setLastSeenRelease(pendingUpdate.version);
+    } finally {
+      setShowUpdatePrompt(false);
+      setDownloadingUpdate(false);
     }
-    if (pendingUpdate?.version) setLastSeenRelease(pendingUpdate.version);
-    setShowUpdatePrompt(false);
   };
 
   const handleDismissUpdate = () => {
@@ -1453,6 +1460,7 @@ function AppShell({ appLocked, setAppLocked }) {
           update={pendingUpdate}
           onDownload={handleDownloadUpdate}
           onDismiss={handleDismissUpdate}
+          downloading={downloadingUpdate}
         />
       )}
     </div>

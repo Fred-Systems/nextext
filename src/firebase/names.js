@@ -1,4 +1,4 @@
-import { doc, getDoc, updateDoc, serverTimestamp, query, where, getDocs, collection } from "firebase/firestore";
+import { doc, getDoc, updateDoc, query, where, getDocs, collection } from "firebase/firestore";
 import { db } from "./config";
 
 // Updates a user's display name + username (optionally phone). Pushes the
@@ -13,7 +13,9 @@ export async function changeNames(uid, { username, displayName, phone }) {
   const historyEntry = {
     displayName: cur.displayName || null,
     username: cur.username || null,
-    changedAt: serverTimestamp(),
+    // Firestore does not allow serverTimestamp() inside array elements, so the
+    // entry uses a client timestamp (serialized as a Firestore Timestamp).
+    changedAt: new Date(),
   };
   const nameHistory = Array.isArray(cur.nameHistory)
     ? [...cur.nameHistory, historyEntry]

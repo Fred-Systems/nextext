@@ -1,7 +1,7 @@
 import React from "react";
 import { Download, X, Sparkles } from "lucide-react";
 
-export default function UpdatePrompt({ update, onDownload, onDismiss }) {
+export default function UpdatePrompt({ update, onDownload, onDismiss, downloading }) {
   if (!update) return null;
 
   const changelogLines = update.body
@@ -132,7 +132,7 @@ export default function UpdatePrompt({ update, onDownload, onDismiss }) {
             Do It Later
           </div>
           <div
-            onClick={onDownload}
+            onClick={downloading ? undefined : onDownload}
             style={{
               flex: 1.5,
               padding: "12px 0",
@@ -140,8 +140,8 @@ export default function UpdatePrompt({ update, onDownload, onDismiss }) {
               fontSize: 14,
               fontWeight: 700,
               color: "#fff",
-              background: "linear-gradient(135deg, #10B981, #059669)",
-              cursor: "pointer",
+              background: downloading ? "rgba(255,255,255,0.12)" : "linear-gradient(135deg, #10B981, #059669)",
+              cursor: downloading ? "default" : "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -149,7 +149,7 @@ export default function UpdatePrompt({ update, onDownload, onDismiss }) {
             }}
           >
             <Download size={15} color="#fff" />
-            Download Now
+            {downloading ? "Downloading…" : "Download Now"}
           </div>
         </div>
       </div>

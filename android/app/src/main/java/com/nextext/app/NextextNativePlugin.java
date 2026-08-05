@@ -7,6 +7,7 @@ import android.net.Uri;
 import android.provider.Settings;
 import android.view.View;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.FileProvider;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import com.getcapacitor.JSObject;
@@ -16,6 +17,12 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 @CapacitorPlugin(
     name = "NextextNative",
@@ -129,6 +136,66 @@ public class NextextNativePlugin extends Plugin {
             ret.put("bottom", 0);
             call.resolve(ret);
         }
+    }
+
+    @PluginMethod
+    public void downloadAndInstallApk(final PluginCall call) {
+        // Downloads an APK to the app's private cache and hands it to the
+        // Android package installer via FileProvider — no browser needed, so it
+        // works on phones without a browser app installed.
+        final String url = call.getString("url");
+        if (url == null || url.trim().isEmpty()) {
+            call.reject("No download URL provided");
+            return;
+        }
+        new Thread(() -> {
+            File apk = null;
+            try {
+                File dir = new File(getContext().getCacheDir(), "updates");
+                if (!dir.exists()) dir.mkdirs();
+                apk = new File(dir, "nextext-update.apk");
+                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setInstanceFollowRedirects(true);
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(120000);
+                conn.setRequestProperty("Accept", "application/vnd.android.package-archive");
+                conn.connect();
+                int code = conn.getResponseCode();
+                if (code >= 400) {
+                    call.reject("Download failed (HTTP " + code + ")");
+                    return;
+                }
+                InputStream in = conn.getInputStream();
+                FileOutputStream out = new FileOutputStream(apk);
+                byte[] buf = new byte[8192];
+                int n;
+                long total = 0;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                    total += n;
+                }
+                out.flush();
+                out.close();
+                in.close();
+                conn.disconnect();
+                if (total == 0 || apk.length() == 0) {
+                    call.reject("Downloaded file is empty");
+                    return;
+                }
+                Uri contentUri = FileProvider.getUriForFile(
+                    getContext(),
+                    getContext().getPackageName() + ".fileprovider",
+                    apk
+                );
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setDataAndType(contentUri, "application/vnd.android.package-archive");
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                getActivity().startActivity(intent);
+                call.resolve();
+            } catch (final Exception e) {
+                call.reject("Download failed: " + (e.getMessage() == null ? String.valueOf(e) : e.getMessage()));
+            }
+        }).start();
     }
 
     @PluginMethod

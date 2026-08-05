@@ -1,7 +1,11 @@
+import { Capacitor, registerPlugin } from "@capacitor/core";
+
 const GITHUB_REPO = "Fred-Systems/nextext";
 const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPO}/releases`;
 const LAST_SEEN_KEY = "nextext_last_seen_release";
-const APP_VERSION = "1.1.7";
+const APP_VERSION = "1.1.8";
+
+const NextextNative = registerPlugin("NextextNative");
 
 function compareVersions(a, b) {
   const pa = a.replace(/^v/, "").split(".").map(Number);
@@ -83,6 +87,23 @@ export function openDownloadUrl(url) {
     if (w) return;
   } catch { /* popup blocked */ }
   window.location.href = url;
+}
+
+// Downloads + installs the APK inside the app (native plugin, no browser
+// needed). Falls back to opening the URL externally when the native path is
+// unavailable or fails.
+export async function downloadUpdate(url) {
+  if (!url) return false;
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await NextextNative.downloadAndInstallApk({ url });
+      return true;
+    } catch (e) {
+      console.error("[updater] native APK download failed, falling back to browser:", e);
+    }
+  }
+  openDownloadUrl(url);
+  return false;
 }
 
 export function getLastSeenRelease() {

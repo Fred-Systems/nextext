@@ -38,7 +38,7 @@ public class LegacyGoogleSignInPlugin extends Plugin {
                 // call already settled
             }
         };
-        watchdogHandler.postDelayed(watchdogRunnable, 45000);
+        watchdogHandler.postDelayed(watchdogRunnable, 20000);
     }
 
     private void stopWatchdog() {
