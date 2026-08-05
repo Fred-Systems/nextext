@@ -30,7 +30,11 @@ export async function fetchLinkPreview(url) {
       if (m) {
         result.title = m.title || null;
         result.description = m.description || null;
-        result.image = m.image?.url || m.logo?.url || null;
+        let img = m.image?.url || m.image || m.logo?.url || null;
+        // Many og:images come back over http; a secure WebView blocks those as
+        // mixed content, so upgrade to https when possible.
+        if (img && img.startsWith("http://")) img = "https://" + img.slice("http://".length);
+        result.image = img;
       }
     }
   } catch {

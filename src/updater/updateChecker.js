@@ -106,6 +106,22 @@ export async function downloadUpdate(url) {
   return false;
 }
 
+// Downloads the APK into the device's Downloads folder without launching the
+// installer. Returns { path, fileName } on success.
+export async function saveApkToDevice(url) {
+  if (!url) return null;
+  if (Capacitor.isNativePlatform()) {
+    try {
+      return await NextextNative.saveApkToDevice({ url });
+    } catch (e) {
+      console.error("[updater] native APK save failed:", e);
+      throw e;
+    }
+  }
+  openDownloadUrl(url);
+  return null;
+}
+
 export function getLastSeenRelease() {
   try {
     return localStorage.getItem(LAST_SEEN_KEY);

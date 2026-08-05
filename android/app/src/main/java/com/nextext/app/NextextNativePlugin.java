@@ -199,6 +199,99 @@ public class NextextNativePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void saveApkToDevice(final PluginCall call) {
+        // Downloads the APK and saves it into the device's Downloads folder so
+        // the user can find/install it later, WITHOUT launching the installer.
+        final String url = call.getString("url");
+        if (url == null || url.trim().isEmpty()) {
+            call.reject("No download URL provided");
+            return;
+        }
+        new Thread(() -> {
+            File temp = null;
+            try {
+                File dir = new File(getContext().getCacheDir(), "updates");
+                if (!dir.exists()) dir.mkdirs();
+                temp = new File(dir, "nextext-download.apk");
+                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setInstanceFollowRedirects(true);
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(120000);
+                conn.setRequestProperty("Accept", "application/vnd.android.package-archive");
+                conn.connect();
+                int code = conn.getResponseCode();
+                if (code >= 400) {
+                    call.reject("Download failed (HTTP " + code + ")");
+                    return;
+                }
+                InputStream in = conn.getInputStream();
+                FileOutputStream out = new FileOutputStream(temp);
+                byte[] buf = new byte[8192];
+                int n;
+                long total = 0;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                    total += n;
+                }
+                out.flush();
+                out.close();
+                in.close();
+                conn.disconnect();
+                if (total == 0 || temp.length() == 0) {
+                    call.reject("Downloaded file is empty");
+                    return;
+                }
+
+                String fileName = "NexText-" + System.currentTimeMillis() + ".apk";
+                String savedPath;
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    // Scoped storage: write via MediaStore.Downloads (no permission needed).
+                    android.content.ContentValues cv = new android.content.ContentValues();
+                    cv.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+                    cv.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/vnd.android.package-archive");
+                    cv.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/NexText");
+                    Uri item = getContext().getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
+                    if (item == null) {
+                        call.reject("Could not create file in Downloads");
+                        return;
+                    }
+                    java.io.OutputStream os = getContext().getContentResolver().openOutputStream(item);
+                    java.io.FileInputStream fis = new java.io.FileInputStream(temp);
+                    byte[] b = new byte[8192];
+                    int read;
+                    while ((read = fis.read(b)) > 0) os.write(b, 0, read);
+                    os.flush();
+                    os.close();
+                    fis.close();
+                    savedPath = item.toString();
+                } else {
+                    // Legacy storage: write to the public Downloads directory.
+                    File dl = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS);
+                    if (dl == null || !dl.exists()) dl.mkdirs();
+                    File dest = new File(dl, fileName);
+                    java.io.FileInputStream fis = new java.io.FileInputStream(temp);
+                    java.io.FileOutputStream fos = new java.io.FileOutputStream(dest);
+                    byte[] b = new byte[8192];
+                    int read;
+                    while ((read = fis.read(b)) > 0) fos.write(b, 0, read);
+                    fos.flush();
+                    fos.close();
+                    fis.close();
+                    savedPath = dest.getAbsolutePath();
+                }
+                temp.delete();
+                JSObject ret = new JSObject();
+                ret.put("path", savedPath);
+                ret.put("fileName", fileName);
+                call.resolve(ret);
+            } catch (final Exception e) {
+                if (temp != null) { try { temp.delete(); } catch (Exception ignored) {} }
+                call.reject("Download failed: " + (e.getMessage() == null ? String.valueOf(e) : e.getMessage()));
+            }
+        }).start();
+    }
+
+    @PluginMethod
     public void requestMicrophone(PluginCall call) {
         if (micGranted()) {
             resolveGranted(call, true);

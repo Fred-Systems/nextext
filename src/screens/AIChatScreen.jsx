@@ -50,11 +50,40 @@ export default function AIChatScreen({ myUid, onBack }) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isArchived, setIsArchived] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState(null);
+  const [aiTextScale, setAiTextScale] = useState(() => {
+    try { return Math.min(1.6, Math.max(0.6, Number(localStorage.getItem("nextext_ai_text_scale")) || 1)); } catch { return 1; }
+  });
   const sysConfig = useSystemConfigHook();
   const visionDisabled = !!sysConfig?.disableAiVision;
   const scrollRef = useRef(null);
   const imageInputRef = useRef(null);
+  const pinchStartRef = useRef(null);
   const chatId = `${AI_CHAT_PREFIX}${myUid}`;
+
+  const pinchEnabled = () => {
+    try { return localStorage.getItem("nextext_pinch_zoom") !== "false"; } catch { return true; }
+  };
+
+  const onMessagesTouchStart = (e) => {
+    if (!pinchEnabled() || e.touches.length !== 2) { pinchStartRef.current = null; return; }
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    pinchStartRef.current = { dist: d, scale: aiTextScale };
+  };
+
+  const onMessagesTouchMove = (e) => {
+    if (!pinchEnabled() || e.touches.length !== 2 || !pinchStartRef.current) return;
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    if (pinchStartRef.current.dist > 0) {
+      const next = Math.min(1.6, Math.max(0.6, pinchStartRef.current.scale * (d / pinchStartRef.current.dist)));
+      if (Math.abs(next - aiTextScale) >= 0.03) setAiTextScale(Math.round(next * 20) / 20);
+    }
+  };
+
+  const onMessagesTouchEnd = () => { pinchStartRef.current = null; };
+
+  useEffect(() => {
+    localStorage.setItem("nextext_ai_text_scale", String(aiTextScale));
+  }, [aiTextScale]);
 
   useEffect(() => {
     if (!myUid) return;
@@ -344,7 +373,7 @@ export default function AIChatScreen({ myUid, onBack }) {
         </div>
       )}
 
-      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "14px 10px" }}>
+      <div ref={scrollRef} onTouchStart={onMessagesTouchStart} onTouchMove={onMessagesTouchMove} onTouchEnd={onMessagesTouchEnd} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "14px 10px", touchAction: pinchEnabled() ? "pan-y" : "auto" }}>
         {messages.length === 0 && (
           <div style={{ textAlign: "center", padding: 40, color: t.textMuted, fontSize: 13, lineHeight: 1.6 }}>
             <div style={{ fontSize: 40, marginBottom: 10 }}>🤖</div>
@@ -383,7 +412,7 @@ export default function AIChatScreen({ myUid, onBack }) {
           }
           return (
               <div key={m.id} style={{ display: "flex", justifyContent: isMine ? "flex-end" : "flex-start", marginTop: 8 }}>
-              <div style={{ maxWidth: "78%", padding: "10px 14px", borderRadius: isMine ? "14px 14px 4px 14px" : "14px 14px 14px 4px", background: isMine ? t.bubbleMe : t.bubbleThem, color: isMine ? t.bubbleMeText : t.bubbleThemText, fontSize: 14, lineHeight: 1.4, boxShadow: "0 1px 2px rgba(0,0,0,0.08)", wordBreak: "break-word", overflowWrap: "break-word", minWidth: 0 }}>
+              <div style={{ maxWidth: "78%", padding: "10px 14px", borderRadius: isMine ? "14px 14px 4px 14px" : "14px 14px 14px 4px", background: isMine ? t.bubbleMe : t.bubbleThem, color: isMine ? t.bubbleMeText : t.bubbleThemText, fontSize: 14 * aiTextScale, lineHeight: 1.4, boxShadow: "0 1px 2px rgba(0,0,0,0.08)", wordBreak: "break-word", overflowWrap: "break-word", minWidth: 0 }}>
                 {m.text}
                 <div style={{ fontSize: 10.5, opacity: 0.55, marginTop: 4, textAlign: "right" }}>
                   {m.sentAt?.toDate ? m.sentAt.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}

@@ -18,6 +18,7 @@ import { db } from "../firebase/config";
 import { registerPlugin } from "@capacitor/core";
 import Avatar, { getLocalPhotoOverride } from "../components/Avatar";
 import { extractFirstUrl, fetchLinkPreview, isLinkPreviewEnabled } from "../utils/linkPreview";
+import { playVoicePing } from "../utils/pingSounds";
 import { useGlobalSettings } from "../firebase/config-settings";
 import { getSystemInsets } from "../utils/systemInsets";
 
@@ -115,6 +116,7 @@ function StatusReplyBlock({ statusRef, mine, t }) {
 function LinkPreviewCard({ text, mine, t, textScale }) {
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => {
     if (!text) return;
@@ -128,7 +130,9 @@ function LinkPreviewCard({ text, mine, t, textScale }) {
   const borderColor = mine ? "rgba(255,255,255,0.12)" : t.border;
   return (
     <a href={preview.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ display: "block", marginTop: 6, borderRadius: 10, border: `1px solid ${borderColor}`, background: cardBg, overflow: "hidden", textDecoration: "none", color: "inherit", maxWidth: 260 }}>
-      {preview.image && <img src={preview.image} alt="" style={{ width: "100%", height: 100, objectFit: "cover" }} />}
+      {preview.image && !imageFailed && (
+        <img src={preview.image} alt="" referrerPolicy="no-referrer" onError={() => setImageFailed(true)} style={{ width: "100%", height: 100, objectFit: "cover", display: "block", background: "rgba(0,0,0,0.06)" }} />
+      )}
       <div style={{ padding: "7px 10px" }}>
         <div style={{ fontSize: 12 * textScale, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: mine ? t.bubbleMeText : t.text }}>{preview.title}</div>
         {preview.description && <div style={{ fontSize: 11 * textScale, opacity: 0.7, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2, color: mine ? t.bubbleMeText : t.text }}>{preview.description}</div>}
@@ -212,45 +216,73 @@ function PollCreateSheet({ t, onClose, onCreate }) {
   );
 }
 
-let pingCtx = null;
-function playVoicePing() {
-  // Short, pleasant two-tone chime (like WhatsApp's) played via Web Audio so
-  // no audio asset has to ship with the app. Respects the voice-ping setting.
-  try {
-    if (localStorage.getItem("nextext_voice_pings") === "off") return;
-    pingCtx = pingCtx || new (window.AudioContext || window.webkitAudioContext)();
-    if (pingCtx.state === "suspended") pingCtx.resume().catch(() => {});
-    const now = pingCtx.currentTime;
-    [[880, 0, 0.13], [1318.5, 0.1, 0.2]].forEach(([freq, offset, dur]) => {
-      const osc = pingCtx.createOscillator();
-      const gain = pingCtx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.0001, now + offset);
-      gain.gain.exponentialRampToValueAtTime(0.14, now + offset + 0.025);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + dur);
-      osc.connect(gain);
-      gain.connect(pingCtx.destination);
-      osc.start(now + offset);
-      osc.stop(now + offset + dur + 0.05);
-    });
-  } catch { /* ping is best-effort */ }
-}
+const PLACEHOLDER_WAVE = [0.3, 0.55, 0.4, 0.75, 0.5, 0.65, 0.35, 0.8, 0.45, 0.6, 0.4, 0.7, 0.55, 0.75, 0.38, 0.65, 0.5, 0.72, 0.42, 0.6, 0.35, 0.68, 0.48, 0.78, 0.55, 0.62, 0.4, 0.7, 0.52, 0.66, 0.38, 0.74, 0.46, 0.58, 0.42, 0.68, 0.5, 0.64, 0.36, 0.6];
 
 function VoicePlayer({ url, duration, mine, t, msgId, onEnded, autoPlayToken, isAutoPlayTarget, nowPlayingId, onPlayStart }) {
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [totalDuration, setTotalDuration] = useState(duration || 0);
   const [error, setError] = useState(false);
+  // Real waveform heights (0..1), filled progressively as the note plays.
+  const [wave, setWave] = useState(null);
   const audioRef = useRef(null);
   const barRef = useRef(null);
   const dragging = useRef(false);
+  const analyserRef = useRef(null);
+  const rafRef = useRef(null);
+  const binsRef = useRef(null);
 
   const toggle = (e) => {
     e.stopPropagation();
     if (!audioRef.current) return;
     if (playing) audioRef.current.pause();
     else { onPlayStart?.(msgId); audioRef.current.play().catch(() => setError(true)); }
+  };
+
+  // Hook the <audio> element up to a Web Audio analyser so we can build a real
+  // waveform from the actual audio samples while it plays. This works for m4a
+  // (native recordings) which decodeAudioData cannot read. MediaElementSource
+  // may only be created once per element, so this runs a single time.
+  useEffect(() => {
+    if (!audioRef.current || analyserRef.current) return;
+    try {
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      const src = ac.createMediaElementSource(audioRef.current);
+      const an = ac.createAnalyser();
+      an.fftSize = 512;
+      an.smoothingTimeConstant = 0.2;
+      src.connect(an);
+      an.connect(ac.destination);
+      analyserRef.current = { ac, an };
+      binsRef.current = new Float32Array(40);
+    } catch { /* analyser unsupported — fall back to placeholder wave */ }
+  }, []);
+
+  const stopSampling = () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null; };
+
+  const startSampling = () => {
+    stopSampling();
+    const loop = () => {
+      const audio = audioRef.current;
+      const analyser = analyserRef.current;
+      if (analyser && audio && !audio.paused && !audio.ended) {
+        const data = new Float32Array(analyser.an.fftSize);
+        analyser.an.getFloatTimeDomainData(data);
+        let peak = 0;
+        for (let i = 0; i < data.length; i++) {
+          const v = Math.abs(data[i]);
+          if (v > peak) peak = v;
+        }
+        const dur = audio.duration || 0;
+        if (dur > 0) {
+          const idx = Math.min(39, Math.floor((audio.currentTime / dur) * 40));
+          binsRef.current[idx] = Math.max(binsRef.current[idx], Math.min(1, peak * 2.4));
+          setWave(Array.from(binsRef.current));
+        }
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
   };
 
   // Auto-advance: when the parent flags this note as the next one to play and
@@ -274,25 +306,28 @@ function VoicePlayer({ url, duration, mine, t, msgId, onEnded, autoPlayToken, is
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nowPlayingId, msgId]);
 
+  // Stop the sampler when playback stops.
+  useEffect(() => () => { stopSampling(); analyserRef.current?.ac.close?.().catch(() => {}); }, []);
+
   const seekTo = (fraction) => {
     if (!audioRef.current || !totalDuration) return;
     audioRef.current.currentTime = fraction * totalDuration;
     setCurrentTime(audioRef.current.currentTime);
   };
 
-  const handleBarInteraction = (clientX) => {
-    if (!barRef.current) return;
-    const rect = barRef.current.getBoundingClientRect();
+  const handleBarInteraction = (clientX, ref) => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
     const fraction = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     seekTo(fraction);
   };
 
-  const onBarPointerDown = (e) => {
+  const onBarPointerDown = (ref) => (e) => {
     e.stopPropagation();
     e.preventDefault();
     dragging.current = true;
-    handleBarInteraction(e.clientX || e.touches?.[0]?.clientX);
-    const onMove = (ev) => { if (dragging.current) handleBarInteraction(ev.clientX || ev.touches?.[0]?.clientX); };
+    handleBarInteraction(e.clientX || e.touches?.[0]?.clientX, ref);
+    const onMove = (ev) => { if (dragging.current) handleBarInteraction(ev.clientX || ev.touches?.[0]?.clientX, ref); };
     const onUp = () => { dragging.current = false; document.removeEventListener("pointermove", onMove); document.removeEventListener("pointerup", onUp); };
     document.addEventListener("pointermove", onMove);
     document.addEventListener("pointerup", onUp);
@@ -305,16 +340,19 @@ function VoicePlayer({ url, duration, mine, t, msgId, onEnded, autoPlayToken, is
   };
 
   const progress = totalDuration > 0 ? Math.min(currentTime / totalDuration, 1) : 0;
-  const bars = [6, 12, 8, 16, 10, 14, 7, 11, 9, 15, 6, 13, 8, 12, 7, 10];
+  const heights = wave || PLACEHOLDER_WAVE;
+  const idleColor = mine ? "rgba(255,255,255,0.45)" : (t.textMuted + "88");
+  const playedColor = mine ? "rgba(255,255,255,0.9)" : t.primary;
+  const waveBarCount = heights.length;
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 180 }} onClick={(e) => e.stopPropagation()}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, width: 230, maxWidth: "64vw" }} onClick={(e) => e.stopPropagation()}>
       <audio
         ref={audioRef}
         src={url}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => { setPlaying(false); onPlayStart?.(null); playVoicePing(); onEnded?.(msgId); }}
+        onPlay={() => { setPlaying(true); startSampling(); }}
+        onPause={() => { setPlaying(false); stopSampling(); }}
+        onEnded={() => { setPlaying(false); stopSampling(); onPlayStart?.(null); playVoicePing(); onEnded?.(msgId); }}
         onError={() => setError(true)}
         onLoadedMetadata={() => { if (audioRef.current) setTotalDuration(audioRef.current.duration || duration || 0); }}
         onTimeUpdate={() => { if (!dragging.current && audioRef.current) setCurrentTime(audioRef.current.currentTime); }}
@@ -322,30 +360,24 @@ function VoicePlayer({ url, duration, mine, t, msgId, onEnded, autoPlayToken, is
       <div onClick={toggle} style={{ width: 30, height: 30, borderRadius: "50%", background: mine ? "rgba(255,255,255,0.25)" : t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
         {playing ? <Pause size={14} color={mine ? t.bubbleMeText : t.primary} /> : <Play size={14} color={mine ? t.bubbleMeText : t.primary} />}
       </div>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 2, height: 18 }}>
-          {bars.map((h, i) => (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+        <div
+          onPointerDown={onBarPointerDown(barRef)}
+          style={{ display: "flex", alignItems: "center", gap: 1.5, height: 26, cursor: "pointer", touchAction: "none" }}
+        >
+          {heights.map((h, i) => (
             <div key={i} style={{
-              width: 2.5, borderRadius: 2,
-              height: playing ? undefined : h,
-              minHeight: playing ? 4 : undefined,
-              background: mine ? "rgba(255,255,255,0.55)" : (t.textMuted + "99"),
-              ...(playing ? {
-                animation: `nextext-voice-bar 0.${4 + (i % 5)}s ease-in-out ${i * 0.04}s infinite alternate`,
-              } : {}),
+              flex: 1, height: `${Math.max(8, h * 100)}%`, minHeight: 4, borderRadius: 2,
+              background: (i / waveBarCount) <= progress ? playedColor : idleColor,
+              transition: "background 0.08s linear",
             }} />
           ))}
         </div>
-        <div
-          ref={barRef}
-          onPointerDown={onBarPointerDown}
-          style={{ position: "relative", height: 6, borderRadius: 3, background: mine ? "rgba(255,255,255,0.2)" : t.border, cursor: "pointer", touchAction: "none" }}
-        >
-          <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: `${progress * 100}%`, borderRadius: 3, background: mine ? "rgba(255,255,255,0.6)" : t.primary, transition: dragging.current ? "none" : "width 0.1s linear" }} />
-          <div style={{ position: "absolute", top: -4, left: `calc(${progress * 100}% - 5px)`, width: 10, height: 10, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.3)", pointerEvents: "none" }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 9.5, opacity: 0.65 }}>
+          <span>{error ? "⚠ play error" : formatTime(currentTime)}</span>
+          <span>{error ? "" : formatTime(totalDuration || duration || 0)}</span>
         </div>
       </div>
-      <span style={{ fontSize: 10, opacity: 0.65, flexShrink: 0, minWidth: 30, textAlign: "right" }}>{error ? "⚠" : formatTime(currentTime)}</span>
     </div>
   );
 }
@@ -499,6 +531,8 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const recordingNativeRef = useRef(false);
   const recordHoldStartRef = useRef(null);
   const recordHoldCancelRef = useRef(false);
+  const recordingRef = useRef(false);
+  const recordingHoldRef = useRef(false);
   const voiceHeartbeatRef = useRef(null);
   const voiceSessionTokenRef = useRef(0);
   const wallpaperInputRef = useRef(null);
@@ -1113,6 +1147,8 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     setRecordSeconds(0);
     recordHoldStartRef.current = null;
     recordHoldCancelRef.current = false;
+    recordingRef.current = false;
+    recordingHoldRef.current = false;
   };
 
   const stopVoiceRecording = async (send) => {
@@ -1216,10 +1252,12 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   // ── Hold-to-record / tap-to-record gesture handling on the mic button ──
   const micPointerDown = (e) => {
     e.preventDefault();
-    if (recording) return;
+    if (recordingRef.current) return;
     try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch {}
     recordHoldStartRef.current = { x: e.clientX, y: e.clientY, t: Date.now() };
     recordHoldCancelRef.current = false;
+    recordingRef.current = true;
+    recordingHoldRef.current = true;
     setRecordingHold(true);
     setRecordingSlideCancel(false);
     startVoiceRecording();
@@ -1227,7 +1265,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
 
   const micPointerMove = (e) => {
     const start = recordHoldStartRef.current;
-    if (!start || !recordingHold) return;
+    if (!start || !recordingHoldRef.current) return;
     const dx = e.clientX - start.x;
     if (dx < -70) {
       recordHoldCancelRef.current = true;
@@ -1240,9 +1278,10 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
 
   const micPointerUp = () => {
     const start = recordHoldStartRef.current;
-    const wasHolding = recordingHold;
+    const wasHolding = recordingHoldRef.current;
     const heldMs = start ? Date.now() - start.t : 0;
     recordHoldStartRef.current = null;
+    recordingHoldRef.current = false;
     setRecordingHold(false);
     setRecordingSlideCancel(false);
     if (!wasHolding) return;
@@ -1261,7 +1300,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   };
 
   const handleBack = () => {
-    if (recording) {
+    if (recordingRef.current) {
       clearInterval(recordTimerRef.current);
       stopVoiceHeartbeat();
       if (recordingNativeRef.current) {
@@ -1666,7 +1705,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         </div>
       )}
 
-      <div ref={composerBarRef} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 10px", paddingBottom: "calc(10px + var(--safe-bottom))", background: t.bg, position: "relative", flexShrink: 0 }}>
+      <div ref={composerBarRef} style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 8px", paddingBottom: "calc(10px + var(--safe-bottom))", background: t.bg, position: "relative", flexShrink: 0, minWidth: 0 }}>
         {isBlockedByMe ? (
           <div style={{ flex: 1, textAlign: "center", padding: "12px", color: t.textMuted, fontSize: 13 }}>
             You've blocked this contact — unblock from their profile to send messages.
@@ -1747,7 +1786,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
             )}
             <input ref={photoInputRef} type="file" accept="image/*,video/*" style={{ display: "none" }} onChange={handlePhotoOrVideoPick} onCancel={() => setGalleryActive(false)} />
             <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={handleFilePick} />
-            <div style={{ flex: 1, display: "flex", alignItems: "center", background: t.surface, borderRadius: 24, padding: `${Math.round(8 * composerHeight)}px 6px ${Math.round(8 * composerHeight)}px 10px`, gap: 2 }}>
+            <div style={{ flex: 1, display: "flex", alignItems: "center", background: t.surface, borderRadius: 24, padding: `${Math.round(8 * composerHeight)}px 6px ${Math.round(8 * composerHeight)}px 10px`, gap: 2, minWidth: 0 }}>
               <div
                 onClick={() => { if (showEmojiPicker) setShowEmojiPicker(false); else { closeAttach(); setShowEmojiPicker(true); } }}
                 style={{ width: Math.max(30, Math.round(32 * composerHeight)), height: Math.max(30, Math.round(32 * composerHeight)), borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, background: showEmojiPicker ? t.primaryLight : "transparent" }}
@@ -1767,7 +1806,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); editingMsg ? saveEdit() : send(); } }}
                 placeholder={editingMsg ? "Edit message…" : "Message"}
                 rows={1}
-                style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: Math.max(14, Math.round(16.5 * composerHeight * 10) / 10), color: t.text, resize: "none", maxHeight: Math.round((42 + composerHeight * 42) * composerHeight), lineHeight: 1.4, paddingTop: Math.round(7 * composerHeight), paddingBottom: Math.round(7 * composerHeight), fontFamily: "inherit" }}
+                style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: Math.max(14, Math.round(16.5 * composerHeight * 10) / 10), color: t.text, resize: "none", maxHeight: Math.round((42 + composerHeight * 42) * composerHeight), lineHeight: 1.4, paddingTop: Math.round(7 * composerHeight), paddingBottom: Math.round(7 * composerHeight), fontFamily: "inherit", minWidth: 0 }}
               />
               <div
                 onClick={() => { if (showAttach) closeAttach(); else { setShowEmojiPicker(false); openAttach(); } }}

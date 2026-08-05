@@ -1,7 +1,7 @@
 import React from "react";
-import { Download, X, Sparkles } from "lucide-react";
+import { Download, X, Sparkles, Save } from "lucide-react";
 
-export default function UpdatePrompt({ update, onDownload, onDismiss, downloading }) {
+export default function UpdatePrompt({ update, onDownload, onDismiss, downloading, saving, onSaveToDevice }) {
   if (!update) return null;
 
   const changelogLines = update.body
@@ -100,56 +100,82 @@ export default function UpdatePrompt({ update, onDownload, onDismiss, downloadin
                 color: "rgba(255,255,255,0.8)",
                 lineHeight: 1.6,
                 marginBottom: 4,
-                paddingLeft: line.startsWith("-") || line.startsWith("*") || line.startsWith("•") ? 0 : 0,
               }}
             >
               {line}
             </div>
           ))}
+          {saving && (
+            <div style={{ fontSize: 12.5, color: "#4FC3E8", fontWeight: 600, marginTop: 10, textAlign: "center" }}>
+              Saving APK to your Downloads folder…
+            </div>
+          )}
         </div>
 
         <div
           style={{
             padding: "14px 18px 18px",
             display: "flex",
+            flexDirection: "column",
             gap: 10,
             borderTop: "1px solid rgba(255,255,255,0.08)",
           }}
         >
           <div
-            onClick={onDismiss}
+            onClick={downloading || saving ? undefined : onSaveToDevice}
             style={{
-              flex: 1,
-              padding: "12px 0",
+              padding: "11px 0",
               textAlign: "center",
-              fontSize: 14,
+              fontSize: 13.5,
               fontWeight: 600,
-              color: "rgba(255,255,255,0.5)",
-              cursor: "pointer",
-              border: "1px solid rgba(255,255,255,0.1)",
-            }}
-          >
-            Do It Later
-          </div>
-          <div
-            onClick={downloading ? undefined : onDownload}
-            style={{
-              flex: 1.5,
-              padding: "12px 0",
-              textAlign: "center",
-              fontSize: 14,
-              fontWeight: 700,
-              color: "#fff",
-              background: downloading ? "rgba(255,255,255,0.12)" : "linear-gradient(135deg, #10B981, #059669)",
-              cursor: downloading ? "default" : "pointer",
+              color: "rgba(255,255,255,0.75)",
+              cursor: downloading || saving ? "default" : "pointer",
+              border: "1px solid rgba(255,255,255,0.15)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               gap: 6,
             }}
           >
-            <Download size={15} color="#fff" />
-            {downloading ? "Downloading…" : "Download Now"}
+            <Save size={14} color="rgba(255,255,255,0.6)" />
+            {saving ? "Saving…" : "Save APK to device"}
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <div
+              onClick={onDismiss}
+              style={{
+                flex: 1,
+                padding: "12px 0",
+                textAlign: "center",
+                fontSize: 14,
+                fontWeight: 600,
+                color: "rgba(255,255,255,0.5)",
+                cursor: "pointer",
+                border: "1px solid rgba(255,255,255,0.1)",
+              }}
+            >
+              Do It Later
+            </div>
+            <div
+              onClick={downloading ? undefined : onDownload}
+              style={{
+                flex: 1.5,
+                padding: "12px 0",
+                textAlign: "center",
+                fontSize: 14,
+                fontWeight: 700,
+                color: "#fff",
+                background: downloading ? "rgba(255,255,255,0.12)" : "linear-gradient(135deg, #10B981, #059669)",
+                cursor: downloading ? "default" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+              }}
+            >
+              <Download size={15} color="#fff" />
+              {downloading ? "Downloading…" : "Update Now"}
+            </div>
           </div>
         </div>
       </div>

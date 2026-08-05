@@ -34,7 +34,8 @@ import { App as CapApp } from "@capacitor/app";
 import PermissionsScreen from "./screens/PermissionsScreen";
 import UpdatePrompt from "./components/UpdatePrompt";
 import PageErrorBoundary from "./components/PageErrorBoundary";
-import { checkForUpdate, downloadUpdate, getCurrentVersion, openDownloadUrl, setLastSeenRelease } from "./updater/updateChecker";
+import { checkForUpdate, downloadUpdate, getCurrentVersion, getLastSeenRelease, openDownloadUrl, saveApkToDevice, setLastSeenRelease } from "./updater/updateChecker";
+import { PING_SOUNDS } from "./utils/pingSounds";
 import { updateGlobalSettings, useGlobalSettings } from "./firebase/config-settings";
 import { useSystemInsets } from "./utils/useSystemInsets";
 import { changeNames, isNameChangeBlocked, isUsernameAvailable } from "./firebase/names";
@@ -278,6 +279,9 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   const [pinchZoomOn, setPinchZoomOn] = useState(() => localStorage.getItem("nextext_pinch_zoom") !== "false");
   const [voicePingsOn, setVoicePingsOn] = useState(() => localStorage.getItem("nextext_voice_pings") !== "off");
   const [swipeAnimationOn, setSwipeAnimationOn] = useState(() => localStorage.getItem("nextext_swipe_animation") !== "off");
+  const [pingSoundId, setPingSoundId] = useState(() => { try { return localStorage.getItem("nextext_voice_ping_sound") || "classic"; } catch { return "classic"; } });
+  const [swipeSpeed, setSwipeSpeed] = useState(() => { try { return localStorage.getItem("nextext_swipe_speed") || "normal"; } catch { return "normal"; } });
+  const [autoUpdateCheckOn, setAutoUpdateCheckOn] = useState(() => localStorage.getItem("nextext_auto_update_check") !== "off");
   const sysConfig = useSystemConfigHook();
   const globalSettings = useGlobalSettings();
   const [aiRequestStatus, setAiRequestStatus] = useState("");
@@ -579,6 +583,10 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <input type="range" min="0.6" max="1.6" step="0.05" value={uiScale} onChange={(e) => setUiScale(Number(e.target.value))} style={{ flex: 1, accentColor: t.primary }} />
               <span style={{ fontSize: 13, fontWeight: 700, color: t.primary, minWidth: 44 }}>{Math.round(uiScale * 100)}%</span>
+              <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, color: t.textMuted, cursor: "pointer" }}>
+                <input type="checkbox" checked={uiScale === 1} onChange={() => setUiScale(1)} style={{ accentColor: t.primary, width: 15, height: 15, cursor: "pointer" }} />
+                Default
+              </label>
             </div>
           </div>
 
@@ -589,6 +597,10 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <input type="range" min="0.6" max="1.6" step="0.05" value={chatTextScale} onChange={(e) => setChatTextScale(Number(e.target.value))} style={{ flex: 1, accentColor: t.primary }} />
               <span style={{ fontSize: 13, fontWeight: 700, color: t.primary, minWidth: 44 }}>{Math.round(chatTextScale * 100)}%</span>
+              <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, color: t.textMuted, cursor: "pointer" }}>
+                <input type="checkbox" checked={chatTextScale === 1} onChange={() => setChatTextScale(1)} style={{ accentColor: t.primary, width: 15, height: 15, cursor: "pointer" }} />
+                Default
+              </label>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
               <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: t.text }}>Pinch to zoom chat text</span>
@@ -600,11 +612,67 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
               <Toggle on={voicePingsOn} onClick={() => { const next = !voicePingsOn; setVoicePingsOn(next); localStorage.setItem("nextext_voice_pings", next ? "on" : "off"); }} />
             </div>
             {voicePingsOn && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>Play a short chime when a voice note finishes playing.</div>}
+            {voicePingsOn && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                {PING_SOUNDS.map((s) => (
+                  <div
+                    key={s.id}
+                    onClick={() => {
+                      setPingSoundId(s.id);
+                      localStorage.setItem("nextext_voice_ping_sound", s.id);
+                    }}
+                    style={{
+                      padding: "5px 10px",
+                      borderRadius: 14,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      background: pingSoundId === s.id ? t.primary : t.bg,
+                      color: pingSoundId === s.id ? t.bubbleMeText : t.text,
+                      border: `1px solid ${pingSoundId === s.id ? t.primary : t.border}`,
+                    }}
+                  >
+                    {s.label}
+                  </div>
+                ))}
+              </div>
+            )}
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
               <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: t.text }}>Page swipe animation</span>
               <Toggle on={swipeAnimationOn} onClick={() => { const next = !swipeAnimationOn; setSwipeAnimationOn(next); localStorage.setItem("nextext_swipe_animation", next ? "on" : "off"); }} />
             </div>
             {swipeAnimationOn && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>Slide animation when swiping between tabs.</div>}
+            {swipeAnimationOn && (
+              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                {[
+                  { id: "slow", label: "Slow" },
+                  { id: "normal", label: "Normal" },
+                  { id: "fast", label: "Fast" },
+                ].map((opt) => (
+                  <div
+                    key={opt.id}
+                    onClick={() => {
+                      setSwipeSpeed(opt.id);
+                      localStorage.setItem("nextext_swipe_speed", opt.id);
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: "7px 0",
+                      textAlign: "center",
+                      borderRadius: 8,
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      background: swipeSpeed === opt.id ? t.primary : t.bg,
+                      color: swipeSpeed === opt.id ? t.bubbleMeText : t.text,
+                      border: `1px solid ${swipeSpeed === opt.id ? t.primary : t.border}`,
+                    }}
+                  >
+                    {opt.label}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Message box height */}
@@ -614,6 +682,10 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <input type="range" min="0.6" max="2.5" step="0.05" value={composerHeight} onChange={(e) => setComposerHeight(Number(e.target.value))} style={{ flex: 1, accentColor: t.primary }} />
               <span style={{ fontSize: 13, fontWeight: 700, color: t.primary, minWidth: 44 }}>{composerHeight === 1 ? "Default" : `${Math.round(composerHeight * 100)}%`}</span>
+              <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, color: t.textMuted, cursor: "pointer" }}>
+                <input type="checkbox" checked={composerHeight === 1} onChange={() => setComposerHeight(1)} style={{ accentColor: t.primary, width: 15, height: 15, cursor: "pointer" }} />
+                Default
+              </label>
             </div>
           </div>
 
@@ -747,6 +819,11 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
             {updateStatus && (
               <div style={{ fontSize: 12.5, color: updateStatus.includes("up to date") ? t.primary : "#FF3B30", fontWeight: 600, marginTop: 6, textAlign: "center" }}>{updateStatus}</div>
             )}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: t.text }}>Notify me about app updates</span>
+              <Toggle on={autoUpdateCheckOn} onClick={() => { const next = !autoUpdateCheckOn; setAutoUpdateCheckOn(next); localStorage.setItem("nextext_auto_update_check", next ? "on" : "off"); }} />
+            </div>
+            <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>Automatically check for a new version each time you open the app.</div>
             <div style={{ fontSize: 11, color: t.textMuted, marginTop: 8, textAlign: "center" }}>NexText v{getCurrentVersion()}</div>
           </div>
 
@@ -893,6 +970,7 @@ function AppShell({ appLocked, setAppLocked }) {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState("");
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
+  const [savingUpdate, setSavingUpdate] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
   const [pagerDragging, setPagerDragging] = useState(false);
   const shellRef = useRef(null);
@@ -902,6 +980,18 @@ function AppShell({ appLocked, setAppLocked }) {
   const swipeAnimationEnabled = () => {
     try { return localStorage.getItem("nextext_swipe_animation") !== "off"; } catch { return true; }
   };
+
+  // Duration (ms) for the swipe snap animation, chosen by the Settings slider.
+  const swipeDuration = () => {
+    try {
+      const speed = localStorage.getItem("nextext_swipe_speed") || "normal";
+      if (speed === "slow") return 0.45;
+      if (speed === "fast") return 0.14;
+      return 0.28;
+    } catch { return 0.28; }
+  };
+
+  const swipeTransition = () => (swipeAnimationEnabled() ? `left ${swipeDuration()}s cubic-bezier(0.32, 0.72, 0, 1)` : "none");
 
   const myUid = auth.user?.uid;
   usePresenceHeartbeat(myUid);
@@ -977,10 +1067,13 @@ function AppShell({ appLocked, setAppLocked }) {
   }, [showSplash]);
 
   // Auto-check for app updates once after login (delayed 5s to not block load).
-  // On transient failure (network blip, GitHub rate limit on a shared mobile
-  // IP) retry a few times instead of silently treating it as "no update".
+  // Only runs when the "Notify me about app updates" setting is on, and skips
+  // versions the user has already seen/dismissed. On transient failure (network
+  // blip, GitHub rate limit on a shared mobile IP) retry a few times instead of
+  // silently treating it as "no update".
   useEffect(() => {
     if (!myUid) return;
+    if (localStorage.getItem("nextext_auto_update_check") === "off") return;
     let cancelled = false;
     let attempt = 0;
     const run = async () => {
@@ -988,7 +1081,7 @@ function AppShell({ appLocked, setAppLocked }) {
       try {
         const update = await checkForUpdate();
         if (cancelled) return;
-        if (update) {
+        if (update && getLastSeenRelease() !== update.version) {
           setPendingUpdate(update);
           setShowUpdatePrompt(true);
         }
@@ -1041,6 +1134,22 @@ function AppShell({ appLocked, setAppLocked }) {
   const handleDismissUpdate = () => {
     if (pendingUpdate?.version) setLastSeenRelease(pendingUpdate.version);
     setShowUpdatePrompt(false);
+  };
+
+  const handleSaveApkToDevice = async () => {
+    const url = pendingUpdate?.downloadUrl;
+    if (!url) return;
+    setSavingUpdate(true);
+    try {
+      await saveApkToDevice(url);
+      if (pendingUpdate?.version) setLastSeenRelease(pendingUpdate.version);
+    } catch (err) {
+      setUpdateStatus("Couldn't save the APK: " + (err?.message || "unknown error"));
+      setTimeout(() => setUpdateStatus(""), 4000);
+    } finally {
+      setShowUpdatePrompt(false);
+      setSavingUpdate(false);
+    }
   };
 
   useEffect(() => { localStorage.setItem(UI_SCALE_KEY, String(uiScale)); }, [uiScale]);
@@ -1214,7 +1323,7 @@ function AppShell({ appLocked, setAppLocked }) {
       if (el) {
         // Snap each page into place, then let React own the left after the
         // next render (pageIndex will match `target`).
-        el.style.transition = swipeAnimationEnabled() ? "left 0.28s cubic-bezier(0.32, 0.72, 0, 1)" : "none";
+        el.style.transition = swipeTransition();
         el.style.left = `${(i - target) * 100}%`;
       }
     });
@@ -1290,7 +1399,7 @@ function AppShell({ appLocked, setAppLocked }) {
             position: "absolute", top: 0, bottom: 0, width: "100%",
             overflow: "hidden",
             left: `${(idx - pageIndex) * 100}%`,
-            transition: pagerDragging ? "none" : (swipeAnimationEnabled() ? "left 0.28s cubic-bezier(0.32, 0.72, 0, 1)" : "none"),
+            transition: pagerDragging ? "none" : swipeTransition(),
           };
           const pageRef = (el) => { pageRefs.current[key] = el; };
           if (key === "chats") return (
@@ -1479,6 +1588,8 @@ function AppShell({ appLocked, setAppLocked }) {
           onDownload={handleDownloadUpdate}
           onDismiss={handleDismissUpdate}
           downloading={downloadingUpdate}
+          saving={savingUpdate}
+          onSaveToDevice={handleSaveApkToDevice}
         />
       )}
     </div>

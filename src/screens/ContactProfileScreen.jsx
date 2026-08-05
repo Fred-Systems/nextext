@@ -177,7 +177,7 @@ export default function ContactProfileScreen({ myUid, otherUid, contact, onBack,
         </div>,
         document.body
       )}
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: isAIContact ? "linear-gradient(135deg, #7C5CFF, #53BDEB)" : t.primary, flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: isAIContact ? "linear-gradient(135deg, #7C5CFF, #53BDEB)" : "#111B21", flexShrink: 0 }}>
         <ChevronLeft size={22} color="#fff" onClick={safeBack} style={{ cursor: "pointer" }} />
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>{isAIContact ? "AI Profile" : "Contact Info"}</span>
       </div>
