@@ -52,6 +52,50 @@ public class NextextNativePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void testMicrophone(final PluginCall call) {
+        // Runs a real native AudioRecord/MediaRecorder probe off the UI thread.
+        // If this succeeds while the WebView's getUserMedia throws
+        // NotReadableError, the problem is the WebView media path (fix: record
+        // natively). If this also fails, the OS-level mic is busy/unavailable.
+        new Thread(() -> {
+            JSObject ret = new JSObject();
+            ret.put("osGranted", micGranted());
+            if (!micGranted()) {
+                ret.put("works", false);
+                ret.put("reason", "os_permission_not_granted");
+                call.resolve(ret);
+                return;
+            }
+            android.media.MediaRecorder recorder = null;
+            try {
+                String file = getContext().getCacheDir() + "/nextext_mic_probe.m4a";
+                recorder = new android.media.MediaRecorder();
+                recorder.setAudioSource(android.media.MediaRecorder.AudioSource.MIC);
+                recorder.setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4);
+                recorder.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC);
+                recorder.setAudioEncodingBitRate(128000);
+                recorder.setAudioSamplingRate(44100);
+                recorder.setOutputFile(file);
+                recorder.prepare();
+                recorder.start();
+                Thread.sleep(300);
+                recorder.stop();
+                recorder.release();
+                recorder = null;
+                ret.put("works", true);
+            } catch (Exception e) {
+                ret.put("works", false);
+                ret.put("reason", String.valueOf(e));
+            } finally {
+                if (recorder != null) {
+                    try { recorder.release(); } catch (Exception ignored) {}
+                }
+            }
+            call.resolve(ret);
+        }).start();
+    }
+
+    @PluginMethod
     public void getCameraPermission(PluginCall call) {
         JSObject ret = new JSObject();
         ret.put("granted", camGranted());

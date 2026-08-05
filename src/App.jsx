@@ -10,6 +10,7 @@ import { setGlobalWallpaper, fileToWallpaperDataUrl } from "./theme/wallpaper";
 import { ChevronLeft, Palette, Shield, Lock, MessageSquare, X, ShieldCheck, Phone, Image as ImageIcon, Users, CircleDot, RotateCcw, Camera, Settings as SettingsIcon, Bot, Sparkles, RefreshCw, Search, User } from "lucide-react";
 import { FONTS } from "./theme/ThemeContext";
 import Avatar from "./components/Avatar";
+import AvatarColorPicker from "./components/AvatarColorPicker";
 import { uploadChatFile } from "./supabase/media";
 import { doc, updateDoc, onSnapshot } from "firebase/firestore";
 import { db } from "./firebase/config";
@@ -266,13 +267,14 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   const profilePhotoRef = useRef(null);
   const [wallpaperSaved, setWallpaperSaved] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [avatarNonce, setAvatarNonce] = useState(0);
   const [lockedChatsPassSaved, setLockedChatsPassSaved] = useState(false);
   const lockedChatsPassRef = useRef(null);
   const [appLockEnabled, setAppLockEnabled] = useState(() => localStorage.getItem("nextext_app_lock") === "true" || (localStorage.getItem("nextext_app_lock") === "pending" && !!localStorage.getItem("nextext_app_lock_pass")));
   const [appLockPassSaved, setAppLockPassSaved] = useState(() => !!localStorage.getItem("nextext_app_lock_pass"));
   const appLockPassRef = useRef(null);
   const [linkPreviewsOn, setLinkPreviewsOn] = useState(() => localStorage.getItem("nextext_link_previews") !== "off");
-  const [pinchZoomOn, setPinchZoomOn] = useState(() => localStorage.getItem("nextext_pinch_zoom") === "true");
+  const [pinchZoomOn, setPinchZoomOn] = useState(() => localStorage.getItem("nextext_pinch_zoom") !== "false");
   const sysConfig = useSystemConfigHook();
   const globalSettings = useGlobalSettings();
   const [aiRequestStatus, setAiRequestStatus] = useState("");
@@ -341,7 +343,10 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
     </div>
   );
 
-  const SectionCard = ({ title, emoji, children, sectionKey }) => {
+  // Memoized so its identity stays stable across App re-renders — defining it
+  // inline would unmount/remount every card (losing input focus) on any state
+  // change, e.g. the admin tech-stack editor's first keystroke.
+  const SectionCard = useMemo(() => ({ title, emoji, children, sectionKey }) => {
     const isOpen = sectionKey ? (openSections?.[sectionKey] ?? false) : true;
     return (
       <div style={{ marginBottom: 18 }}>
@@ -357,7 +362,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
         )}
       </div>
     );
-  };
+  }, [t, openSections]);
 
   // ── Bottom bar customizer helpers ──
   const ALL_TABS = [
@@ -415,7 +420,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
         <SectionCard title="Account & Profile" emoji="👤" sectionKey="account">
           <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 0", cursor: "pointer" }} onClick={() => profilePhotoRef.current?.click()}>
             <input ref={profilePhotoRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleProfilePhoto} />
-            <Avatar photoURL={userDoc?.photoURL} name={userDoc?.username || userDoc?.displayName} uid={myUid} size={52} />
+            <Avatar key={avatarNonce} photoURL={userDoc?.photoURL} name={userDoc?.username || userDoc?.displayName} uid={myUid} size={52} />
             <div>
               <div style={{ fontWeight: 600, color: t.text, fontSize: 15 }}>{userDoc?.displayName || userDoc?.username || "Your name"}</div>
               <div style={{ fontSize: 12.5, color: t.textMuted, marginTop: 1, display: "flex", alignItems: "center", gap: 4 }}>
@@ -424,6 +429,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
               </div>
             </div>
           </div>
+          <AvatarColorPicker uid={myUid} onChange={() => setAvatarNonce((n) => n + 1)} />
           <NameSetting myUid={myUid} userDoc={userDoc} globalSettings={globalSettings} />
           <PhoneNumberSetting myUid={myUid} />
         </SectionCard>
@@ -872,7 +878,11 @@ function AppShell({ appLocked, setAppLocked }) {
   const [showUpdatePrompt, setShowUpdatePrompt] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState("");
-  const swipeStartRef = useRef({ x: 0, y: 0 });
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pagerDragging, setPagerDragging] = useState(false);
+  const [mountedPages, setMountedPages] = useState(() => new Set());
+  const pagerTrackRef = useRef(null);
+  const pagerDragRef = useRef(null);
 
   const myUid = auth.user?.uid;
   usePresenceHeartbeat(myUid);
@@ -1074,6 +1084,147 @@ function AppShell({ appLocked, setAppLocked }) {
     setScreen("contactProfile");
   };
 
+  // ── Swipeable tab pager (WhatsApp-style drag + snap) ──────────────
+  const TAB_KEYS = ["chats", "status", "groups", "settings"];
+  const orderedTabs = navConfig
+    .filter(({ key }) => {
+      if (key === "status" && userRestrictions?.blockStatus === true) return false;
+      if (key === "groups" && userRestrictions?.blockGroups === true) return false;
+      return TAB_KEYS.includes(key);
+    })
+    .map(({ key }) => key);
+  if (!topBarVisible && !orderedTabs.includes("settings")) orderedTabs.push("settings");
+  if (!orderedTabs.includes("chats")) orderedTabs.unshift("chats");
+
+  const currentTabKey = screen === "status" ? "status"
+    : screen === "settings" ? "settings"
+    : screen === "list" ? activeNavTab
+    : null;
+  const currentTabIndex = currentTabKey ? Math.max(0, orderedTabs.indexOf(currentTabKey)) : -1;
+
+  const mountPage = (idx) => {
+    setMountedPages((prev) => {
+      if (prev.has(idx)) return prev;
+      const next = new Set(prev);
+      next.add(idx);
+      return next;
+    });
+  };
+
+  // Sync the pager position whenever the active tab changes via bottom bar,
+  // top-bar buttons, or programmatic navigation (e.g. opening a status).
+  const prevTabsKeyRef = useRef(orderedTabs.join(","));
+  useEffect(() => {
+    const tabsKey = orderedTabs.join(",");
+    if (prevTabsKeyRef.current !== tabsKey) {
+      // Nav config changed — prune stale page mounts to avoid index drift.
+      prevTabsKeyRef.current = tabsKey;
+      if (currentTabIndex !== -1) setMountedPages(new Set([currentTabIndex]));
+    }
+    if (currentTabIndex === -1) return;
+    mountPage(currentTabIndex);
+    if (!pagerDragRef.current?.active) setPageIndex(currentTabIndex);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTabKey, screen, orderedTabs.join(",")]);
+
+  const navigateToTab = (key) => {
+    const idx = orderedTabs.indexOf(key);
+    if (idx === -1) return;
+    mountPage(idx);
+    setPageIndex(idx);
+    if (key === "status") { setStatusOrigin("status"); setScreen("status"); }
+    else if (key === "settings") setScreen("settings");
+    else { setActiveNavTab(key); setScreen("list"); }
+  };
+
+  const pagerTouchStart = (e) => {
+    if (screen !== "list" && screen !== "status" && screen !== "settings") return;
+    if (storyViewerOpen) return;
+    const track = pagerTrackRef.current;
+    if (!track) return;
+    const width = track.clientWidth || 1;
+    pagerDragRef.current = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      startIndex: Math.max(0, currentTabIndex),
+      offset: 0,
+      width,
+      active: false,
+      lastX: e.touches[0].clientX,
+      lastT: performance.now(),
+      velocity: 0,
+    };
+  };
+
+  const pagerTouchMove = (e) => {
+    const drag = pagerDragRef.current;
+    if (!drag) return;
+    const dx = e.touches[0].clientX - drag.startX;
+    const dy = e.touches[0].clientY - drag.startY;
+    if (!drag.active) {
+      if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return; // too early to tell
+      if (Math.abs(dy) > Math.abs(dx) || Math.abs(dx) < 12) {
+        // Vertical scroll — hand it back to the scroller.
+        pagerDragRef.current = null;
+        return;
+      }
+      drag.active = true;
+      setPagerDragging(true);
+    }
+    const now = performance.now();
+    const dt = Math.max(1, now - drag.lastT);
+    drag.velocity = (e.touches[0].clientX - drag.lastX) / dt;
+    drag.lastX = e.touches[0].clientX;
+    drag.lastT = now;
+    let offset = dx;
+    const len = orderedTabs.length;
+    if (drag.startIndex === 0 && offset > 0) offset *= 0.35; // edge resistance
+    if (drag.startIndex === len - 1 && offset < 0) offset *= 0.35;
+    drag.offset = offset;
+    const targetIdx = offset < 0 ? drag.startIndex + 1 : drag.startIndex - 1;
+    if (targetIdx >= 0 && targetIdx < len) mountPage(targetIdx);
+    const track = pagerTrackRef.current;
+    if (track) {
+      track.style.transition = "none";
+      track.style.transform = `translateX(${-drag.startIndex * drag.width + offset}px)`;
+    }
+    if (e.cancelable) e.preventDefault();
+  };
+
+  const pagerTouchEnd = () => {
+    const drag = pagerDragRef.current;
+    pagerDragRef.current = null;
+    if (!drag || !drag.active) return;
+    const len = orderedTabs.length;
+    const threshold = drag.width * 0.2;
+    let target = drag.startIndex;
+    if (drag.offset < -threshold || drag.velocity < -0.4) target = Math.min(drag.startIndex + 1, len - 1);
+    else if (drag.offset > threshold || drag.velocity > 0.4) target = Math.max(drag.startIndex - 1, 0);
+    const track = pagerTrackRef.current;
+    if (track) {
+      // Force the snap even if the React style prop is unchanged (same page).
+      track.style.transition = "transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)";
+      track.style.transform = `translateX(-${target * 100}%)`;
+    }
+    if (target !== drag.startIndex) {
+      const key = orderedTabs[target];
+      if (key) {
+        mountPage(target);
+        setPageIndex(target);
+        if (key === "status") { setStatusOrigin("status"); setScreen("status"); }
+        else if (key === "settings") setScreen("settings");
+        else { setActiveNavTab(key); setScreen("list"); }
+      }
+    }
+    setPagerDragging(false);
+  };
+
+  const pagerTouchCancel = () => {
+    const drag = pagerDragRef.current;
+    pagerDragRef.current = null;
+    if (drag?.active) setPagerDragging(false);
+  };
+
   const containerStyle = {
     position: "absolute", inset: 0,
     overflow: "hidden",
@@ -1107,33 +1258,76 @@ function AppShell({ appLocked, setAppLocked }) {
     <div
       id="nextext-app-shell"
       style={{ ...containerStyle }}
-      onTouchStart={(e) => { swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, onChatRow: !!e.target.closest?.(".nextext-chat-row") }; }}
-      onTouchEnd={(e) => {
-        if ((screen !== "list" && screen !== "status") || storyViewerOpen) return;
-        const start = swipeStartRef.current;
-        // Horizontal swipes that start on a chat row belong to the row's own
-        // Lock/Archive/Delete gesture — never hijack those for tab switching.
-        if (!start || start.onChatRow) return;
-        const dx = e.changedTouches[0].clientX - start.x;
-        const dy = e.changedTouches[0].clientY - start.y;
-        if (Math.abs(dx) <= Math.abs(dy) || Math.abs(dx) <= 60) return;
-        const swipeTabs = navConfig.filter((n) => {
-          if (n.key === "status" && userRestrictions?.blockStatus === true) return false;
-          if (n.key === "groups" && userRestrictions?.blockGroups === true) return false;
-          return n.key === "chats" || n.key === "status" || n.key === "groups";
-        }).map((n) => n.key);
-        if (swipeTabs.length < 2) return;
-        const currentKey = screen === "status" ? "status" : activeNavTab;
-        const currentIdx = swipeTabs.indexOf(currentKey);
-        if (currentIdx === -1) return;
-        const next = dx < 0
-          ? swipeTabs[Math.min(currentIdx + 1, swipeTabs.length - 1)]
-          : swipeTabs[Math.max(currentIdx - 1, 0)];
-        if (next === "status") { setStatusOrigin("status"); setScreen("status"); }
-        else { setActiveNavTab(next); setScreen("list"); }
-      }}
+      onTouchStart={pagerTouchStart}
+      onTouchMove={pagerTouchMove}
+      onTouchEnd={pagerTouchEnd}
+      onTouchCancel={pagerTouchCancel}
     >
-      <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab={activeNavTab} compactList={compactList} searchMode={searchMode} topBarVisible={topBarVisible} />
+      <div
+        ref={pagerTrackRef}
+        style={{
+          position: "absolute", inset: 0, zIndex: 0, isolation: "isolate",
+          display: "flex", overflow: "hidden",
+          transform: `translateX(-${pageIndex * 100}%)`,
+          transition: pagerDragging ? "none" : "transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)",
+        }}
+      >
+        {orderedTabs.map((key, idx) => {
+          if (!mountedPages.has(idx)) return null;
+          const pageStyle = { position: "relative", width: "100%", height: "100%", flex: "0 0 100%", overflow: "hidden" };
+          if (key === "chats") return (
+            <div key="chats" style={pageStyle}>
+              <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab="chats" compactList={compactList} searchMode={searchMode} topBarVisible={topBarVisible} />
+            </div>
+          );
+          if (key === "groups") return (
+            <div key="groups" style={pageStyle}>
+              <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab="groups" compactList={compactList} searchMode={searchMode} topBarVisible={topBarVisible} />
+            </div>
+          );
+          if (key === "status") return (
+            <div key="status" style={pageStyle}>
+              <StatusScreen myUid={myUid} myName={auth.userDoc?.displayName || auth.userDoc?.username} onBack={() => { setScreen("list"); setActiveNavTab("chats"); setStoryViewerOpen(false); }} onStoryViewerChange={setStoryViewerOpen} initialViewStatuses={initialViewStatuses} statusOrigin={statusOrigin} />
+            </div>
+          );
+          if (key === "settings") return (
+            <div key="settings" style={pageStyle}>
+              <SettingsScreen
+                myUid={myUid}
+                isAdmin={isAdmin}
+                themeKey={themeKey}
+                onOpenTheme={() => setShowThemeSheet(true)}
+                uiScale={uiScale}
+                setUiScale={setUiScale}
+                showScrollDown={showScrollDown}
+                setShowScrollDown={setShowScrollDown}
+                animatedScrollEntry={animatedScrollEntry}
+                setAnimatedScrollEntry={setAnimatedScrollEntry}
+                compactList={compactList}
+                setCompactList={setCompactList}
+                onBack={() => setScreen("list")}
+                onNavigate={setScreen}
+                onLogout={() => auth.logOut()}
+                userDoc={liveUserDoc || auth.userDoc}
+                navConfig={navConfig}
+                setNavConfig={setNavConfig}
+                aiSidebarOn={aiSidebarOn}
+                setAiSidebarOn={setAiSidebarOn}
+                showSplash={showSplash}
+                setShowSplash={setShowSplash}
+                searchMode={searchMode}
+                setSearchMode={setSearchMode}
+                topBarVisible={topBarVisible}
+                setTopBarVisible={setTopBarVisible}
+                onCheckUpdate={handleManualUpdateCheck}
+                checkingUpdate={checkingUpdate}
+                updateStatus={updateStatus}
+              />
+            </div>
+          );
+          return null;
+        })}
+      </div>
 
       {screen === "chat" && activeChat && (
         <ConversationScreen
@@ -1161,9 +1355,6 @@ function AppShell({ appLocked, setAppLocked }) {
           onOpenStatus={() => setScreen("status")}
         />
       )}
-      {screen === "status" && (
-        <StatusScreen myUid={myUid} myName={auth.userDoc?.displayName || auth.userDoc?.username} onBack={() => { setScreen("list"); setActiveNavTab("chats"); setStoryViewerOpen(false); }} onStoryViewerChange={setStoryViewerOpen} initialViewStatuses={initialViewStatuses} statusOrigin={statusOrigin} />
-      )}
       {screen === "groupInfo" && activeGroup && (
         <GroupInfoScreen
           myUid={myUid}
@@ -1171,39 +1362,6 @@ function AppShell({ appLocked, setAppLocked }) {
           onBack={() => setScreen("list")}
           onOpenChat={openChat}
           onOpenContactProfile={openContactProfile}
-        />
-      )}
-      {screen === "settings" && (
-        <SettingsScreen
-          myUid={myUid}
-          isAdmin={isAdmin}
-          themeKey={themeKey}
-          onOpenTheme={() => setShowThemeSheet(true)}
-          uiScale={uiScale}
-          setUiScale={setUiScale}
-          showScrollDown={showScrollDown}
-          setShowScrollDown={setShowScrollDown}
-          animatedScrollEntry={animatedScrollEntry}
-          setAnimatedScrollEntry={setAnimatedScrollEntry}
-          compactList={compactList}
-          setCompactList={setCompactList}
-          onBack={() => setScreen("list")}
-          onNavigate={setScreen}
-          onLogout={() => auth.logOut()}
-          userDoc={liveUserDoc || auth.userDoc}
-          navConfig={navConfig}
-          setNavConfig={setNavConfig}
-          aiSidebarOn={aiSidebarOn}
-          setAiSidebarOn={setAiSidebarOn}
-          showSplash={showSplash}
-          setShowSplash={setShowSplash}
-          searchMode={searchMode}
-          setSearchMode={setSearchMode}
-          topBarVisible={topBarVisible}
-          setTopBarVisible={setTopBarVisible}
-          onCheckUpdate={handleManualUpdateCheck}
-          checkingUpdate={checkingUpdate}
-          updateStatus={updateStatus}
         />
       )}
       {screen === "privacy" && <PrivacyScreen myUid={myUid} onBack={() => setScreen("settings")} />}
@@ -1249,7 +1407,7 @@ function AppShell({ appLocked, setAppLocked }) {
             {navTabs.map(({ key, icon: Icon, label }) => {
               const isActive = key === "settings" ? screen === "settings" : key === "status" ? screen === "status" : (screen === "list" && activeNavTab === key);
               return (
-              <div key={key} onClick={() => { if (key === "settings") setScreen("settings"); else if (key === "status") { setStatusOrigin("status"); setScreen("status"); } else { setActiveNavTab(key); setScreen("list"); } }} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "10px 0 12px", cursor: "pointer", color: isActive ? t.primary : t.textMuted, position: "relative" }}>
+              <div key={key} onClick={() => navigateToTab(key)} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "10px 0 12px", cursor: "pointer", color: isActive ? t.primary : t.textMuted, position: "relative" }}>
                 <div style={{ position: "relative" }}>
                   <Icon size={20} />
                   {key === "chats" && totalUnreadChats > 0 && (

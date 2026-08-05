@@ -69,7 +69,6 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
   const [acceptError, setAcceptError] = useState("");
   const [showSearch, setShowSearch] = useState(() => searchMode === "visible");
   const [searchQuery, setSearchQuery] = useState("");
-  const [swipedChatId, setSwipedChatId] = useState(null);
   const [contextMenuChat, setContextMenuChat] = useState(null);
   const [groupMenu, setGroupMenu] = useState(null);
   const [groupPictureFullscreen, setGroupPictureFullscreen] = useState(null);
@@ -85,8 +84,9 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
   const [newListName, setNewListName] = useState("");
   const globalCameraVideoRef = useRef(null);
   const globalCameraStreamRef = useRef(null);
-  const swipeRef = useRef({});
-  const longPressRef = useRef(null);
+  const longPressStartRef = useRef(null);
+  const longPressTimerRef = useRef(null);
+  const longPressFiredRef = useRef(false);
   const sysConfig = useSystemConfigHook();
 
   const acceptedContacts = contacts.filter((c) => c.status === "accepted");
@@ -276,37 +276,49 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
     return d.toLocaleDateString([], { month: "short", day: "numeric" });
   };
 
-  const handleTouchStart = useCallback((chat, e) => {
-    swipeRef.current[chat.id] = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, swiping: false };
-  }, []);
-
-  const handleTouchMove = useCallback((chat, e) => {
-    const ref = swipeRef.current[chat.id];
-    if (!ref) return;
-    const dx = e.touches[0].clientX - ref.startX;
-    const dy = e.touches[0].clientY - ref.startY;
-    if (Math.abs(dy) > 10) return;
-    if (dx < -20) {
-      ref.swiping = true;
-      setSwipedChatId(chat.id);
-    } else if (dx > 20) {
-      setSwipedChatId(null);
+  const clearLongPressTimer = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
     }
   }, []);
 
-  const handleTouchEnd = useCallback((chatId) => {
-    const ref = swipeRef.current[chatId];
-    if (ref && !ref.swiping && swipedChatId === chatId) {
-      // Tap outside — close
+  const handleRowTouchStart = useCallback((c, e) => {
+    const t0 = e.touches[0];
+    longPressStartRef.current = { x: t0.clientX, y: t0.clientY };
+    longPressFiredRef.current = false;
+    clearLongPressTimer();
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null;
+      longPressFiredRef.current = true;
+      setContextMenuChat(c);
+    }, 450);
+  }, [clearLongPressTimer]);
+
+  const handleRowTouchMove = useCallback((e) => {
+    const start = longPressStartRef.current;
+    if (!start) return;
+    const dx = e.touches[0].clientX - start.x;
+    const dy = e.touches[0].clientY - start.y;
+    if (Math.abs(dx) > 12 || Math.abs(dy) > 12) clearLongPressTimer();
+  }, [clearLongPressTimer]);
+
+  const handleRowTouchEnd = useCallback(() => {
+    clearLongPressTimer();
+    longPressStartRef.current = null;
+  }, [clearLongPressTimer]);
+
+  const handleRowClick = (c) => {
+    if (longPressFiredRef.current) {
+      longPressFiredRef.current = false;
+      return;
     }
-  }, [swipedChatId]);
+    openChatRow(c);
+  };
 
   const renderChatRow = (c) => {
     const otherUid = c.participants?.find((p) => p !== myUid);
     const otherContact = acceptedContacts.find((ac) => ac.uid === otherUid);
-    const isSwiped = swipedChatId === c.id;
-    const isLocked = c.lockedBy?.[myUid];
-    const isArchived = (c.archivedBy || []).includes(myUid);
     const avatarSize = compactList ? 40 : 52;
     const rowPadding = compactList ? "8px 16px" : "13px 16px";
     const nameSize = compactList ? 14.5 : 15.5;
@@ -316,12 +328,13 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
     return (
     <div key={c.id} style={{ position: "relative", overflow: "hidden", marginBottom: 1 }}>
       <div
-        onTouchStart={(e) => handleTouchStart(c, e)}
-        onTouchMove={(e) => handleTouchMove(c, e)}
-        onTouchEnd={() => handleTouchEnd(c.id)}
-        onClick={() => { if (!isSwiped) openChatRow(c); else setSwipedChatId(null); }}
+        onTouchStart={(e) => handleRowTouchStart(c, e)}
+        onTouchMove={handleRowTouchMove}
+        onTouchEnd={handleRowTouchEnd}
+        onTouchCancel={handleRowTouchEnd}
+        onClick={() => handleRowClick(c)}
         className="nextext-chat-row"
-        style={{ display: "flex", alignItems: "center", gap, padding: rowPadding, cursor: "pointer", background: t.bg, position: "relative", zIndex: 1, transform: isSwiped ? "translateX(-200px)" : "translateX(0)", transition: "transform 0.2s ease", touchAction: "pan-y" }}
+        style={{ display: "flex", alignItems: "center", gap, padding: rowPadding, cursor: "pointer", background: t.bg, position: "relative", zIndex: 1, touchAction: "pan-y" }}
       >
       {c.type === "group" ? (
         <div style={{ position: "relative", width: avatarSize, height: avatarSize, flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); setGroupMenu(c); }}>
@@ -381,17 +394,6 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
           )}
         </div>
       </div>
-      </div>
-      <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, display: "flex", alignItems: "stretch", zIndex: 0 }}>
-        <div onClick={(e) => { e.stopPropagation(); toggleLocked(c.id, myUid, isLocked); setSwipedChatId(null); }} style={{ width: 64, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: isLocked ? "#FF9500" : "#5856D6", color: "#fff", gap: 4, cursor: "pointer" }}>
-          <Lock size={18} /><span style={{ fontSize: 10, fontWeight: 600 }}>{isLocked ? "Unlock" : "Lock"}</span>
-        </div>
-        <div onClick={(e) => { e.stopPropagation(); toggleArchive(c.id, myUid, isArchived); setSwipedChatId(null); }} style={{ width: 64, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#FF9500", color: "#fff", gap: 4, cursor: "pointer" }}>
-          <Archive size={18} /><span style={{ fontSize: 10, fontWeight: 600 }}>{isArchived ? "Unarchive" : "Archive"}</span>
-        </div>
-        <div onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete this chat permanently?")) { deleteChatCompletely(c.id).catch(() => {}); } setSwipedChatId(null); }} style={{ width: 64, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#FF3B30", color: "#fff", gap: 4, cursor: "pointer" }}>
-          <Trash2 size={18} /><span style={{ fontSize: 10, fontWeight: 600 }}>Delete</span>
-        </div>
       </div>
     </div>
     );
@@ -533,9 +535,6 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
         </div>
       </div>
 
-      {swipedChatId && (
-        <div onClick={() => setSwipedChatId(null)} onTouchStart={() => setSwipedChatId(null)} onMouseDown={() => setSwipedChatId(null)} style={{ position: "fixed", inset: 0, zIndex: 5, background: "transparent" }} />
-      )}
       {showFab && (
         <>
           <div onClick={() => setShowFab(false)} style={{ position: "fixed", inset: 0, zIndex: 9 }} />
@@ -671,6 +670,10 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
             <div onClick={() => { toggleFavorite(contextMenuChat.id, myUid, (contextMenuChat.favoritedBy || []).includes(myUid)); setContextMenuChat(null); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
               <Star size={17} fill={(contextMenuChat.favoritedBy || []).includes(myUid) ? t.accent : "none"} color={(contextMenuChat.favoritedBy || []).includes(myUid) ? t.accent : t.text} />
               <span style={{ fontSize: 14.5, color: t.text }}>{(contextMenuChat.favoritedBy || []).includes(myUid) ? "Unfavorite" : "Favorite"}</span>
+            </div>
+            <div onClick={() => { if (window.confirm("Delete this chat permanently?")) { deleteChatCompletely(contextMenuChat.id).catch(() => {}); } setContextMenuChat(null); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
+              <Trash2 size={17} color="#FF3B30" />
+              <span style={{ fontSize: 14.5, color: "#FF3B30" }}>Delete chat</span>
             </div>
           </div>
         </div>

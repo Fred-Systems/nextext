@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X, Eye, User, Image as ImageIcon, Info } from "lucide-react";
-import { getAvatarColor, getAvatarInitial } from "../utils/avatarColors";
+import { getAvatarColor, getAvatarStyle, lightenColor, getAvatarInitial } from "../utils/avatarColors";
 
 const LOCAL_OVERRIDE_KEY = "nextext_contact_photo_overrides";
 export function getLocalPhotoOverride(uid) {
@@ -34,6 +34,9 @@ export default React.memo(function Avatar({ photoURL, name, uid, size = 52, styl
   const localOverride = hideLocalOverride ? null : getLocalPhotoOverride(uid);
   const effectivePhotoURL = localOverride || photoURL;
   const bg = getAvatarColor(uid || name || "");
+  const bgStyle = getAvatarStyle(uid || name || "") === "gradient"
+    ? { background: `linear-gradient(135deg, ${lightenColor(bg, 0.25)}, ${bg})` }
+    : { background: bg };
   const initial = getAvatarInitial(name);
   const fontSize = Math.round(size * 0.38);
   const ringPad = hasActiveStatus ? 3 : 0;
@@ -127,7 +130,7 @@ export default React.memo(function Avatar({ photoURL, name, uid, size = 52, styl
       {effectivePhotoURL ? (
         <img src={effectivePhotoURL} alt={name || "avatar"} className="nx-avatar-thumb" style={{ width: size, height: size, objectFit: "cover" }} />
       ) : (
-        <div style={{ width: size, height: size, borderRadius: "50%", background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize, fontWeight: 700, color: "#fff", userSelect: "none" }}>
+        <div style={{ width: size, height: size, borderRadius: "50%", ...bgStyle, display: "flex", alignItems: "center", justifyContent: "center", fontSize, fontWeight: 700, color: "#fff", userSelect: "none" }}>
           {initial}
         </div>
       )}

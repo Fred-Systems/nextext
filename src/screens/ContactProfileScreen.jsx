@@ -6,6 +6,7 @@ import { doc, onSnapshot, updateDoc, collection, query, orderBy } from "firebase
 import { addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase/config";
 import Avatar from "../components/Avatar";
+import AvatarColorPicker from "../components/AvatarColorPicker";
 import { useGlobalSettings } from "../firebase/config-settings";
 import { useStatuses } from "../firebase/status";
 import { uploadChatFile } from "../supabase/media";
@@ -82,6 +83,7 @@ export default function ContactProfileScreen({ myUid, otherUid, contact, onBack,
   const [reportSent, setReportSent] = useState(false);
   const [error, setError] = useState("");
   const [fullscreenImage, setFullscreenImage] = useState(null);
+  const [avatarNonce, setAvatarNonce] = useState(0);
   const [localPhotoOverride, setLocalPhotoOverride] = useState(() => getLocalOverrides()[otherUid] || null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const localPhotoRef = useRef(null);
@@ -211,7 +213,7 @@ export default function ContactProfileScreen({ myUid, otherUid, contact, onBack,
         ) : (
         <div style={{ padding: "28px 16px", textAlign: "center", borderBottom: `1px solid ${t.border}` }}>
           <div style={{ margin: "0 auto 12px", position: "relative", display: "inline-block" }}>
-            <Avatar photoURL={effectivePhotoURL} name={displayName} uid={otherUid} size={88} hasActiveStatus={hasOtherActiveStatus} statusViewed={otherStatusViewed} onViewPicture={() => { if (effectivePhotoURL) setFullscreenImage(effectivePhotoURL); }} />
+            <Avatar key={avatarNonce} photoURL={effectivePhotoURL} name={displayName} uid={otherUid} size={88} hasActiveStatus={hasOtherActiveStatus} statusViewed={otherStatusViewed} onViewPicture={() => { if (effectivePhotoURL) setFullscreenImage(effectivePhotoURL); }} />
             <input ref={localPhotoRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleLocalPhotoUpload} />
             <div onClick={() => localPhotoRef.current?.click()} style={{ position: "absolute", bottom: 0, right: 0, width: 28, height: 28, borderRadius: "50%", background: t.primary, border: `2px solid ${t.bg}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
               <Camera size={13} color="#fff" />
@@ -232,6 +234,12 @@ export default function ContactProfileScreen({ myUid, otherUid, contact, onBack,
             </div>
           )}
         </div>
+        )}
+
+        {!isAIContact && (
+          <div style={{ padding: "0 16px", borderBottom: `1px solid ${t.border}` }}>
+            <AvatarColorPicker uid={otherUid} onChange={() => setAvatarNonce((n) => n + 1)} />
+          </div>
         )}
 
         {error && <div style={{ color: "#FF3B30", fontSize: 12.5, padding: "10px 16px" }}>{error}</div>}

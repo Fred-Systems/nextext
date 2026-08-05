@@ -165,6 +165,7 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
   const [cameraError, setCameraError] = useState("");
   const [postError, setPostError] = useState("");
   const [durationSeconds, setDurationSeconds] = useState(5);
+  const [waitForVideo, setWaitForVideo] = useState(false);
   const [textOverlay, setTextOverlay] = useState("");
   const [bgAudioFile, setBgAudioFile] = useState(null);
   const [bgAudioVolume, setBgAudioVolume] = useState(70);
@@ -287,6 +288,7 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
     setPostMediaType(null);
     setPostImages([]);
     setDurationSeconds(5);
+    setWaitForVideo(false);
     setTextOverlay("");
     setBgAudioFile(null);
     setBgAudioVolume(70);
@@ -358,6 +360,7 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
           bgAudioURL,
           bgAudioVolume: bgAudioVol,
           videoVolume: vidVol,
+          waitForVideo: isVideo && waitForVideo,
         });
       }
 
@@ -660,7 +663,7 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
             autoPlay
             playsInline
             muted
-            style={{ flex: 1, width: "100%", height: "100%", objectFit: "cover", minHeight: 0, background: "#000" }}
+            style={{ flex: 1, width: "100%", height: "100%", objectFit: "contain", minHeight: 0, background: "#000" }}
           />
           {cameraError && <div style={{ position: "absolute", bottom: 100, left: 0, right: 0, textAlign: "center", color: "#FF3B30", fontSize: 13, fontWeight: 600 }}>{cameraError}</div>}
           <div style={{ position: "absolute", bottom: "calc(28px + var(--safe-bottom))", left: 0, right: 0, display: "flex", justifyContent: "center", gap: "min(28px, 7vw)", zIndex: 10 }}>
@@ -825,6 +828,19 @@ export default function StatusScreen({ myUid, myName, onBack, onStoryViewerChang
                   rows={2}
                   style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 13.5, background: t.bg, color: t.text, resize: "none", boxSizing: "border-box", fontFamily: "inherit", marginBottom: 12 }}
                 />
+              </div>
+            )}
+
+            {/* Wait for video to finish */}
+            {postMode === "media" && postMediaType === "video" && postMedia && (
+              <div style={{ marginBottom: 12, padding: "12px 14px", boxSizing: "border-box", width: "100%", borderRadius: 12, background: t.bg, border: `1px solid ${t.border}`, display: "flex", alignItems: "center", gap: 10 }}>
+                <input
+                  type="checkbox"
+                  checked={waitForVideo}
+                  onChange={(e) => setWaitForVideo(e.target.checked)}
+                  style={{ width: 18, height: 18, accentColor: t.primary, flexShrink: 0 }}
+                />
+                <span style={{ fontSize: 13, color: t.text }}>Wait for video to finish before advancing</span>
               </div>
             )}
 

@@ -762,15 +762,19 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     //   1. A "priming" acquire+release right before the real capture. Many
     //      Android devices only free the previous AudioRecord/input state after
     //      one full (even failed) open+close cycle, so the second open works.
-    //   2. The default first attempt uses AEC/noise/AGC DISABLED. Some devices
-    //      cannot route the mic through the echo-cancelling audio processing
-    //      chain and report NotReadableError on the default constraints, while
-    //      the raw-input variant succeeds immediately.
+    //   2. The priming (and the default first attempt) uses AEC/noise/AGC
+    //      DISABLED. Some devices cannot route the mic through the
+    //      echo-cancelling audio processing chain and report NotReadableError
+    //      on the default constraints, while the raw-input variant succeeds.
     //   3. Retry targeting the explicit physical audioinput deviceId. The
     //      virtual "default" device is sometimes busy/blocked while the real
-    //      device id is available.
+    //      device id is available. Device ids only become visible after the
+    //      origin has been granted media permission, so we enumerate AFTER the
+    //      priming step (never before).
     //   4. Generous delays between attempts so the OS/WebView media stack can
     //      fully release the input between tries.
+    //   5. A settle delay after any native permission request so the WebView
+    //      media stack has registered the OS grant before the first capture.
     // Stop any lingering stream first: an un-released AudioTrack from a
     // previous capture can keep the input busy and cause NotReadableError.
     if (cameraStreamRef.current) {
@@ -788,30 +792,40 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     const attempts = [];
     const push = (delay, c) => attempts.push({ delay, constraints: c });
 
-    // Prime: open + immediately release the input once so the device state is
-    // fresh for the real capture below.
+    // Settle so the WebView media stack sees the OS-level grant that was just
+    // confirmed by the native permission request in startVoiceRecording.
+    if (isMic) await new Promise((r) => setTimeout(r, 400));
+
+    // Prime with the raw-input variant and release immediately so the device
+    // state is fresh for the real capture below.
     if (isMic) {
       try {
-        const primeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const primeStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
         primeStream.getTracks().forEach((tr) => tr.stop());
       } catch {}
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => setTimeout(r, 300));
+    }
+
+    // Capture the physical input deviceId AFTER priming — ids are blank until
+    // the origin has media permission.
+    let physicalInputId = null;
+    if (isMic) {
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        const input = devs.find((d) => d.kind === "audioinput" && d.deviceId);
+        if (input?.deviceId) physicalInputId = input.deviceId;
+      } catch {}
     }
 
     push(0, isMic ? { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } } : base);
     push(700, base);
-    push(1500, isMic ? { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } } : base);
-    if (isMic) {
-      try {
-        const devs = await navigator.mediaDevices.enumerateDevices();
-        const firstInput = devs.find((d) => d.kind === "audioinput" && d.deviceId);
-        if (firstInput?.deviceId) {
-          push(2200, { audio: { deviceId: { exact: firstInput.deviceId } } });
-          push(2800, { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, deviceId: { exact: firstInput.deviceId } } });
-        }
-      } catch { /* device enumeration is best-effort */ }
+    if (physicalInputId) {
+      push(1500, { audio: { deviceId: { exact: physicalInputId } } });
+      push(2200, { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, deviceId: { exact: physicalInputId } } });
+    } else {
+      push(1500, { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
     }
-    push(3400, base);
+    push(2800, base);
 
     let firstError = null;
     for (const attempt of attempts) {
@@ -823,6 +837,24 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         if (!RETRYABLE.includes(err.name)) throw err;
       }
     }
+
+    // Last resort: one more attempt with a freshly enumerated deviceId, in
+    // case the id only became available after the earlier attempts failed.
+    if (isMic) {
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        const input = devs.find((d) => d.kind === "audioinput" && d.deviceId);
+        if (input?.deviceId) {
+          try {
+            return await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: input.deviceId } } });
+          } catch (err) {
+            firstError = firstError || err;
+            if (!RETRYABLE.includes(err.name)) throw err;
+          }
+        }
+      } catch {}
+    }
+
     firstError.isDenied = firstError.name === "NotAllowedError" || firstError.name === "PermissionDeniedError";
     throw firstError;
   };
@@ -839,9 +871,22 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     } catch { parts.push("perm=unknown"); }
     try {
       const inputs = await navigator.mediaDevices.enumerateDevices();
-      parts.push(`audioInputs=${inputs.filter((d) => d.kind === "audioinput").length}`);
+      const audioInputs = inputs.filter((d) => d.kind === "audioinput");
+      const ids = audioInputs.map((d) => (d.deviceId ? "id" : "blank"));
+      parts.push(`audioInputs=${audioInputs.length}(${ids.join(",")})`);
     } catch { parts.push("audioInputs=?"); }
     parts.push(`gUM=${typeof navigator.mediaDevices?.getUserMedia === "function" ? "yes" : "no"}`);
+    // Native probe: does the OS-level mic actually open? This distinguishes a
+    // broken WebView media path (native works) from a device/OS mic problem
+    // (native also fails). Runs only on the Capacitor native build.
+    if (window.Capacitor?.isNativePlatform && window.Capacitor.isNativePlatform() && typeof window.NextextNative?.testMicrophone === "function") {
+      try {
+        const probe = await window.NextextNative.testMicrophone();
+        parts.push(`osGranted=${probe?.osGranted}`);
+        parts.push(`nativeProbe=${probe?.works ? "ok" : "fail"}`);
+        if (!probe?.works) parts.push(`nativeErr=${(probe?.reason || "").slice(0, 60)}`);
+      } catch { parts.push("nativeProbe=?"); }
+    }
     return parts.join(" | ");
   };
 

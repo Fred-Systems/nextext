@@ -215,18 +215,29 @@ export default function StatusStoryViewer({ statuses, initialIndex = 0, myUid, o
       barRef.current.style.transition = "none";
       barRef.current.style.width = "0%";
     }
-    requestAnimationFrame(() => {
+    const isWaitVideo = current?.mediaType === "video" && current?.waitForVideo;
+    if (!isWaitVideo) {
       requestAnimationFrame(() => {
-        if (barRef.current) {
-          barRef.current.style.transition = `width ${duration}ms linear`;
-          barRef.current.style.width = "100%";
-          initialAnimDoneRef.current = true;
-        }
+        requestAnimationFrame(() => {
+          if (barRef.current) {
+            barRef.current.style.transition = `width ${duration}ms linear`;
+            barRef.current.style.width = "100%";
+            initialAnimDoneRef.current = true;
+          }
+        });
       });
-    });
+    } else {
+      initialAnimDoneRef.current = true;
+    }
 
     clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => advanceRef.current?.(), duration);
+    if (isWaitVideo) {
+      // Wait for the video to end before advancing (driven by onEnded).
+      // Safety cap so a stuck/blocked video never hangs the story forever.
+      timerRef.current = setTimeout(() => advanceRef.current?.(), Math.max(60000, duration + 5000));
+    } else {
+      timerRef.current = setTimeout(() => advanceRef.current?.(), duration);
+    }
 
     if (current.mediaType === "video" && videoRef.current) {
       videoRef.current.currentTime = 0;
@@ -243,11 +254,14 @@ export default function StatusStoryViewer({ statuses, initialIndex = 0, myUid, o
       barRef.current.style.width = `${progressRef.current}%`;
       clearTimeout(timerRef.current);
     } else {
-      const remainingMs = ((100 - progressRef.current) / 100) * duration;
-      barRef.current.style.transition = `width ${remainingMs}ms linear`;
-      barRef.current.style.width = "100%";
-      clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => advanceRef.current?.(), Math.max(remainingMs, 50));
+      const isWaitVideo = current?.mediaType === "video" && current?.waitForVideo;
+      if (!isWaitVideo) {
+        const remainingMs = ((100 - progressRef.current) / 100) * duration;
+        barRef.current.style.transition = `width ${remainingMs}ms linear`;
+        barRef.current.style.width = "100%";
+        clearTimeout(timerRef.current);
+        timerRef.current = setTimeout(() => advanceRef.current?.(), Math.max(remainingMs, 50));
+      }
     }
   }, [paused, duration]);
 
@@ -356,6 +370,17 @@ export default function StatusStoryViewer({ statuses, initialIndex = 0, myUid, o
           <div style={{ position: "relative", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
             <video ref={videoRef} src={current.mediaURL} playsInline loop={false}
               onLoadedMetadata={(e) => { const ms = Math.round(e.target.duration * 1000); if (ms > 0) setLiveVideoDuration(ms); }}
+              onTimeUpdate={(e) => {
+                if (!current?.waitForVideo) return;
+                const v = e.target;
+                if (v.duration && v.currentTime != null) {
+                  progressRef.current = (v.currentTime / v.duration) * 100;
+                  if (barRef.current) {
+                    barRef.current.style.transition = "none";
+                    barRef.current.style.width = `${progressRef.current}%`;
+                  }
+                }
+              }}
               onEnded={() => { setLiveVideoDuration(Math.max(liveVideoDuration || 0, 1)); advanceRef.current?.(); }}
               style={{ width: "100%", height: "100%", borderRadius: 8, objectFit: "contain" }} />
             {(current.textOverlay || current.text) && (
