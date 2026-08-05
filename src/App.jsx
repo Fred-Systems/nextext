@@ -883,7 +883,8 @@ function AppShell({ appLocked, setAppLocked }) {
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
   const [pagerDragging, setPagerDragging] = useState(false);
-  const pagerTrackRef = useRef(null);
+  const shellRef = useRef(null);
+  const pageRefs = useRef({});
   const pagerDragRef = useRef(null);
 
   const myUid = auth.user?.uid;
@@ -1112,7 +1113,7 @@ function AppShell({ appLocked, setAppLocked }) {
 
   // Sync the pager position whenever the active tab changes via bottom bar,
   // top-bar buttons, or programmatic navigation (e.g. opening a status).
-  // All tabs stay mounted in the track (they're just translated off-screen),
+  // All tabs stay mounted as direct shell children (positioned via `left`),
   // so a failed mount can never silently blank the pages.
   useEffect(() => {
     if (currentTabIndex === -1) return;
@@ -1132,9 +1133,9 @@ function AppShell({ appLocked, setAppLocked }) {
   const pagerTouchStart = (e) => {
     if (screen !== "list" && screen !== "status" && screen !== "settings") return;
     if (storyViewerOpen) return;
-    const track = pagerTrackRef.current;
-    if (!track) return;
-    const width = track.clientWidth || 1;
+    const shell = shellRef.current;
+    if (!shell) return;
+    const width = shell.clientWidth || 1;
     pagerDragRef.current = {
       startX: e.touches[0].clientX,
       startY: e.touches[0].clientY,
@@ -1173,13 +1174,13 @@ function AppShell({ appLocked, setAppLocked }) {
     if (drag.startIndex === 0 && offset > 0) offset *= 0.35; // edge resistance
     if (drag.startIndex === len - 1 && offset < 0) offset *= 0.35;
     drag.offset = offset;
-    const track = pagerTrackRef.current;
-    if (track) {
-      Array.from(track.children).forEach((el, i) => {
+    orderedTabs.forEach((key, i) => {
+      const el = pageRefs.current[key];
+      if (el) {
         el.style.transition = "none";
-        el.style.transform = `translateX(${(i - drag.startIndex) * drag.width + offset}px)`;
-      });
-    }
+        el.style.left = `${(i - drag.startIndex) * drag.width + offset}px`;
+      }
+    });
     if (e.cancelable) e.preventDefault();
   };
 
@@ -1192,15 +1193,15 @@ function AppShell({ appLocked, setAppLocked }) {
     let target = drag.startIndex;
     if (drag.offset < -threshold || drag.velocity < -0.4) target = Math.min(drag.startIndex + 1, len - 1);
     else if (drag.offset > threshold || drag.velocity > 0.4) target = Math.max(drag.startIndex - 1, 0);
-    const track = pagerTrackRef.current;
-    if (track) {
-      // Snap each page into place, then let React own the transform after the
-      // next render (pageIndex will match `target`).
-      Array.from(track.children).forEach((el, i) => {
-        el.style.transition = "transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)";
-        el.style.transform = `translateX(${(i - target) * 100}%)`;
-      });
-    }
+    orderedTabs.forEach((key, i) => {
+      const el = pageRefs.current[key];
+      if (el) {
+        // Snap each page into place, then let React own the left after the
+        // next render (pageIndex will match `target`).
+        el.style.transition = "left 0.28s cubic-bezier(0.32, 0.72, 0, 1)";
+        el.style.left = `${(i - target) * 100}%`;
+      }
+    });
     if (target !== drag.startIndex) {
       const key = orderedTabs[target];
       if (key) {
@@ -1218,13 +1219,13 @@ function AppShell({ appLocked, setAppLocked }) {
     pagerDragRef.current = null;
     if (drag?.active) {
       // Cancel: restore every page to its React-owned position (no nav change).
-      const track = pagerTrackRef.current;
-      if (track) {
-        Array.from(track.children).forEach((el, i) => {
+      orderedTabs.forEach((key, i) => {
+        const el = pageRefs.current[key];
+        if (el) {
           el.style.transition = "";
-          el.style.transform = `translateX(${(i - pageIndex) * 100}%)`;
-        });
-      }
+          el.style.left = `${(i - pageIndex) * 100}%`;
+        }
+      });
       setPagerDragging(false);
     }
   };
@@ -1260,6 +1261,7 @@ function AppShell({ appLocked, setAppLocked }) {
   return (
     <>
     <div
+      ref={shellRef}
       id="nextext-app-shell"
       style={{ ...containerStyle }}
       onTouchStart={pagerTouchStart}
@@ -1267,40 +1269,37 @@ function AppShell({ appLocked, setAppLocked }) {
       onTouchEnd={pagerTouchEnd}
       onTouchCancel={pagerTouchCancel}
     >
-      <div
-        ref={pagerTrackRef}
-        style={{ position: "absolute", inset: 0, overflow: "hidden" }}
-      >
         {orderedTabs.map((key, idx) => {
           const pageStyle = {
-            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+            position: "absolute", top: 0, bottom: 0, width: "100%",
             overflow: "hidden",
-            transform: `translateX(${(idx - pageIndex) * 100}%)`,
-            transition: pagerDragging ? "none" : "transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)",
+            left: `${(idx - pageIndex) * 100}%`,
+            transition: pagerDragging ? "none" : "left 0.28s cubic-bezier(0.32, 0.72, 0, 1)",
           };
+          const pageRef = (el) => { pageRefs.current[key] = el; };
           if (key === "chats") return (
-            <div key="chats" style={pageStyle}>
+            <div key="chats" ref={pageRef} style={pageStyle}>
               <PageErrorBoundary label="Chats">
                 <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab="chats" compactList={compactList} searchMode={searchMode} topBarVisible={topBarVisible} />
               </PageErrorBoundary>
             </div>
           );
           if (key === "groups") return (
-            <div key="groups" style={pageStyle}>
+            <div key="groups" ref={pageRef} style={pageStyle}>
               <PageErrorBoundary label="Groups">
                 <ChatListScreen myUid={myUid} userDoc={auth.userDoc} onOpenChat={openChat} onOpenGroupInfo={openGroupInfo} onOpenSettings={() => setScreen("settings")} hideNav={hideNav} navTab="groups" compactList={compactList} searchMode={searchMode} topBarVisible={topBarVisible} />
               </PageErrorBoundary>
             </div>
           );
           if (key === "status") return (
-            <div key="status" style={pageStyle}>
+            <div key="status" ref={pageRef} style={pageStyle}>
               <PageErrorBoundary label="Status">
                 <StatusScreen myUid={myUid} myName={auth.userDoc?.displayName || auth.userDoc?.username} onBack={() => { setScreen("list"); setActiveNavTab("chats"); setStoryViewerOpen(false); }} onStoryViewerChange={setStoryViewerOpen} initialViewStatuses={initialViewStatuses} statusOrigin={statusOrigin} />
               </PageErrorBoundary>
             </div>
           );
           if (key === "settings") return (
-            <div key="settings" style={pageStyle}>
+            <div key="settings" ref={pageRef} style={pageStyle}>
               <PageErrorBoundary label="Settings">
                 <SettingsScreen
                 myUid={myUid}
@@ -1338,7 +1337,6 @@ function AppShell({ appLocked, setAppLocked }) {
           );
           return null;
         })}
-      </div>
 
       {screen === "chat" && activeChat && (
         <ConversationScreen
