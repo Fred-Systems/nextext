@@ -1175,8 +1175,10 @@ function AppShell({ appLocked, setAppLocked }) {
     drag.offset = offset;
     const track = pagerTrackRef.current;
     if (track) {
-      track.style.transition = "none";
-      track.style.transform = `translateX(${-drag.startIndex * drag.width + offset}px)`;
+      Array.from(track.children).forEach((el, i) => {
+        el.style.transition = "none";
+        el.style.transform = `translateX(${(i - drag.startIndex) * drag.width + offset}px)`;
+      });
     }
     if (e.cancelable) e.preventDefault();
   };
@@ -1192,9 +1194,12 @@ function AppShell({ appLocked, setAppLocked }) {
     else if (drag.offset > threshold || drag.velocity > 0.4) target = Math.max(drag.startIndex - 1, 0);
     const track = pagerTrackRef.current;
     if (track) {
-      // Force the snap even if the React style prop is unchanged (same page).
-      track.style.transition = "transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)";
-      track.style.transform = `translateX(-${target * 100}%)`;
+      // Snap each page into place, then let React own the transform after the
+      // next render (pageIndex will match `target`).
+      Array.from(track.children).forEach((el, i) => {
+        el.style.transition = "transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)";
+        el.style.transform = `translateX(${(i - target) * 100}%)`;
+      });
     }
     if (target !== drag.startIndex) {
       const key = orderedTabs[target];
@@ -1211,7 +1216,17 @@ function AppShell({ appLocked, setAppLocked }) {
   const pagerTouchCancel = () => {
     const drag = pagerDragRef.current;
     pagerDragRef.current = null;
-    if (drag?.active) setPagerDragging(false);
+    if (drag?.active) {
+      // Cancel: restore every page to its React-owned position (no nav change).
+      const track = pagerTrackRef.current;
+      if (track) {
+        Array.from(track.children).forEach((el, i) => {
+          el.style.transition = "";
+          el.style.transform = `translateX(${(i - pageIndex) * 100}%)`;
+        });
+      }
+      setPagerDragging(false);
+    }
   };
 
   const containerStyle = {
@@ -1254,15 +1269,15 @@ function AppShell({ appLocked, setAppLocked }) {
     >
       <div
         ref={pagerTrackRef}
-        style={{
-          position: "absolute", inset: 0, zIndex: 0, isolation: "isolate",
-          display: "flex", overflow: "hidden",
-          transform: `translateX(-${pageIndex * 100}%)`,
-          transition: pagerDragging ? "none" : "transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)",
-        }}
+        style={{ position: "absolute", inset: 0, overflow: "hidden" }}
       >
         {orderedTabs.map((key, idx) => {
-          const pageStyle = { position: "relative", width: "100%", height: "100%", flex: "0 0 100%", overflow: "hidden" };
+          const pageStyle = {
+            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+            overflow: "hidden",
+            transform: `translateX(${(idx - pageIndex) * 100}%)`,
+            transition: pagerDragging ? "none" : "transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)",
+          };
           if (key === "chats") return (
             <div key="chats" style={pageStyle}>
               <PageErrorBoundary label="Chats">
