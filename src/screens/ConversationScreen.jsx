@@ -1218,7 +1218,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
           }
         }
       }
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 96000 }) : new MediaRecorder(stream, { audioBitsPerSecond: 96000 });
       recorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
       // Request a 250ms timeslice so dataavailable fires periodically during
       // the recording (not only at stop). This guarantees the audio stream
@@ -1303,7 +1303,14 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     const wasNative = recordingNativeRef.current;
     recordingNativeRef.current = false;
     resetRecordingUi();
-    if (!send || !blob || !chatId || blob.size === 0) return;
+    if (!send) return;
+    if (!blob || !chatId || blob.size === 0) {
+      // The user pressed Send and we ended up with no audio data.
+      // Surface a clear, specific error instead of silently dropping the note
+      // (the cause of "voice notes don't record audio" reports).
+      setSendError("Voice note failed — no audio was captured. Try again, and make sure the mic permission is granted.");
+      return;
+    }
     const file = new File([blob], `voice-${Date.now()}.${wasNative ? "m4a" : "webm"}`, { type: blob.type || (wasNative ? "audio/mp4" : "audio/webm") });
     setUploading(true);
     try {

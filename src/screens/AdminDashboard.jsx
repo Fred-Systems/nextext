@@ -372,12 +372,12 @@ export default function AdminDashboard({ myUid, onBack }) {
         </div>
         <div className="nx-scroll" style={{ padding: 16 }}>
           <div style={{ background: t.surface, borderRadius: 14, padding: 16, marginBottom: 14 }}>
-            <div style={{ fontSize: 13, color: t.textMuted }}>Username</div><div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>@{selectedUser.username}</div>
-            <div style={{ fontSize: 13, color: t.textMuted }}>Email</div><div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>{selectedUser.email}</div>
-            <div style={{ fontSize: 13, color: t.textMuted }}>Ban status</div><div style={{ fontSize: 15, fontWeight: 600 }}>{selectedUser.moderation?.banType || "none"}</div>
+            <div style={{ fontSize: 13, color: t.textMuted }}>Username</div><div style={{ fontSize: 15, fontWeight: 600, color: t.text, marginBottom: 10 }}>@{selectedUser.username}</div>
+            <div style={{ fontSize: 13, color: t.textMuted }}>Email</div><div style={{ fontSize: 15, fontWeight: 600, color: t.text, marginBottom: 10 }}>{selectedUser.email}</div>
+            <div style={{ fontSize: 13, color: t.textMuted }}>Ban status</div><div style={{ fontSize: 15, fontWeight: 600, color: t.text }}>{selectedUser.moderation?.banType || "none"}</div>
           </div>
           <div style={{ background: t.surface, borderRadius: 14, padding: 16, marginBottom: 14 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Moderation</div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: t.text, marginBottom: 10 }}>Moderation</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {selectedUser.uid === myUid && (
                 <div style={{ fontSize: 12.5, color: t.textMuted, fontStyle: "italic", marginBottom: 4 }}>You cannot moderate your own account.</div>
@@ -388,7 +388,7 @@ export default function AdminDashboard({ myUid, onBack }) {
             </div>
           </div>
           <div style={{ background: t.surface, borderRadius: 14, padding: 16 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>Parental Controls Recovery</div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: t.text, marginBottom: 6 }}>Parental Controls Recovery</div>
             <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
               If a parent has lost their PIN or account access, this clears all
               restrictions and the PIN on this account entirely, so they can start fresh.
@@ -399,7 +399,7 @@ export default function AdminDashboard({ myUid, onBack }) {
             {clearedMsg && <div style={{ color: t.primary, fontSize: 12.5, marginTop: 8, textAlign: "center" }}>Done — restrictions cleared.</div>}
           </div>
           <div style={{ background: t.surface, borderRadius: 14, padding: 16, marginTop: 14 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>Name change</div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: t.text, marginBottom: 6 }}>Name change</div>
             <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
               Block this user from changing their display name or username. Their old names are kept in chat history and shown below.
             </div>
@@ -456,7 +456,7 @@ export default function AdminDashboard({ myUid, onBack }) {
           {settings && (
             <div style={{ padding: "0 16px 10px" }}>
               <div style={{ background: t.surface, borderRadius: 12, padding: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Media auto-delete after</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginBottom: 4 }}>Media auto-delete after</div>
                 <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 8 }}>Set how many days before media is automatically removed.</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                   <input
@@ -484,7 +484,7 @@ export default function AdminDashboard({ myUid, onBack }) {
               <div key={u.uid} onClick={() => setSelectedUser(u)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 4px", cursor: "pointer", borderBottom: `1px solid ${t.border}` }}>
                 <div style={{ width: 40, height: 40, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: t.primary }}>{u.displayName?.[0]}</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14.5, fontWeight: 700 }}>{u.displayName} <span style={{ color: t.textMuted, fontWeight: 400 }}>@{u.username}</span></div>
+                  <div style={{ fontSize: 14.5, fontWeight: 700, color: t.text }}>{u.displayName} <span style={{ color: t.textMuted, fontWeight: 400 }}>@{u.username}</span></div>
                   <div style={{ fontSize: 12, color: t.textMuted }}>{u.email}</div>
                 </div>
                 {u.moderation?.banType && u.moderation.banType !== "none" && <span style={{ fontSize: 10.5, padding: "2px 8px", borderRadius: 8, background: "#FFE5E5", color: "#FF3B30", fontWeight: 700 }}>{u.moderation.banType}</span>}
@@ -508,7 +508,7 @@ export default function AdminDashboard({ myUid, onBack }) {
               <div onClick={() => setSelectedUser(u)} style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, cursor: "pointer", minWidth: 0 }}>
                 <div style={{ width: 38, height: 38, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: t.primary }}>{u.displayName?.[0]}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.displayName} <span style={{ color: t.textMuted, fontWeight: 400 }}>@{u.username}</span></div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.displayName} <span style={{ color: t.textMuted, fontWeight: 400 }}>@{u.username}</span></div>
                   <div style={{ fontSize: 11.5, color: t.textMuted }}>{u.email}{u.role === "admin" ? " · Admin" : ""}</div>
                 </div>
                 {u.moderation?.banType && u.moderation.banType !== "none" && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 6, background: "#FFE5E5", color: "#FF3B30", fontWeight: 700 }}>{u.moderation.banType}</span>}

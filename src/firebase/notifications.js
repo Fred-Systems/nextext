@@ -58,6 +58,24 @@ export async function initNotifications(myUid) {
       }
       if (perm.receive !== "granted") return null;
 
+      // Create a notification channel (required on Android 8+) with default
+      // importance so incoming FCM messages actually show a visible
+      // notification. Without a channel, the OS silently drops the
+      // notification even though the plugin fires the JS event — the cause
+      // of "notifications don't work on my Android 11 phone".
+      try {
+        await PushNotifications.createChannel({
+          id: "nextext-messages",
+          name: "Messages",
+          description: "New chat messages",
+          importance: 4,           // IMPORTANCE_HIGH (heads-up)
+          visibility: 1,           // PUBLIC
+          lights: true,
+          vibration: true,
+          vibrationPattern: [200, 100, 200],
+        });
+      } catch { /* older plugin versions may not support createChannel */ }
+
       PushNotifications.addListener("registration", ({ value }) => {
         if (value) {
           updateDoc(doc(db, "users", myUid), { fcmTokens: arrayUnion(value) }).catch(() => {});

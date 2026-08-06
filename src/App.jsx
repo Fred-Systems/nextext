@@ -12,7 +12,7 @@ import { FONTS } from "./theme/ThemeContext";
 import Avatar from "./components/Avatar";
 import AvatarColorPicker from "./components/AvatarColorPicker";
 import { uploadChatFile } from "./supabase/media";
-import { doc, updateDoc, onSnapshot } from "firebase/firestore";
+import { doc, updateDoc, onSnapshot, collection, query, where, orderBy } from "firebase/firestore";
 import { db } from "./firebase/config";
 import AuthScreen from "./screens/AuthScreen";
 import CompleteProfileScreen from "./screens/CompleteProfileScreen";
@@ -29,7 +29,7 @@ import { useSystemConfigHook, requestAIAccess, setAIPersonality, PERSONALITIES }
 import AppLockScreen from "./screens/AppLockScreen";
 import StatusScreen from "./screens/StatusScreen";
 import GroupInfoScreen from "./screens/GroupInfoScreen";
-import { initNotifications, setNotificationTapHandler } from "./firebase/notifications";
+import { initNotifications, setNotificationTapHandler, showLocalNotification } from "./firebase/notifications";
 import { App as CapApp } from "@capacitor/app";
 import PermissionsScreen from "./screens/PermissionsScreen";
 import UpdatePrompt from "./components/UpdatePrompt";
@@ -1032,6 +1032,7 @@ const TOUR_STEPS = [
 
 function TourOverlay({ step, total, onNext, onSkip, t }) {
   const s = TOUR_STEPS[step];
+  if (!s) return null;
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 999997, background: "#0B141A", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 28px" }}>
       <div style={{ fontSize: 56, marginBottom: 18 }}>{s.emoji}</div>
@@ -1156,8 +1157,15 @@ function AppShell({ appLocked, setAppLocked }) {
       // steer a fresh sign-in onto a stale screen — the cause of a missing
       // bottom nav / blank pager on first login.)
       if (state.myUid !== myUid) return;
-      if (state.screen) setScreen(state.screen);
-      if (state.activeNavTab) setActiveNavTab(state.activeNavTab);
+      // Always land on the chat list on cold start — restoring a deep screen
+      // like "chat" left the bottom bar hidden and the user stranded inside a
+      // conversation they couldn't back out of without first tapping the
+      // unrelated Settings gear. Tabs (activeNavTab) only meaningfully apply
+      // on the list screen, so we also normalize that back to "chats" so the
+      // first thing the user sees is every chat (groups + 1-on-1s).
+      setScreen("list");
+      setActiveNavTab("chats");
+      // Still restore other persisted prefs/configs below:
       if (state.activeChat) setActiveChat(state.activeChat);
       if (state.activeGroup) setActiveGroup(state.activeGroup);
       if (state.uiScale !== undefined) setUiScale(state.uiScale);
@@ -1188,17 +1196,18 @@ function AppShell({ appLocked, setAppLocked }) {
   const swipeAnimationEnabled = () => swipeAnimationOn;
 
   // Duration (s) for the swipe snap animation, chosen by the Settings slider.
-  // WhatsApp uses a short, fast slide (~200ms) — we keep the same feel.
+  // WhatsApp/iOS use a short, fast slide (~200-250ms) — we keep that feel.
   const swipeDuration = () => {
-    if (swipeSpeed === "slow") return 0.35;
-    if (swipeSpeed === "fast") return 0.12;
-    return 0.2;
+    if (swipeSpeed === "slow") return 0.32;
+    if (swipeSpeed === "fast") return 0.1;
+    return 0.18;
   };
 
-  // WhatsApp-style snap curve: fast ramp in, short settle, no overshoot.
-  const swipeBezier = () => "cubic-bezier(0.1, 0.9, 0.2, 1)";
+  // iOS-style momentum curve: very fast start, smooth deceleration, no bounce.
+  // Using transform translate3d with this curve yields iOS-feel smooth swiping.
+  const swipeBezier = () => "cubic-bezier(0.16, 1, 0.3, 1)";
 
-  const swipeTransition = () => (swipeAnimationEnabled() ? `left ${swipeDuration()}s ${swipeBezier()}` : "none");
+  const swipeTransition = () => (swipeAnimationEnabled() ? `transform ${swipeDuration()}s ${swipeBezier()}` : "none");
 
   // Tap navigation transitions — by default OFF (instant page jump).
   // The "Animate tab taps (animateOnTap)" Setting overrides this so that
@@ -1206,7 +1215,7 @@ function AppShell({ appLocked, setAppLocked }) {
   // as a swipe would.
   const tapTransition = () => {
     if (!animateOnTap) return "none";
-    return `left ${swipeDuration()}s ${swipeBezier()}`;
+    return `transform ${swipeDuration()}s ${swipeBezier()}`;
   };
 
   usePresenceHeartbeat(myUid);
@@ -1238,12 +1247,13 @@ function AppShell({ appLocked, setAppLocked }) {
     const seenKey = `nextext_tour_seen_${myUid}`;
     if (localStorage.getItem(seenKey) === "true") return;
     localStorage.setItem(seenKey, "true");
-    const t = setTimeout(() => { setTourStep(0); setShowTour(true); }, 1200);
+    const t = setTimeout(() => { startTour(); }, 1200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myUid, auth.userDoc?.profileComplete]);
 
   const finishTour = () => { setShowTour(false); setTourStep(0); };
+  const startTour = () => { setTourStep(0); setShowTour(true); };
 
   const { contacts } = useContacts(myUid);
   const { chats: myChats } = useChats(myUid);
@@ -1292,7 +1302,51 @@ function AppShell({ appLocked, setAppLocked }) {
     return unsub;
   }, [auth.user?.uid]);
 
-  // Native launch splash: fade starts at 1.5s, hard dismiss at 3s.
+  // Client-side foreground notifications: Firestore onSnapshot on each chat's
+  // messages collection that fires showLocalNotification when a new message
+  // arrives from someone else while the app is in the foreground. This is the
+  // ONLY notification path (no Cloud Functions → no real FCM push), so without
+  // this the user gets zero audible/visible alerts on Android 11.
+  useEffect(() => {
+    if (!auth.user?.uid) return;
+    const uid = auth.user.uid;
+    const since = Date.now();
+    const unsubs = [];
+    // Watch the user's chats collection, attach a message listener to each.
+    const chatsQuery = query(collection(db, "chats"), where("participants", "array-contains", uid));
+    const unsubChats = onSnapshot(chatsQuery, (snap) => {
+      snap.docChanges().forEach((change) => {
+        const chatId = change.doc.id;
+        if (change.type !== "added" && change.type !== "modified") return;
+        // Attach a message listener to this chat if we haven't already.
+        if (unsubs.find((u) => u.chatId === chatId)) return;
+        const msgQ = query(collection(db, "chats", chatId, "messages"), orderBy("sentAt", "desc"));
+        const unsubMsg = onSnapshot(msgQ, (msgSnap) => {
+          msgSnap.docChanges().forEach((mc) => {
+            if (mc.type !== "added") return;
+            const m = mc.doc.data();
+            if (!m.sentAt?.toMillis) return;
+            if (m.sentAt.toMillis() < since) return;         // skip old messages
+            if (m.senderId === uid) return;                  // skip own messages
+            if (m.deletedForSelf?.includes(uid)) return;
+            if (m.isScheduled && m.scheduledFor?.toMillis && m.scheduledFor.toMillis() > Date.now()) return;
+            // Don't notify if the user is currently inside THIS chat.
+            if (activeChat?.chatId === chatId && document.visibilityState === "visible") return;
+            const senderName = (contacts || []).find((c) => c.uid === m.senderId)?.profile?.displayName || "Unknown";
+            const chatName = change.doc.data()?.groupName || senderName;
+            const body = m.type === "text" ? (m.text || "") : m.type === "image" ? "📷 Photo" : m.type === "video" ? "🎥 Video" : m.type === "voice" ? "🎤 Voice note" : m.type === "file" ? "📎 File" : m.type === "location" ? "📍 Location" : "New message";
+            showLocalNotification(chatName, body.length > 60 ? body.slice(0, 60) + "…" : body, chatId);
+          });
+        });
+        unsubs.push({ chatId, unsub: unsubMsg });
+      });
+    });
+    unsubs.push({ chatId: "__chats__", unsub: unsubChats });
+    return () => { unsubs.forEach((u) => { try { u.unsub(); } catch {} }); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.user?.uid]);
+
+
   useEffect(() => {
     if (!showSplash) {
       setSplashVisible(false);
@@ -1471,11 +1525,20 @@ function AppShell({ appLocked, setAppLocked }) {
       setScreen("status");
       return;
     }
-    const chatId = chatDoc?.id;
-    const isLockedForMe = !!chatDoc?.lockedBy?.[myUid];
+    // When opening from the contacts list (chatDoc=null), look up the
+    // existing chat doc from myChats so the lock check works. Without this,
+    // a locked direct chat was bypassable by tapping the chat icon next to
+    // the contact name (chatDoc was null → lockedBy check was skipped).
+    let resolvedChatDoc = chatDoc;
+    if (!resolvedChatDoc && otherUid && myUid) {
+      const directChatId = [myUid, otherUid].sort().join("_");
+      resolvedChatDoc = (myChats || []).find((c) => c.id === directChatId) || null;
+    }
+    const chatId = resolvedChatDoc?.id;
+    const isLockedForMe = !!resolvedChatDoc?.lockedBy?.[myUid];
     const hasLockPass = !!localStorage.getItem("nextext_locked_chats_password");
     if (isLockedForMe && hasLockPass && !options?.lockVerified && !verifiedLockedChatsRef.current.has(chatId)) {
-      setLockPromptChat({ chatDoc, otherUid, contact, options });
+      setLockPromptChat({ chatDoc: resolvedChatDoc, otherUid, contact, options });
       return;
     }
     if (chatId) verifiedLockedChatsRef.current.add(chatId);
@@ -1528,7 +1591,7 @@ function AppShell({ appLocked, setAppLocked }) {
 
   // Sync the pager position whenever the active tab changes via bottom bar,
   // top-bar buttons, or programmatic navigation (e.g. opening a status).
-  // All tabs stay mounted as direct shell children (positioned via `left`),
+  // All tabs stay mounted as direct shell children (positioned via `transform`),
   // so a failed mount can never silently blank the pages.
   useEffect(() => {
     if (currentTabIndex === -1) return;
@@ -1596,7 +1659,7 @@ function AppShell({ appLocked, setAppLocked }) {
       const el = pageRefs.current[key];
       if (el) {
         el.style.transition = "none";
-        el.style.left = `${(i - drag.startIndex) * drag.width + offset}px`;
+        el.style.transform = `translate3d(${(i - drag.startIndex) * drag.width + offset}px, 0, 0)`;
       }
     });
     if (e.cancelable) e.preventDefault();
@@ -1604,29 +1667,41 @@ function AppShell({ appLocked, setAppLocked }) {
 
   const pagerTouchEnd = () => {
     const drag = pagerDragRef.current;
+    if (!drag || !drag.active) { pagerDragRef.current = null; return; }
     pagerDragRef.current = null;
-    if (!drag || !drag.active) return;
     const len = orderedTabs.length;
     const threshold = drag.width * 0.2;
     let target = drag.startIndex;
     if (drag.offset < -threshold || drag.velocity < -0.4) target = Math.min(drag.startIndex + 1, len - 1);
     else if (drag.offset > threshold || drag.velocity > 0.4) target = Math.max(drag.startIndex - 1, 0);
+    // Compute the snap transition. The swipe-end snap is always animated when
+    // swipeAnimationOn is true (regardless of animateOnTap which only applies
+    // to bottom-bar tap navigation).
+    const snapTransition = swipeAnimationEnabled() ? `transform ${swipeDuration()}s ${swipeBezier()}` : "none";
     orderedTabs.forEach((key, i) => {
       const el = pageRefs.current[key];
       if (el) {
-        // Snap each page into place, then let React own the left after the
-        // next render (pageIndex will match `target`).
-        el.style.transition = swipeTransition();
-        el.style.left = `${(i - target) * 100}%`;
+        // Snap each page into place via transform (GPU-accelerated translate3d).
+        el.style.transition = snapTransition;
+        el.style.transform = `translate3d(${(i - target) * 100}%, 0, 0)`;
       }
     });
     if (target !== drag.startIndex) {
       const key = orderedTabs[target];
       if (key) {
+        // Defer setting pageIndex/screen until AFTER the snap animation finishes
+        // so React's re-render doesn't override the inline transition mid-flight
+        // (the cause of "tab taps still animate by default" — React's "none"
+        // transition was clobbering the swipe snap's transition).
+        const dur = swipeAnimationEnabled() ? swipeDuration() * 1000 : 0;
+        setTimeout(() => {
+          setPageIndex(target);
+          if (key === "status") { setStatusOrigin("status"); setScreen("status"); }
+          else if (key === "settings") setScreen("settings");
+          else { setActiveNavTab(key); setScreen("list"); }
+        }, dur);
+      } else {
         setPageIndex(target);
-        if (key === "status") { setStatusOrigin("status"); setScreen("status"); }
-        else if (key === "settings") setScreen("settings");
-        else { setActiveNavTab(key); setScreen("list"); }
       }
     }
     setPagerDragging(false);
@@ -1641,7 +1716,7 @@ function AppShell({ appLocked, setAppLocked }) {
         const el = pageRefs.current[key];
         if (el) {
           el.style.transition = "";
-          el.style.left = `${(i - pageIndex) * 100}%`;
+          el.style.transform = `translate3d(${(i - pageIndex) * 100}%, 0, 0)`;
         }
       });
       setPagerDragging(false);
@@ -1700,17 +1775,20 @@ function AppShell({ appLocked, setAppLocked }) {
           const pageStyle = {
             position: "absolute", top: 0, bottom: 0, width: "100%",
             overflow: "hidden",
-            left: `${(idx - effectiveIndex) * 100}%`,
-            // During a swipe drag: no CSS transition (we drive `left` directly).
+            // GPU-accelerated horizontal transform — translate3d promotes the
+            // element to its own compositor layer, so swiping stays at 60fps
+            // without triggering layout recalculation (which `left` did every
+            // frame, causing jank on low-end devices).
+            transform: `translate3d(${(idx - effectiveIndex) * 100}%, 0, 0)`,
+            // During a swipe drag: no CSS transition (we drive `transform` directly).
             // After the drag ends / a tap jumps to a new page:
-            //   - default (animateOnTap=false): instant "none"
+            //   - default (animateOnTap=false): instant "none" for tap navigation
             //   - animateOnTap:=true: animated slide matching the swipe bezier
             transition: pagerDragging ? "none" : tapTransition(),
             // Will-change: optimizes compositor for fast horizontal swiping.
-            willChange: "left, transform",
+            willChange: "transform",
             // GPU layer promotion keeps the swiping pages buttery smooth.
             backfaceVisibility: "hidden",
-            transform: "translateZ(0)",
           };
           const pageRef = (el) => { pageRefs.current[key] = el; };
           if (key === "chats") return (
@@ -1773,7 +1851,7 @@ function AppShell({ appLocked, setAppLocked }) {
                 setSwipeAnimationOn={setSwipeAnimationOn}
                 swipeSpeed={swipeSpeed}
                 setSwipeSpeed={setSwipeSpeed}
-                onShowTour={() => { setTourStep(0); setShowTour(true); }}
+                onShowTour={startTour}
                 searchBarScale={searchBarScale}
                 setSearchBarScale={setSearchBarScale}
                 setLiveUserDoc={setLiveUserDoc}
@@ -1908,7 +1986,7 @@ function AppShell({ appLocked, setAppLocked }) {
         </div>
       ), document.body)}
 
-      {createPortal(showTour && (
+      {createPortal(showTour ? (
         <TourOverlay
           step={tourStep}
           total={TOUR_STEPS.length}
@@ -1916,7 +1994,7 @@ function AppShell({ appLocked, setAppLocked }) {
           onNext={() => { if (tourStep >= TOUR_STEPS.length - 1) finishTour(); else setTourStep((s) => s + 1); }}
           onSkip={finishTour}
         />
-      ), document.body)}
+      ) : null, document.body)}
 
       {createPortal(lockPromptChat && (
         <div style={{ position: "fixed", inset: 0, zIndex: 999998, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 28 }}>

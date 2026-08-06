@@ -203,8 +203,7 @@ public class NextextNativePlugin extends Plugin {
                 File dir = new File(getContext().getCacheDir(), "updates");
                 if (!dir.exists()) dir.mkdirs();
                 apk = new File(dir, "nextext-update.apk");
-                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
-                conn.setInstanceFollowRedirects(true);
+                HttpURLConnection conn = openFollowingRedirects(url);
                 conn.setConnectTimeout(15000);
                 conn.setReadTimeout(120000);
                 conn.setRequestProperty("Accept", "application/vnd.android.package-archive");
@@ -212,6 +211,7 @@ public class NextextNativePlugin extends Plugin {
                 int code = conn.getResponseCode();
                 if (code >= 400) {
                     call.reject("Download failed (HTTP " + code + ")");
+                    conn.disconnect();
                     return;
                 }
                 InputStream in = conn.getInputStream();
@@ -239,12 +239,46 @@ public class NextextNativePlugin extends Plugin {
                 Intent intent = new Intent(Intent.ACTION_VIEW);
                 intent.setDataAndType(contentUri, "application/vnd.android.package-archive");
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                // FLAG_ACTIVITY_NEW_TASK is required when startActivity is called
+                // from outside an Activity context (which is the case inside a
+                // Capacitor plugin that may resolve after the foreground activity
+                // state has changed).
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 getActivity().startActivity(intent);
                 call.resolve();
             } catch (final Exception e) {
                 call.reject("Download failed: " + (e.getMessage() == null ? String.valueOf(e) : e.getMessage()));
             }
         }).start();
+    }
+
+    /**
+     * Opens an HttpURLConnection to {@code url} and manually follows HTTP
+     * redirects (301/302/303/307/308). Java's HttpURLConnection does NOT
+     * follow cross-host redirects by default (e.g. github.com →
+     * objects.githubusercontent.com), so this helper is mandatory for
+     * downloading GitHub release assets over S3-backed redirects.
+     */
+    private HttpURLConnection openFollowingRedirects(String url) throws java.io.IOException {
+        String current = url;
+        for (int i = 0; i < 5; i++) {
+            HttpURLConnection conn = (HttpURLConnection) new URL(current).openConnection();
+            conn.setInstanceFollowRedirects(false);
+            int code = conn.getResponseCode();
+            if (code == HttpURLConnection.HTTP_MOVED_PERM
+                    || code == HttpURLConnection.HTTP_MOVED_TEMP
+                    || code == HttpURLConnection.HTTP_SEE_OTHER
+                    || code == 307
+                    || code == 308) {
+                String loc = conn.getHeaderField("Location");
+                conn.disconnect();
+                if (loc == null || loc.isEmpty()) throw new java.io.IOException("Redirect with no Location");
+                current = loc;
+                continue;
+            }
+            return conn;
+        }
+        throw new java.io.IOException("Too many redirects");
     }
 
     @PluginMethod
@@ -262,8 +296,7 @@ public class NextextNativePlugin extends Plugin {
                 File dir = new File(getContext().getCacheDir(), "updates");
                 if (!dir.exists()) dir.mkdirs();
                 temp = new File(dir, "nextext-download.apk");
-                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
-                conn.setInstanceFollowRedirects(true);
+                HttpURLConnection conn = openFollowingRedirects(url);
                 conn.setConnectTimeout(15000);
                 conn.setReadTimeout(120000);
                 conn.setRequestProperty("Accept", "application/vnd.android.package-archive");
@@ -271,6 +304,7 @@ public class NextextNativePlugin extends Plugin {
                 int code = conn.getResponseCode();
                 if (code >= 400) {
                     call.reject("Download failed (HTTP " + code + ")");
+                    conn.disconnect();
                     return;
                 }
                 InputStream in = conn.getInputStream();
@@ -390,6 +424,11 @@ public class NextextNativePlugin extends Plugin {
             r.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC);
             r.setAudioEncodingBitRate(96000);
             r.setAudioSamplingRate(44100);
+            // Explicit mono channel — some Android devices ship AAC encoders
+            // that silently produce flat/silent output when the default channel
+            // count is unset or zero. Locking to mono (1 channel) guarantees
+            // an audible recording.
+            r.setAudioChannels(1);
             r.setOutputFile(out.getAbsolutePath());
             r.prepare();
             r.start();
