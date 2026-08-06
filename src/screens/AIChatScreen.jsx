@@ -293,9 +293,12 @@ export default function AIChatScreen({ myUid, onBack }) {
     try {
       const chatsQuery = query(collection(db, "chats"), where("participants", "array-contains", myUid));
       const snap = await getDocs(chatsQuery);
+      // Group chats are always eligible; 1-on-1 chats only when the admin has
+      // enabled external summaries for them (default off — privacy default).
+      const allow1on1 = !!sysConfig?.allow1on1ExternalSummaries;
       const chats = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((c) => c.id !== chatId && (c.type === "group" || (c.participants || []).length > 2));
+        .filter((c) => c.id !== chatId && (c.type === "group" || (allow1on1 && (c.participants || []).length === 2)));
       setAllChats(chats);
     } catch {
       setAllChats([]);
@@ -521,7 +524,7 @@ export default function AIChatScreen({ myUid, onBack }) {
           <div style={{ flex: 1, overflowY: "auto" }}>
             {allChats.length === 0 && (
               <div style={{ padding: 30, textAlign: "center", color: t.textMuted, fontSize: 13.5 }}>
-                No group chats found to summarize.
+                No chats available to summarize.
               </div>
             )}
             {allChats.map((c) => (
@@ -560,7 +563,7 @@ export default function AIChatScreen({ myUid, onBack }) {
                 Your intelligent chat companion. Ask questions, have fun conversations, or switch personalities for a different experience.
               </div>
               <div style={{ fontSize: 12.5, fontWeight: 700, color: t.textMuted, marginBottom: 8, textTransform: "uppercase" }}>Capabilities</div>
-              {["General Q&A and research assistance", "7 unique personalities", "Image analysis with Llama 4 Scout", "Chat summarization (active + external)", "OpenAI GPT-OSS + Llama 4 Scout via Groq"].map((cap) => (
+              {["General Q&A and research assistance", "8 unique personalities", "Image analysis with Llama 4 Scout", "Chat summarization (active + external)", "OpenAI GPT-OSS + Llama 4 Scout via Groq"].map((cap) => (
                 <div key={cap} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 13, color: t.text }}>
                   <div style={{ width: 6, height: 6, borderRadius: "50%", background: t.primary, flexShrink: 0 }} />
                   {cap}

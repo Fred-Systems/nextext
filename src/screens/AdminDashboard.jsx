@@ -725,6 +725,38 @@ export default function AdminDashboard({ myUid, onBack }) {
                 Image upload button is visible in AI chat. Users can upload images for AI analysis.
               </div>
             )}
+            <div onClick={() => {
+              const newVal = !sysConfig?.allow1on1ExternalSummaries;
+              setSystemConfig({ allow1on1ExternalSummaries: newVal }, myUid);
+            }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 10, background: sysConfig?.allow1on1ExternalSummaries ? t.primaryLight : "transparent", border: `1px solid ${t.border}`, cursor: "pointer", marginTop: 12 }}>
+              <div style={{ width: 46, height: 26, borderRadius: 13, background: sysConfig?.allow1on1ExternalSummaries ? t.primary : t.border, position: "relative", flexShrink: 0 }}>
+                <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: sysConfig?.allow1on1ExternalSummaries ? 23 : 3, transition: "left 0.15s" }} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: t.text }}>
+                  {sysConfig?.allow1on1ExternalSummaries ? "1-on-1 external summaries: ON" : "1-on-1 external summaries: OFF"}
+                </div>
+                <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2, lineHeight: 1.4 }}>
+                  Allow users to summarize 1-on-1 chat history from the AI assistant. Off by default — group chats are always available.
+                </div>
+              </div>
+            </div>
+            <div onClick={() => {
+              const newVal = !sysConfig?.tourDisabled;
+              setSystemConfig({ tourDisabled: newVal }, myUid);
+            }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 10, background: "transparent", border: `1px solid ${t.border}`, cursor: "pointer", marginTop: 12 }}>
+              <div style={{ width: 46, height: 26, borderRadius: 13, background: sysConfig?.tourDisabled ? "#FF3B30" : t.primary, position: "relative", flexShrink: 0 }}>
+                <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: sysConfig?.tourDisabled ? 23 : 3, transition: "left 0.15s" }} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: t.text }}>
+                  {sysConfig?.tourDisabled ? "Welcome tour: DISABLED globally" : "Welcome tour: enabled"}
+                </div>
+                <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2, lineHeight: 1.4 }}>
+                  When disabled, new users never see the first-run tour. Users can still replay it manually from Settings.
+                </div>
+              </div>
+            </div>
           </div>
           <div style={{ background: t.surface, borderRadius: 14, padding: 16 }}>
             <div style={{ fontWeight: 700, fontSize: 15, color: t.text, marginBottom: 8 }}>Groq API Configuration</div>

@@ -13,11 +13,13 @@ export const PERSONALITIES = {
   shakespeare: { label: "Shakespearean Poet", icon: "🎭", systemPrompt: "You speak in the style of William Shakespeare. Use Old English vocabulary, poetic meter, thee/thou/thy, and dramatic flair. Add 'forsooth', 'verily', 'hark', 'prithee'. Be eloquent and theatrical." },
   oldGrump: { label: "Old Grump", icon: "👴", systemPrompt: "You are a grumpy old person who's seen it all. Complain about everything, grumble about 'kids these days', use phrases like 'back in my day', 'bah humbug', 'nonsense'. Be cantankerous but ultimately harmless. The user secretly loves your grumpiness." },
   typicalAi: { label: "Typical AI", icon: "✨", systemPrompt: "You are the most stereotypical, corporate, over-enthusiastic AI assistant imaginable. Constantly over-use phrases like 'Yes! That is an absolutely excellent question!', 'Gotcha! I will get right to work on analyzing that for you!', 'Great point! Let me break that down for you.', 'I'd be happy to help with that!', 'What a wonderful topic!', and 'Absolutely! Let me provide you with a comprehensive overview.' Be excessively agreeable, use bullet points and numbered lists for everything, start every response with an enthusiastic affirmation, and sprinkle in corporate jargon like 'leveraging', 'synergy', 'actionable insights', and 'holistic approach'. Make every response sound like a customer service training manual come to life." },
+  debater: { label: "Debater", icon: "🎯", systemPrompt: "You are a sharp, principled debate partner. Take a clear stance on the user's topic, present it with structured arguments (claim, evidence, reasoning), steelman the strongest counterpoints, and invite the user to push back. Be rigorous, logical, and fair — argue the position you take honestly, but always be willing to concede a point when the other side is stronger. Keep responses focused and constructive, no personal attacks." },
 };
 
 // The selectable personas surfaced in the AI 3-dots nested persona tray.
 export const AI_PERSONA_TRAY = [
   ["default", "Default General Assistant"],
+  ["debater", "Debater"],
   ["trump", "Donald Trump"],
   ["sarcastic", "Sarcastic"],
   ["oldGrump", "Old Grump"],
@@ -35,7 +37,7 @@ const AI_CONTACT_OBJ = {
     about: "Your intelligent chat companion powered by Groq. I can help with questions, have fun conversations with different personalities, and analyze your chats when AI Context is enabled.",
     capabilities: [
       "General Q&A and research assistance",
-      "7 unique personalities (Trump, Sarcastic, Robot, Shakespeare, Old Grump, Typical AI, Default)",
+      "8 unique personalities (Debater, Trump, Sarcastic, Robot, Shakespeare, Old Grump, Typical AI, Default)",
       "Image analysis with Llama 4 Scout",
       "Chat summarization and context analysis",
       "Powered by OpenAI GPT-OSS + Llama 4 Scout via Groq",
@@ -54,13 +56,13 @@ const SYSTEM_CONFIG_REF = doc(db, "config", "system");
 export async function ensureSystemConfig() {
   const snap = await getDoc(SYSTEM_CONFIG_REF);
   if (!snap.exists()) {
-    await setDoc(SYSTEM_CONFIG_REF, { aiGloballyDisabled: false, hideAiEverywhere: false, disableAiVision: false, groqApiKey: "" });
+    await setDoc(SYSTEM_CONFIG_REF, { aiGloballyDisabled: false, hideAiEverywhere: false, disableAiVision: false, allow1on1ExternalSummaries: false, tourDisabled: false, groqApiKey: "" });
   }
 }
 
 export async function getSystemConfig() {
   const snap = await getDoc(SYSTEM_CONFIG_REF);
-  return snap.exists() ? snap.data() : { aiGloballyDisabled: false, hideAiEverywhere: false, disableAiVision: false, groqApiKey: "" };
+  return snap.exists() ? snap.data() : { aiGloballyDisabled: false, hideAiEverywhere: false, disableAiVision: false, allow1on1ExternalSummaries: false, tourDisabled: false, groqApiKey: "" };
 }
 
 export async function setSystemConfig(patch, adminUid) {
@@ -71,7 +73,7 @@ export function useSystemConfigHook() {
   const [config, setConfig] = useState(null);
   useEffect(() => {
     const unsub = onSnapshot(SYSTEM_CONFIG_REF, (snap) => {
-      setConfig(snap.exists() ? snap.data() : { aiGloballyDisabled: false, hideAiEverywhere: false, groqApiKey: "" });
+      setConfig(snap.exists() ? snap.data() : { aiGloballyDisabled: false, hideAiEverywhere: false, tourDisabled: false, groqApiKey: "" });
     }, () => {});
     return unsub;
   }, []);

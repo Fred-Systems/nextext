@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, Send, Smile, Check, CheckCheck, CornerUpLeft, X, BarChart2, Plus, MoreVertical, Bell, BellOff, Star, ArrowDown, ArrowUp, Search, Image as ImageIcon, Paperclip, Mic, Play, Pause, FileText, Camera, Lock, Archive, Trash2, MessageSquare, UserPlus, Users, ImageOff, VideoOff, MicOff, FileX, RefreshCw, RotateCcw } from "lucide-react";
+import { ChevronLeft, Send, Smile, Check, CheckCheck, CornerUpLeft, X, BarChart2, Plus, MoreVertical, Bell, BellOff, Star, ArrowDown, ArrowUp, Search, Image as ImageIcon, Paperclip, Mic, Play, Pause, FileText, Camera, Lock, Archive, Trash2, MessageSquare, UserPlus, Users, ImageOff, VideoOff, MicOff, FileX, RefreshCw, RotateCcw, MapPin } from "lucide-react";
 import { useTheme } from "../theme/ThemeContext";
 import {
   useMessages, sendTextMessage, markChatRead, setTypingHeartbeat, reactToMessage,
@@ -8,6 +8,7 @@ import {
   voteOnPoll, editMessage, deleteMessageForSelf, deleteMessageForEveryone,
   toggleFavorite, setMute, clearMute, sendMediaMessage, toggleLocked, toggleArchive, deleteChatCompletely,
   isMediaExpired, setVoiceRecordingHeartbeat, clearVoiceRecordingStatus,
+  sendLocationMessage, updateLiveLocation,
 } from "../firebase/chats";
 import { getWallpaperForChat, setWallpaperForChat, fileToWallpaperDataUrl } from "../theme/wallpaper";
 import { usePresence, formatLastSeen } from "../firebase/presence";
@@ -450,11 +451,97 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const [attachRendered, setAttachRendered] = useState(false);
   const [attachClosing, setAttachClosing] = useState(false);
   const [galleryActive, setGalleryActive] = useState(false);
+  const [showLocationSheet, setShowLocationSheet] = useState(false);
+  const [locBusy, setLocBusy] = useState(false);
+  const [locError, setLocError] = useState("");
+  const [locPosition, setLocPosition] = useState(null);
+  const liveLocRef = useRef(null);
   const openAttach = () => { setAttachClosing(false); setAttachRendered(true); setShowAttach(true); };
   const closeAttach = () => {
     if (!attachRendered) return;
     setAttachClosing(true);
     setTimeout(() => { setAttachRendered(false); setShowAttach(false); setAttachClosing(false); }, 150);
+  };
+
+  // ── Share location ─────────────────────────────────────────────
+  const openLocationSheet = () => {
+    closeAttach();
+    setLocError("");
+    setLocPosition(null);
+    setShowLocationSheet(true);
+    fetchCurrentPosition();
+  };
+
+  const fetchCurrentPosition = () => {
+    setLocBusy(true);
+    setLocError("");
+    const hasGeo = "geolocation" in navigator;
+    if (!hasGeo) {
+      setLocError("Location is not supported on this device.");
+      setLocBusy(false);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy || null });
+        setLocBusy(false);
+      },
+      (err) => {
+        setLocError(err.code === 1
+          ? "Location permission is off. Tap Settings in your device for NexText, allow Location, then try again."
+          : "Couldn't get your location. Please try again.");
+        setLocBusy(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+    );
+  };
+
+  const stopLiveLocation = () => {
+    clearInterval(liveLocRef.current);
+    liveLocRef.current = null;
+  };
+
+  const sendLocation = async (durationMin) => {
+    if (!chatId) { setLocError("Chat isn't ready yet — please wait a moment and try again."); return; }
+    if (!locPosition) { setLocError("Waiting for your location…"); return; }
+    stopLiveLocation();
+    setLocBusy(true);
+    setLocError("");
+    try {
+      const liveUntil = durationMin ? Date.now() + durationMin * 60 * 1000 : null;
+      const msgRef = await sendLocationMessage(chatId, myUid, locPosition, otherParticipants, {
+        liveUntil,
+        replyTo: replyingTo,
+      });
+      setReplyingTo(null);
+      // For live shares, refresh the coordinates every 8s until the window
+      // expires or the user stops sharing.
+      if (durationMin && msgRef?.id) {
+        let active = true;
+        const tick = async () => {
+          if (!active) return;
+          if (Date.now() >= liveUntil) { stopLiveLocation(); return; }
+          navigator.geolocation.getCurrentPosition(
+            async (pos) => {
+              if (!active) return;
+              try {
+                await updateLiveLocation(chatId, msgRef.id, { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy || null });
+              } catch {}
+            },
+            () => {},
+            { enableHighAccuracy: true, timeout: 12000, maximumAge: 15000 }
+          );
+        };
+        liveLocRef.current = setInterval(tick, 8000);
+        tick();
+      }
+      setLocPosition(null);
+      setShowLocationSheet(false);
+      setLocBusy(false);
+    } catch (e) {
+      setLocError(e?.message || "Couldn't share location.");
+      setLocBusy(false);
+    }
   };
   const [showPoll, setShowPoll] = useState(false);
   const [showOverflow, setShowOverflow] = useState(openSettings || false);
@@ -631,7 +718,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   }, [chatId, myUid]);
 
   useEffect(() => () => clearTimeout(typingClearTimer.current), []);
-  useEffect(() => () => { clearTimeout(voiceRecordingClearTimer.current); clearInterval(voiceHeartbeatRef.current); }, []);
+  useEffect(() => () => { clearTimeout(voiceRecordingClearTimer.current); clearInterval(voiceHeartbeatRef.current); clearInterval(liveLocRef.current); }, []);
 
   // Delivered fires immediately -- this chat's listener having the message
   // is a reasonable proxy for "the recipient's device has received it."
@@ -1521,6 +1608,38 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
 
     const { text: displayText, blocked } = filterTextByParentalControls(m.text, restrictions?.customFilterLists);
 
+    if (m.type === "location") {
+      const liveMs = m.liveUntil?.toMillis ? m.liveUntil.toMillis() : (typeof m.liveUntil === "number" ? m.liveUntil : 0);
+      const isLive = liveMs > Date.now();
+      const mapsUrl = m.lat != null && m.lng != null ? `https://maps.google.com/maps?q=${m.lat},${m.lng}&z=16&output=embed` : null;
+      return (
+        <div>
+          <StatusReplyBlock statusRef={m.statusRef} mine={m.senderId === myUid} t={t} />
+          <div style={{ width: 220, overflow: "hidden", borderRadius: 8, background: "rgba(0,0,0,0.05)" }}>
+            {mapsUrl ? (
+              <iframe
+                title="Shared location"
+                src={mapsUrl}
+                loading="lazy"
+                style={{ width: "100%", height: 150, border: "none", pointerEvents: "none", display: "block" }}
+              />
+            ) : (
+              <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", color: t.textMuted, fontSize: 12 }}>📍 Map unavailable</div>
+            )}
+            <div
+              onClick={(e) => { e.stopPropagation(); if (m.lat != null && m.lng != null) window.open(`https://maps.google.com/maps?q=${m.lat},${m.lng}&z=16`, "_blank"); }}
+              style={{ padding: "8px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+            >
+              {isLive && <span style={{ fontSize: 9, fontWeight: 700, color: "#fff", background: "#FF3B30", borderRadius: 6, padding: "2px 6px", flexShrink: 0 }}>LIVE</span>}
+              <span style={{ fontSize: 12.5 * chatTextScale, fontWeight: 600, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {isLive ? "Live location" : (m.label || "Shared location")}
+              </span>
+            </div>
+          </div>
+          {expiryText && <div style={{ fontSize: 10, opacity: 0.55, marginTop: 2, fontStyle: "italic" }}>{expiryText}</div>}
+        </div>
+      );
+    }
     if (m.type === "image") return (
       <div>
         <StatusReplyBlock statusRef={m.statusRef} mine={m.senderId === myUid} t={t} />
@@ -1741,10 +1860,17 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
             </React.Fragment>
             );
           })}
-          {theyTyping && (
+          {(theyRecordingVoice || theyTyping) && (
             <div className="nextext-message-in" style={{ display: "flex", justifyContent: "flex-start" }}>
-              <div style={{ padding: "10px 14px", borderRadius: 14, background: t.bubbleThem, boxShadow: "0 1px 2px rgba(0,0,0,0.08)" }}>
-                <TypingDots color={t.textMuted} />
+              <div style={{ padding: "10px 14px", borderRadius: 14, background: t.bubbleThem, boxShadow: "0 1px 2px rgba(0,0,0,0.08)", display: "flex", alignItems: "center", gap: 7 }}>
+                {theyRecordingVoice ? (
+                  <>
+                    <Mic size={14} className="nextext-mic-waver" color="#2BB579" />
+                    <span style={{ fontSize: 12.5, color: t.textMuted }}>recording voice note…</span>
+                  </>
+                ) : (
+                  <TypingDots color={t.textMuted} />
+                )}
               </div>
             </div>
           )}
@@ -1860,8 +1986,35 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
                 <div onClick={() => { closeAttach(); fileInputRef.current?.click(); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
                   <Paperclip size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>File (max 50MB)</span>
                 </div>
+                <div onClick={openLocationSheet} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
+                  <MapPin size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Share location</span>
+                </div>
                 <div onClick={() => { closeAttach(); openCamera(); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
                   <Camera size={17} color={t.primary} /><span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Camera</span>
+                </div>
+              </div>
+              </>,
+              document.body
+            )}
+            {showLocationSheet && createPortal(
+              <>
+              <style>{`@keyframes nextext-spin { to { transform: rotate(360deg); } }`}</style>
+              <div onClick={() => { if (!locBusy) setShowLocationSheet(false); }} style={{ position: "fixed", inset: 0, zIndex: 2147481200, background: "rgba(0,0,0,0.45)" }} />
+              <div style={{ position: "fixed", left: "50%", top: "50%", transform: "translate(-50%, -50%)", width: "min(330px, 90vw)", background: t.surface, borderRadius: 16, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", zIndex: 2147481201, padding: 18 }}>
+                <div style={{ fontWeight: 700, fontSize: 16, color: t.text, marginBottom: 4 }}>Share location</div>
+                <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 12, lineHeight: 1.5 }}>Send your current location. Live sharing updates the pin automatically for the chosen duration.</div>
+                {locPosition && (
+                  <div style={{ height: 140, borderRadius: 10, overflow: "hidden", marginBottom: 12, position: "relative" }}>
+                    <iframe title="Your location" src={`https://maps.google.com/maps?q=${locPosition.lat},${locPosition.lng}&z=16&output=embed`} style={{ width: "100%", height: "100%", border: "none", pointerEvents: "none" }} />
+                  </div>
+                )}
+                {locBusy && <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: t.textMuted, marginBottom: 12 }}><span style={{ width: 14, height: 14, border: "2px solid rgba(0,0,0,0.15)", borderTopColor: t.primary, borderRadius: "50%", animation: "nextext-spin 0.8s linear infinite" }} /> Getting your location…</div>}
+                {locError && <div style={{ color: "#FF3B30", fontSize: 12.5, marginBottom: 12 }}>{locError}</div>}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  <button onClick={() => sendLocation(0)} disabled={!locPosition || locBusy} style={{ flex: 1, minWidth: "45%", padding: "11px 0", borderRadius: 10, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 13, cursor: locPosition && !locBusy ? "pointer" : "not-allowed", opacity: locPosition && !locBusy ? 1 : 0.5 }}>Send location</button>
+                  <button onClick={() => sendLocation(15)} disabled={!locPosition || locBusy} style={{ flex: 1, minWidth: "45%", padding: "11px 0", borderRadius: 10, border: `1px solid ${t.border}`, background: "transparent", color: t.text, fontWeight: 600, fontSize: 13, cursor: locPosition && !locBusy ? "pointer" : "not-allowed", opacity: locPosition && !locBusy ? 1 : 0.5 }}>Live for 15 min</button>
+                  <button onClick={() => sendLocation(60)} disabled={!locPosition || locBusy} style={{ flex: 1, minWidth: "45%", padding: "11px 0", borderRadius: 10, border: `1px solid ${t.border}`, background: "transparent", color: t.text, fontWeight: 600, fontSize: 13, cursor: locPosition && !locBusy ? "pointer" : "not-allowed", opacity: locPosition && !locBusy ? 1 : 0.5 }}>Live for 1 hour</button>
+                  <button onClick={() => sendLocation(480)} disabled={!locPosition || locBusy} style={{ flex: 1, minWidth: "45%", padding: "11px 0", borderRadius: 10, border: `1px solid ${t.border}`, background: "transparent", color: t.text, fontWeight: 600, fontSize: 13, cursor: locPosition && !locBusy ? "pointer" : "not-allowed", opacity: locPosition && !locBusy ? 1 : 0.5 }}>Live for 8 hours</button>
                 </div>
               </div>
               </>,

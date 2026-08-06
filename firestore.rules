@@ -156,7 +156,10 @@ service cloud.firestore {
         allow update: if isChatParticipant(chatId) && (
           (resource.data.senderId == request.auth.uid && withinEditDeleteWindows()) ||
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['reactions', 'readBy', 'deliveredTo', 'deletedForSelf', 'poll'])
+            .hasOnly(['reactions', 'readBy', 'deliveredTo', 'deletedForSelf', 'poll',
+                      // live-location coordinates can be refreshed by any
+                      // participant while the share is active
+                      'lat', 'lng', 'accuracy', 'liveUntil'])
         );
         allow delete: if isChatParticipant(chatId);
       }

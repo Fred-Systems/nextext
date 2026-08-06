@@ -7,7 +7,7 @@ import { purgeExpiredStatuses, useStatuses } from "./firebase/status";
 import { useContacts } from "./firebase/contacts";
 import { useChats, purgeExpiredChatMedia } from "./firebase/chats";
 import { setGlobalWallpaper, fileToWallpaperDataUrl } from "./theme/wallpaper";
-import { ChevronLeft, Palette, Shield, Lock, MessageSquare, X, ShieldCheck, Phone, Image as ImageIcon, Users, CircleDot, RotateCcw, Camera, Settings as SettingsIcon, Bot, Sparkles, RefreshCw, Search, User } from "lucide-react";
+import { ChevronLeft, Palette, Shield, Lock, MessageSquare, X, ShieldCheck, Phone, Image as ImageIcon, Users, CircleDot, RotateCcw, Camera, Settings as SettingsIcon, Bot, Sparkles, RefreshCw, Search, User, Compass } from "lucide-react";
 import { FONTS } from "./theme/ThemeContext";
 import Avatar from "./components/Avatar";
 import AvatarColorPicker from "./components/AvatarColorPicker";
@@ -263,7 +263,7 @@ function PhoneNumberSetting({ myUid }) {
   );
 }
 
-function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiScale, showScrollDown, setShowScrollDown, animatedScrollEntry, setAnimatedScrollEntry, compactList, setCompactList, onBack, onNavigate, onLogout, userDoc, navConfig, setNavConfig, aiSidebarOn, setAiSidebarOn, showSplash, setShowSplash, searchMode, setSearchMode, topBarVisible, setTopBarVisible, onCheckUpdate, checkingUpdate, updateStatus, animateOnTap, setAnimateOnTap, searchBarScale, setSearchBarScale, setLiveUserDoc }) {
+function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiScale, showScrollDown, setShowScrollDown, animatedScrollEntry, setAnimatedScrollEntry, compactList, setCompactList, onBack, onNavigate, onLogout, userDoc, navConfig, setNavConfig, aiSidebarOn, setAiSidebarOn, showSplash, setShowSplash, searchMode, setSearchMode, topBarVisible, setTopBarVisible, onCheckUpdate, checkingUpdate, updateStatus, animateOnTap, setAnimateOnTap, swipeAnimationOn, setSwipeAnimationOn, swipeSpeed, setSwipeSpeed, onShowTour, searchBarScale, setSearchBarScale, setLiveUserDoc }) {
   const { t, hideNav, setHideNav, chatTextScale, setChatTextScale, appFontId, setAppFontId, composerHeight, setComposerHeight } = useTheme();
   const wallpaperInputRef = useRef(null);
   const profilePhotoRef = useRef(null);
@@ -272,16 +272,16 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   const [avatarNonce, setAvatarNonce] = useState(0);
   const [lockedChatsPassSaved, setLockedChatsPassSaved] = useState(false);
   const lockedChatsPassRef = useRef(null);
+  const lockedChatsOldPassRef = useRef(null);
+  const [lockedChatsPassError, setLockedChatsPassError] = useState("");
   const [appLockEnabled, setAppLockEnabled] = useState(() => localStorage.getItem("nextext_app_lock") === "true" || (localStorage.getItem("nextext_app_lock") === "pending" && !!localStorage.getItem("nextext_app_lock_pass")));
   const [appLockPassSaved, setAppLockPassSaved] = useState(() => !!localStorage.getItem("nextext_app_lock_pass"));
   const appLockPassRef = useRef(null);
   const [linkPreviewsOn, setLinkPreviewsOn] = useState(() => localStorage.getItem("nextext_link_previews") !== "off");
   const [pinchZoomOn, setPinchZoomOn] = useState(() => localStorage.getItem("nextext_pinch_zoom") !== "false");
   const [voicePingsOn, setVoicePingsOn] = useState(() => localStorage.getItem("nextext_voice_pings") !== "off");
-  const [swipeAnimationOn, setSwipeAnimationOn] = useState(() => localStorage.getItem("nextext_swipe_animation") !== "off");
   const [pingSoundId, setPingSoundId] = useState(() => { try { return localStorage.getItem("nextext_voice_ping_sound") || "warm"; } catch { return "warm"; } });
   const [voicePlayerStyle, setVoicePlayerStyle] = useState(() => { try { return localStorage.getItem("nextext_voice_player_style") || "waveform"; } catch { return "waveform"; } });
-  const [swipeSpeed, setSwipeSpeed] = useState(() => { try { return localStorage.getItem("nextext_swipe_speed") || "normal"; } catch { return "normal"; } });
   const [autoUpdateCheckOn, setAutoUpdateCheckOn] = useState(() => localStorage.getItem("nextext_auto_update_check") !== "off");
   const sysConfig = useSystemConfigHook();
   const globalSettings = useGlobalSettings();
@@ -290,7 +290,6 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   const userRestrictions = userDoc?.restrictions || null;
   const customStatusInputRef = useRef(null);
   const [customStatusSaved, setCustomStatusSaved] = useState(false);
-  const [aiContextOn, setAiContextOn] = useState(() => localStorage.getItem("nextext_ai_context") === "true");
   const [openSections, setOpenSections] = useState({});
   const [resetPasswordModal, setResetPasswordModal] = useState(false);
   const [resetPasswordInput, setResetPasswordInput] = useState("");
@@ -523,10 +522,35 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
           <div style={{ padding: "13px 0" }}>
             <div style={{ fontWeight: 600, color: t.text, fontSize: 15, marginBottom: 4 }}>Locked chats password</div>
             <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 8 }}>Set a password to hide chats. Type it in the search bar to reveal them.</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input ref={lockedChatsPassRef} type="password" defaultValue={localStorage.getItem("nextext_locked_chats_password") || ""} placeholder="Set password…" style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 13, boxSizing: "border-box" }} />
-              <button onClick={() => { const val = lockedChatsPassRef.current?.value || ""; localStorage.setItem("nextext_locked_chats_password", val); setLockedChatsPassSaved(true); setTimeout(() => setLockedChatsPassSaved(false), 1800); }} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{lockedChatsPassSaved ? "Saved ✓" : "Save"}</button>
-            </div>
+            {(() => {
+              const current = localStorage.getItem("nextext_locked_chats_password") || "";
+              const saveLockedChatsPass = () => {
+                const val = lockedChatsPassRef.current?.value || "";
+                const oldPass = lockedChatsOldPassRef.current?.value || "";
+                if (current) {
+                  if (oldPass !== current) {
+                    setLockedChatsPassError("Current password is incorrect.");
+                    return;
+                  }
+                }
+                setLockedChatsPassError("");
+                localStorage.setItem("nextext_locked_chats_password", val);
+                setLockedChatsPassSaved(true);
+                setTimeout(() => setLockedChatsPassSaved(false), 1800);
+              };
+              return (
+                <>
+                  {current && (
+                    <input ref={lockedChatsOldPassRef} type="password" placeholder="Current password (required)" style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: `1px solid ${lockedChatsPassError ? "#FF3B30" : t.border}`, fontSize: 13, boxSizing: "border-box", marginBottom: 8 }} />
+                  )}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input ref={lockedChatsPassRef} type="password" defaultValue={current} placeholder="New password…" style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 13, boxSizing: "border-box" }} />
+                    <button onClick={saveLockedChatsPass} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{lockedChatsPassSaved ? "Saved ✓" : "Save"}</button>
+                  </div>
+                  {lockedChatsPassError && <div style={{ color: "#FF3B30", fontSize: 12, marginTop: 6 }}>{lockedChatsPassError}</div>}
+                </>
+              );
+            })()}
           </div>
         </SectionCard>
 
@@ -686,7 +710,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
             <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>Force page animation when tapping bottom or top bar navigation buttons. (Default: off)</div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
               <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: t.text }}>Page swipe animation</span>
-              <Toggle on={swipeAnimationOn} onClick={() => { const next = !swipeAnimationOn; setSwipeAnimationOn(next); localStorage.setItem("nextext_swipe_animation", next ? "on" : "off"); }} />
+              <Toggle on={swipeAnimationOn} onClick={() => setSwipeAnimationOn(!swipeAnimationOn)} />
             </div>
             {swipeAnimationOn && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>Slide animation when swiping between tabs.</div>}
             {swipeAnimationOn && (
@@ -700,7 +724,6 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
                     key={opt.id}
                     onClick={() => {
                       setSwipeSpeed(opt.id);
-                      localStorage.setItem("nextext_swipe_speed", opt.id);
                     }}
                     style={{
                       flex: 1,
@@ -839,19 +862,6 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
                     </div>
                   </div>
                 </div>
-                <div style={{ padding: "12px 0", borderTop: `1px solid ${t.border}` }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, color: t.text, fontSize: 15 }}>Grant Transcript Context Reader Access</div>
-                  </div>
-                  <div onClick={() => { const next = !aiContextOn; setAiContextOn(next); localStorage.setItem("nextext_ai_context", next ? "true" : "false"); }} style={{ width: 46, height: 26, borderRadius: 13, background: aiContextOn ? t.primary : t.border, position: "relative", cursor: "pointer", flexShrink: 0 }}>
-                    <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: aiContextOn ? 23 : 3, transition: "left 0.15s" }} />
-                  </div>
-                </div>
-                <div style={{ marginTop: 8, padding: "10px 12px", borderRadius: 8, background: "#FFF3CD", border: "1px solid #FFEEBA", fontSize: 11.5, color: "#856404", lineHeight: 1.5 }}>
-                  WARNING: Enabling this switch grants the AI engine permission to read your private text conversation data history across all rooms strictly to generate summaries, offer chat reflections, or compile advisory reports. Disable at any time to restrict access.
-                </div>
-              </div>
               </>
             )}
           </SectionCard>
@@ -860,6 +870,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
         {/* ═══ ACCOUNT ACTIONS ═══ */}
         <SectionCard title="Account" emoji="⚙️" sectionKey="accountActions">
           <Row icon={<MessageSquare size={18} color={t.primary} />} label="Send Feedback" sub="Message the admin directly" onClick={() => onNavigate("feedback")} />
+          <Row icon={<Compass size={18} color={t.primary} />} label="Replay Welcome Tour" sub="See the first-run guide again" onClick={onShowTour} />
           {isAdmin && <Row icon={<ShieldCheck size={18} color={t.primary} />} label="Admin Dashboard" sub="Users, reports, broadcasts" onClick={() => onNavigate("admin")} />}
 
           <div style={{ padding: "13px 0" }}>
@@ -995,12 +1006,56 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
 }
 
 const DEFAULT_NAV_CONFIG = [{ key: "chats" }, { key: "status" }, { key: "groups" }, { key: "settings" }];
+const TAB_KEYS = ["chats", "status", "groups", "settings"];
+
+// Coerce any stored shape of the bottom-nav config (older builds persisted a
+// bare array of strings like ["chats","status"]) into the canonical
+// [{key:...}] form, dropping unknown keys. Returns null when nothing usable
+// was stored so callers can fall back to DEFAULT_NAV_CONFIG.
+function normalizeNavConfig(input) {
+  if (!Array.isArray(input)) return null;
+  const out = [];
+  for (const entry of input) {
+    const key = typeof entry === "string" ? entry : entry?.key;
+    if (key && TAB_KEYS.includes(key) && !out.some((e) => e.key === key)) out.push({ key });
+  }
+  return out.length >= 2 ? out : null;
+}
+
+const TOUR_STEPS = [
+  { emoji: "👋", title: "Welcome to NexText", body: "A fast, private messaging app for you and your friends. Here's a quick 30-second tour to get you started." },
+  { emoji: "💬", title: "Chats", body: "Tap a conversation to open it. Swipe between tabs at the bottom to jump between Chats, Status, Groups, and Settings. Long-press a chat for extra actions." },
+  { emoji: "📸", title: "Status & Media", body: "Post photo/video statuses for your contacts to see for 24 hours. Share images, videos, voice notes, and files in any chat — tap the paperclip or plus in the composer." },
+  { emoji: "🔒", title: "Privacy", body: "NexText is built around your privacy: end-to-end media expiry, chat locks, editable message history, blocked contacts, and parental controls all live in Settings → Privacy & Security." },
+  { emoji: "🤖", title: "NexText AI", body: "Ask the AI assistant anything, switch between 8 personalities (including the new Debater), analyze images, or summarize any of your chats from the AI conversation." },
+];
+
+function TourOverlay({ step, total, onNext, onSkip, t }) {
+  const s = TOUR_STEPS[step];
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 999997, background: "#0B141A", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 28px" }}>
+      <div style={{ fontSize: 56, marginBottom: 18 }}>{s.emoji}</div>
+      <div style={{ fontWeight: 800, fontSize: 22, color: "#fff", marginBottom: 10, textAlign: "center" }}>{s.title}</div>
+      <div style={{ fontSize: 14.5, color: "rgba(255,255,255,0.85)", lineHeight: 1.6, textAlign: "center", maxWidth: 300, marginBottom: 34 }}>{s.body}</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 34 }}>
+        {TOUR_STEPS.map((_, i) => (
+          <div key={i} style={{ width: i === step ? 22 : 8, height: 8, borderRadius: 4, background: i === step ? "#10B981" : "rgba(255,255,255,0.3)", transition: "all 0.25s" }} />
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 300 }}>
+        <button onClick={onSkip} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid rgba(255,255,255,0.25)", background: "transparent", color: "#fff", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>Skip</button>
+        <button onClick={onNext} style={{ flex: 1.4, padding: "13px 0", borderRadius: 12, border: "none", background: "#10B981", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>{step === total - 1 ? "Get Started" : "Next"}</button>
+      </div>
+    </div>
+  );
+}
 
 function AppShell({ appLocked, setAppLocked }) {
   const { t, themeKey, setThemeKey, hideNav, appFont } = useTheme();
   const auth = useAuth();
   useSystemInsets();
   const globalSettings = useGlobalSettings();
+  const sysConfig = useSystemConfigHook();
   const [screen, setScreen] = useState("list");
   const [activeChat, setActiveChat] = useState(null);
   const [activeGroup, setActiveGroup] = useState(null);
@@ -1015,7 +1070,8 @@ function AppShell({ appLocked, setAppLocked }) {
   const [navConfig, setNavConfig] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem("nextext_nav_config"));
-      if (Array.isArray(stored) && stored.length >= 2) return stored;
+      const normalized = normalizeNavConfig(stored);
+      if (normalized) return normalized;
     } catch { /* ignore */ }
     return DEFAULT_NAV_CONFIG;
   });
@@ -1027,8 +1083,12 @@ function AppShell({ appLocked, setAppLocked }) {
   const [searchMode, setSearchMode] = useState(() => localStorage.getItem("nextext_search_mode") || "visible");
   const [topBarVisible, setTopBarVisible] = useState(() => localStorage.getItem("nextext_top_bar_visible") !== "false");
   const [animateOnTap, setAnimateOnTap] = useState(() => localStorage.getItem("nextext_animate_on_tap") === "true");
+  const [swipeAnimationOn, setSwipeAnimationOn] = useState(() => localStorage.getItem("nextext_swipe_animation") !== "off");
+  const [swipeSpeed, setSwipeSpeed] = useState(() => { try { return localStorage.getItem("nextext_swipe_speed") || "normal"; } catch { return "normal"; } });
   const [searchBarScale, setSearchBarScale] = useState(() => { try { return Number(localStorage.getItem("nextext_search_bar_scale")) || 1; } catch { return 1; } });
   const [pendingUpdate, setPendingUpdate] = useState(null);
+  const [showTour, setShowTour] = useState(false);
+  const [tourStep, setTourStep] = useState(0);
   const [showUpdatePrompt, setShowUpdatePrompt] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState("");
@@ -1091,7 +1151,11 @@ function AppShell({ appLocked, setAppLocked }) {
       const raw = localStorage.getItem("nextext_app_state");
       if (!raw) return;
       const state = JSON.parse(raw);
-      if (state.myUid && state.myUid !== myUid) return;
+      // Strict per-uid guard: only restore state saved by this exact user.
+      // (A state saved mid-sign-out has myUid null/undefined and must not
+      // steer a fresh sign-in onto a stale screen — the cause of a missing
+      // bottom nav / blank pager on first login.)
+      if (state.myUid !== myUid) return;
       if (state.screen) setScreen(state.screen);
       if (state.activeNavTab) setActiveNavTab(state.activeNavTab);
       if (state.activeChat) setActiveChat(state.activeChat);
@@ -1100,7 +1164,10 @@ function AppShell({ appLocked, setAppLocked }) {
       if (state.showScrollDown !== undefined) setShowScrollDown(state.showScrollDown);
       if (state.animatedScrollEntry !== undefined) setAnimatedScrollEntry(state.animatedScrollEntry);
       if (state.compactList !== undefined) setCompactList(state.compactList);
-      if (Array.isArray(state.navConfig) && state.navConfig.length >= 2) setNavConfig(state.navConfig);
+      if (Array.isArray(state.navConfig)) {
+        const normalized = normalizeNavConfig(state.navConfig);
+        if (normalized) setNavConfig(normalized);
+      }
       if (state.searchMode) setSearchMode(state.searchMode);
       if (state.topBarVisible !== undefined) setTopBarVisible(state.topBarVisible);
       if (state.animateOnTap !== undefined) setAnimateOnTap(state.animateOnTap);
@@ -1118,23 +1185,18 @@ function AppShell({ appLocked, setAppLocked }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myUid]);
 
-  const swipeAnimationEnabled = () => {
-    try { return localStorage.getItem("nextext_swipe_animation") !== "off"; } catch { return true; }
-  };
+  const swipeAnimationEnabled = () => swipeAnimationOn;
 
-  // Duration (ms) for the swipe snap animation, chosen by the Settings slider.
+  // Duration (s) for the swipe snap animation, chosen by the Settings slider.
+  // WhatsApp uses a short, fast slide (~200ms) — we keep the same feel.
   const swipeDuration = () => {
-    try {
-      const speed = localStorage.getItem("nextext_swipe_speed") || "normal";
-      if (speed === "slow") return 0.45;
-      if (speed === "fast") return 0.14;
-      return 0.28;
-    } catch { return 0.28; }
+    if (swipeSpeed === "slow") return 0.35;
+    if (swipeSpeed === "fast") return 0.12;
+    return 0.2;
   };
 
-  // WhatsApp-style snap curve: critically damped, no overshoot.
-  // Tuned for fast, fluid horizontal swiping.
-  const swipeBezier = () => "cubic-bezier(0.22, 0.61, 0.36, 1)";
+  // WhatsApp-style snap curve: fast ramp in, short settle, no overshoot.
+  const swipeBezier = () => "cubic-bezier(0.1, 0.9, 0.2, 1)";
 
   const swipeTransition = () => (swipeAnimationEnabled() ? `left ${swipeDuration()}s ${swipeBezier()}` : "none");
 
@@ -1167,6 +1229,21 @@ function AppShell({ appLocked, setAppLocked }) {
     const t = setTimeout(() => { initNotifications(myUid).catch(() => {}); }, 5000);
     return () => clearTimeout(t);
   }, [myUid]);
+
+  // First-run welcome tour: shown once per user on first sign-in (skippable),
+  // unless the admin has disabled tours globally. Re-takeable from Settings.
+  useEffect(() => {
+    if (!myUid || !auth.userDoc?.profileComplete) return;
+    if (sysConfig?.tourDisabled) return;
+    const seenKey = `nextext_tour_seen_${myUid}`;
+    if (localStorage.getItem(seenKey) === "true") return;
+    localStorage.setItem(seenKey, "true");
+    const t = setTimeout(() => { setTourStep(0); setShowTour(true); }, 1200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myUid, auth.userDoc?.profileComplete]);
+
+  const finishTour = () => { setShowTour(false); setTourStep(0); };
 
   const { contacts } = useContacts(myUid);
   const { chats: myChats } = useChats(myUid);
@@ -1315,6 +1392,8 @@ function AppShell({ appLocked, setAppLocked }) {
   useEffect(() => { localStorage.setItem(UI_SCALE_KEY, String(uiScale)); }, [uiScale]);
   useEffect(() => { localStorage.setItem(SCROLL_DOWN_KEY, String(showScrollDown)); }, [showScrollDown]);
   useEffect(() => { localStorage.setItem("nextext_animate_on_tap", String(animateOnTap)); }, [animateOnTap]);
+  useEffect(() => { localStorage.setItem("nextext_swipe_animation", swipeAnimationOn ? "on" : "off"); }, [swipeAnimationOn]);
+  useEffect(() => { localStorage.setItem("nextext_swipe_speed", swipeSpeed); }, [swipeSpeed]);
   useEffect(() => { localStorage.setItem("nextext_search_bar_scale", String(searchBarScale)); }, [searchBarScale]);
 
   // Re-lock app whenever the user returns to it from the background.
@@ -1354,6 +1433,28 @@ function AppShell({ appLocked, setAppLocked }) {
   const [initialViewStatuses, setInitialViewStatuses] = useState(null);
   const [statusOrigin, setStatusOrigin] = useState("status");
 
+  // Locked-chat gate: opening a chat that is locked by me requires the locked
+  // chats password, verified once per session. `lockPromptChat` holds the
+  // pending open request while the code prompt is on screen.
+  const [lockPromptChat, setLockPromptChat] = useState(null);
+  const [lockPromptError, setLockPromptError] = useState("");
+  const lockPromptInputRef = useRef(null);
+  const verifiedLockedChatsRef = useRef(new Set());
+
+  const confirmLockPrompt = () => {
+    const pass = localStorage.getItem("nextext_locked_chats_password") || "";
+    const entered = lockPromptInputRef.current?.value || "";
+    if (entered !== pass) {
+      setLockPromptError("Incorrect lock code.");
+      return;
+    }
+    const pending = lockPromptChat;
+    setLockPromptChat(null);
+    setLockPromptError("");
+    if (pending?.chatDoc?.id) verifiedLockedChatsRef.current.add(pending.chatDoc.id);
+    openChat(pending.chatDoc, pending.otherUid, pending.contact, { ...(pending.options || {}), lockVerified: true });
+  };
+
   const openChat = (chatDoc, otherUid, contact, options) => {
     if (options?.isAI) {
       setScreen("aiChat");
@@ -1370,7 +1471,15 @@ function AppShell({ appLocked, setAppLocked }) {
       setScreen("status");
       return;
     }
-    setActiveChat({ chatId: chatDoc?.id || null, otherUid, contact, origin: "chat", openSettings: options?.openSettings || false });
+    const chatId = chatDoc?.id;
+    const isLockedForMe = !!chatDoc?.lockedBy?.[myUid];
+    const hasLockPass = !!localStorage.getItem("nextext_locked_chats_password");
+    if (isLockedForMe && hasLockPass && !options?.lockVerified && !verifiedLockedChatsRef.current.has(chatId)) {
+      setLockPromptChat({ chatDoc, otherUid, contact, options });
+      return;
+    }
+    if (chatId) verifiedLockedChatsRef.current.add(chatId);
+    setActiveChat({ chatId, otherUid, contact, origin: "chat", openSettings: options?.openSettings || false });
     setScreen("chat");
   };
 
@@ -1401,7 +1510,6 @@ function AppShell({ appLocked, setAppLocked }) {
   };
 
   // ── Swipeable tab pager (WhatsApp-style drag + snap) ──────────────
-  const TAB_KEYS = ["chats", "status", "groups", "settings"];
   const orderedTabs = navConfig
     .filter(({ key }) => {
       if (key === "status" && userRestrictions?.blockStatus === true) return false;
@@ -1661,6 +1769,11 @@ function AppShell({ appLocked, setAppLocked }) {
                 updateStatus={updateStatus}
                 animateOnTap={animateOnTap}
                 setAnimateOnTap={setAnimateOnTap}
+                swipeAnimationOn={swipeAnimationOn}
+                setSwipeAnimationOn={setSwipeAnimationOn}
+                swipeSpeed={swipeSpeed}
+                setSwipeSpeed={setSwipeSpeed}
+                onShowTour={() => { setTourStep(0); setShowTour(true); }}
                 searchBarScale={searchBarScale}
                 setSearchBarScale={setSearchBarScale}
                 setLiveUserDoc={setLiveUserDoc}
@@ -1743,6 +1856,11 @@ function AppShell({ appLocked, setAppLocked }) {
         if (!topBarVisible && !navTabs.some((t) => t.key === "settings")) {
           navTabs.push({ key: "settings", ...ALL_TABS.settings });
         }
+        // Chats is always on: without this a malformed/legacy stored config
+        // could leave the whole bottom bar blank.
+        if (!navTabs.some((t) => t.key === "chats")) {
+          navTabs.unshift({ key: "chats", ...ALL_TABS.chats });
+        }
         if (!navTabs.length) return null;
         return (
           <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", background: t.surface, borderTop: `1px solid ${t.border}`, zIndex: 1000, paddingBottom: "max(0px, calc(var(--safe-bottom)))" }}>
@@ -1787,6 +1905,31 @@ function AppShell({ appLocked, setAppLocked }) {
             }}
           />
           <style>{`@keyframes nextext-spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      ), document.body)}
+
+      {createPortal(showTour && (
+        <TourOverlay
+          step={tourStep}
+          total={TOUR_STEPS.length}
+          t={t}
+          onNext={() => { if (tourStep >= TOUR_STEPS.length - 1) finishTour(); else setTourStep((s) => s + 1); }}
+          onSkip={finishTour}
+        />
+      ), document.body)}
+
+      {createPortal(lockPromptChat && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 999998, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 28 }}>
+          <div style={{ width: "100%", maxWidth: 320, background: t.surface, borderRadius: 16, padding: 20, boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}>
+            <div style={{ fontWeight: 700, fontSize: 16, color: t.text, marginBottom: 4 }}>Locked chat</div>
+            <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 12 }}>Enter your locked-chats password to open this conversation.</div>
+            <input ref={lockPromptInputRef} type="password" placeholder="Lock code…" onKeyDown={(e) => { if (e.key === "Enter") confirmLockPrompt(); }} autoFocus style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${lockPromptError ? "#FF3B30" : t.border}`, fontSize: 14, boxSizing: "border-box", marginBottom: lockPromptError ? 6 : 12, color: t.text, background: t.bg }} />
+            {lockPromptError && <div style={{ color: "#FF3B30", fontSize: 12, marginBottom: 10 }}>{lockPromptError}</div>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setLockPromptChat(null); setLockPromptError(""); }} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: `1px solid ${t.border}`, background: "transparent", color: t.text, fontWeight: 600, fontSize: 13.5, cursor: "pointer" }}>Cancel</button>
+              <button onClick={confirmLockPrompt} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>Unlock</button>
+            </div>
+          </div>
         </div>
       ), document.body)}
 

@@ -136,7 +136,7 @@ export default function AuthScreen({ auth }) {
 
         {mode === "signup" && (
           <>
-            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Display name" style={inputStyle(t)} />
+            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Display name (required)" style={inputStyle(t)} />
             <div style={{ position: "relative" }}>
               <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username (required)" style={{ ...inputStyle(t), borderColor: usernameTaken ? "#FF3B30" : t.border }} />
               {checkingUsername && <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: t.textMuted }}>checking…</span>}

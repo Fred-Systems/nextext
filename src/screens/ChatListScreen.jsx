@@ -28,7 +28,7 @@ function highlightText(text, query, color) {
     : part);
 }
 
-function ChatRowMeta({ myUid, otherUid, chatId, t, compact }) {
+function ChatRowMeta({ myUid, otherUid, chatId, t, compact, isGroup }) {
   const presence = usePresence(otherUid, myUid);
   const [theyTyping, setTheyTyping] = useState(false);
   const [theyRecordingVoice, setTheyRecordingVoice] = useState(false);
@@ -72,7 +72,7 @@ function ChatRowMeta({ myUid, otherUid, chatId, t, compact }) {
       </div>
     );
   }
-  const statusText = theyTyping ? "typing…" : presence.visible ? (presence.isOnline ? "online" : formatLastSeen(presence.lastSeen)) : "";
+  const statusText = isGroup ? (theyTyping ? "typing…" : "") : (theyTyping ? "typing…" : presence.visible ? (presence.isOnline ? "online" : formatLastSeen(presence.lastSeen)) : "");
   if (!statusText) return null;
   return <div style={{ fontSize: compact ? 11 : 12, color: t.textMuted, marginTop: compact ? 0 : 1 }}>{statusText}</div>;
 }
@@ -247,20 +247,23 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
 
   const openChatRow = (chat) => {
     setLockedChatsUnlocked(false);
+    // Rows are only visible after the locked-chats password was entered in
+    // search, so the session is already verified for this chat.
+    const openOpts = chat.lockedBy?.[myUid] ? { lockVerified: true } : {};
     if (chat.id?.startsWith("ai_")) {
       onOpenChat(chat, AI_CONTACT_UID, getAIContact(), { isAI: true });
       return;
     }
     if (chat.type === "group") {
-      onOpenChat(chat, null, { isGroup: true, groupName: chat.groupName });
+      onOpenChat(chat, null, { isGroup: true, groupName: chat.groupName }, openOpts);
     } else {
       const participants = chat.participants || [myUid];
       const otherUid = participants.find((p) => p !== myUid) || myUid;
       if (otherUid === myUid) {
-        onOpenChat(chat, myUid, selfContact || { uid: myUid, profile: { displayName: "Me (You)", photoURL: null } });
+        onOpenChat(chat, myUid, selfContact || { uid: myUid, profile: { displayName: "Me (You)", photoURL: null } }, openOpts);
       } else {
         const contact = acceptedContacts.find((ac) => ac.uid === otherUid);
-        onOpenChat(chat, otherUid, contact || { uid: otherUid, profile: { displayName: "Unknown" } });
+        onOpenChat(chat, otherUid, contact || { uid: otherUid, profile: { displayName: "Unknown" } }, openOpts);
       }
     }
   };
@@ -448,7 +451,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
             {formatTime(c.lastMessage?.sentAt)}
           </span>
         </div>
-        {c.type !== "group" && <ChatRowMeta myUid={myUid} otherUid={otherUid} chatId={c.id} t={t} compact={compactList} />}
+        {<ChatRowMeta myUid={myUid} otherUid={otherUid} chatId={c.id} t={t} compact={compactList} isGroup={c.type === "group"} />}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minWidth: 0 }}>
           <span style={{ fontSize: msgSize, color: t.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
             {searchQuery.trim() ? highlightText(c.lastMessage?.text || "No messages yet", searchQuery, t.accent) : (c.lastMessage?.text || "No messages yet")}

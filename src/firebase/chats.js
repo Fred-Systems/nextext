@@ -320,6 +320,68 @@ export async function sendMediaMessage(chatId, senderUid, type, uploadResult, ot
   await incrementUnreadCounts(chatId, otherParticipants);
 }
 
+export async function sendLocationMessage(chatId, senderUid, location, otherParticipants, options = {}) {
+  const { liveUntil = null, replyTo = null, statusRef = null } = options;
+  const sender = await snapshotSenderName(senderUid);
+  const isLive = !!liveUntil && liveUntil > Date.now();
+  const textLabel = isLive ? "📍 Live location" : "📍 Location";
+  await addDoc(collection(db, "chats", chatId, "messages"), {
+    senderId: senderUid,
+    senderName: sender.senderName,
+    senderUsername: sender.senderUsername,
+    type: "location",
+    text: textLabel,
+    lat: location.lat,
+    lng: location.lng,
+    label: location.label || null,
+    accuracy: location.accuracy || null,
+    liveUntil: liveUntil,
+    mediaURL: null,
+    mediaThumbURL: null,
+    mediaDurationSeconds: null,
+    mediaSizeBytes: null,
+    mediaExpiresAt: null,
+    mediaExpired: false,
+    mediaSavedBy: [],
+    fileName: null,
+    fileExtension: null,
+    fileSizeBytes: null,
+    gifURL: null,
+    gifSourceProvider: null,
+    scheduledFor: null,
+    isScheduled: false,
+    sentAt: serverTimestamp(),
+    deliveredTo: [],
+    readBy: [],
+    deletedForEveryone: false,
+    deletedForSelf: [],
+    editedAt: null,
+    editHistory: [],
+    editWindowExpiresAt: null,
+    disappearing: null,
+    screenshotDetected: false,
+    replyTo,
+    reactions: {},
+    poll: null,
+    statusRef,
+  });
+  await updateDoc(doc(db, "chats", chatId), {
+    lastMessage: { text: textLabel, senderId: senderUid, sentAt: serverTimestamp(), type: "location" },
+  });
+  await incrementUnreadCounts(chatId, otherParticipants);
+}
+
+// Live-location heartbeat: refreshes the coordinates on an existing location
+// message without creating new messages. The recipient keeps seeing the same
+// bubble with a moving pin until liveUntil passes.
+export async function updateLiveLocation(chatId, messageId, location) {
+  await updateDoc(doc(db, "chats", chatId, "messages", messageId), {
+    lat: location.lat,
+    lng: location.lng,
+    accuracy: location.accuracy || null,
+  });
+}
+
 function mediaLabel(type) {
   if (type === "image") return "📷 Photo";
   if (type === "video") return "🎥 Video";
