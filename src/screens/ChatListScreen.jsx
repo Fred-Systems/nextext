@@ -123,8 +123,10 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
   // A contact whose direct chat is locked is hidden from the contacts list
   // so the user can't bypass the lock by tapping the chat icon next to their
   // name. Locked chats are only reachable by typing the lock password in search.
+  // When lockedChatsUnlocked is true, the user has entered the password in search,
+  // so we temporarily allow the unlocked chats and their contacts to show.
   const lockedContactUids = new Set(
-    chats.filter((c) => c.lockedBy?.[myUid] && c.type !== "group")
+    lockedChatsUnlocked ? [] : chats.filter((c) => c.lockedBy?.[myUid] && c.type !== "group")
       .map((c) => (c.participants || []).find((p) => p !== myUid))
       .filter(Boolean)
   );

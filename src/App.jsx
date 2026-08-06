@@ -290,7 +290,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   const userRestrictions = userDoc?.restrictions || null;
   const customStatusInputRef = useRef(null);
   const [customStatusSaved, setCustomStatusSaved] = useState(false);
-  const [openSections, setOpenSections] = useState({});
+  const [openSections, setOpenSections] = useState({ accountActions: true });
   const [resetPasswordModal, setResetPasswordModal] = useState(false);
   const [resetPasswordInput, setResetPasswordInput] = useState("");
   const [disableLockModal, setDisableLockModal] = useState(false);
