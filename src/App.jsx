@@ -29,7 +29,7 @@ import { useSystemConfigHook, requestAIAccess, setAIPersonality, PERSONALITIES }
 import AppLockScreen from "./screens/AppLockScreen";
 import StatusScreen from "./screens/StatusScreen";
 import GroupInfoScreen from "./screens/GroupInfoScreen";
-import { initNotifications } from "./firebase/notifications";
+import { initNotifications, setNotificationTapHandler } from "./firebase/notifications";
 import { App as CapApp } from "@capacitor/app";
 import PermissionsScreen from "./screens/PermissionsScreen";
 import UpdatePrompt from "./components/UpdatePrompt";
@@ -263,7 +263,7 @@ function PhoneNumberSetting({ myUid }) {
   );
 }
 
-function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiScale, showScrollDown, setShowScrollDown, animatedScrollEntry, setAnimatedScrollEntry, compactList, setCompactList, onBack, onNavigate, onLogout, userDoc, navConfig, setNavConfig, aiSidebarOn, setAiSidebarOn, showSplash, setShowSplash, searchMode, setSearchMode, topBarVisible, setTopBarVisible, onCheckUpdate, checkingUpdate, updateStatus, animateOnTap, setAnimateOnTap, searchBarScale, setSearchBarScale }) {
+function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiScale, showScrollDown, setShowScrollDown, animatedScrollEntry, setAnimatedScrollEntry, compactList, setCompactList, onBack, onNavigate, onLogout, userDoc, navConfig, setNavConfig, aiSidebarOn, setAiSidebarOn, showSplash, setShowSplash, searchMode, setSearchMode, topBarVisible, setTopBarVisible, onCheckUpdate, checkingUpdate, updateStatus, animateOnTap, setAnimateOnTap, searchBarScale, setSearchBarScale, setLiveUserDoc }) {
   const { t, hideNav, setHideNav, chatTextScale, setChatTextScale, appFontId, setAppFontId, composerHeight, setComposerHeight } = useTheme();
   const wallpaperInputRef = useRef(null);
   const profilePhotoRef = useRef(null);
@@ -279,7 +279,8 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   const [pinchZoomOn, setPinchZoomOn] = useState(() => localStorage.getItem("nextext_pinch_zoom") !== "false");
   const [voicePingsOn, setVoicePingsOn] = useState(() => localStorage.getItem("nextext_voice_pings") !== "off");
   const [swipeAnimationOn, setSwipeAnimationOn] = useState(() => localStorage.getItem("nextext_swipe_animation") !== "off");
-  const [pingSoundId, setPingSoundId] = useState(() => { try { return localStorage.getItem("nextext_voice_ping_sound") || "classic"; } catch { return "classic"; } });
+  const [pingSoundId, setPingSoundId] = useState(() => { try { return localStorage.getItem("nextext_voice_ping_sound") || "warm"; } catch { return "warm"; } });
+  const [voicePlayerStyle, setVoicePlayerStyle] = useState(() => { try { return localStorage.getItem("nextext_voice_player_style") || "waveform"; } catch { return "waveform"; } });
   const [swipeSpeed, setSwipeSpeed] = useState(() => { try { return localStorage.getItem("nextext_swipe_speed") || "normal"; } catch { return "normal"; } });
   const [autoUpdateCheckOn, setAutoUpdateCheckOn] = useState(() => localStorage.getItem("nextext_auto_update_check") !== "off");
   const sysConfig = useSystemConfigHook();
@@ -355,11 +356,16 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
   // change, e.g. the admin tech-stack editor's first keystroke.
   const SectionCard = useMemo(() => ({ title, emoji, children, sectionKey }) => {
     const isOpen = sectionKey ? (openSections?.[sectionKey] ?? false) : true;
+    // Category headers are dark grey (#1E1E1E) on light themes for a crisp
+    // WhatsApp-style look; dark themes use a light header instead so the title
+    // stays readable against the dark background.
+    const bgFirstHex = String(t.bg || "").slice(1, 2);
+    const headerColor = (bgFirstHex && bgFirstHex > "7") ? "#1E1E1E" : t.text;
     return (
       <div style={{ marginBottom: 18 }}>
         <div onClick={sectionKey ? () => toggleSection(sectionKey) : undefined} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, cursor: sectionKey ? "pointer" : "default" }}>
           <span style={{ fontSize: 14 }}>{emoji}</span>
-          <span style={{ fontWeight: 700, fontSize: 14, color: t.text, flex: 1 }}>{title}</span>
+          <span style={{ fontWeight: 700, fontSize: 14, color: headerColor, flex: 1 }}>{title}</span>
           {sectionKey && <span style={{ fontSize: 11, color: t.textMuted, transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>}
         </div>
         {isOpen && (
@@ -642,6 +648,38 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
               </div>
             )}
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: t.text }}>Voice player style</span>
+            </div>
+            <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>Real-time waveform, or a clean seek bar you can tap and drag.</div>
+            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+              {[
+                { id: "waveform", label: "Waveform" },
+                { id: "scrubber", label: "Scrubber" },
+              ].map((opt) => (
+                <div
+                  key={opt.id}
+                  onClick={() => {
+                    setVoicePlayerStyle(opt.id);
+                    localStorage.setItem("nextext_voice_player_style", opt.id);
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: "7px 0",
+                    textAlign: "center",
+                    borderRadius: 8,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    background: voicePlayerStyle === opt.id ? t.primary : t.bg,
+                    color: voicePlayerStyle === opt.id ? t.bubbleMeText : t.text,
+                    border: `1px solid ${voicePlayerStyle === opt.id ? t.primary : t.border}`,
+                  }}
+                >
+                  {opt.label}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
               <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: t.text }}>Animate tab taps (animateOnTap)</span>
               <Toggle on={animateOnTap} onClick={() => setAnimateOnTap(!animateOnTap)} />
             </div>
@@ -764,7 +802,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
                   <div style={{ fontWeight: 600, color: t.text, fontSize: 14, marginBottom: 8 }}>AI Personality</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {Object.entries(PERSONALITIES).map(([key, p]) => (
-                      <div key={key} onClick={() => { setAIPersonality(myUid, key); setLiveUserDoc((prev) => ({ ...(prev || auth.userDoc || {}), aiPersonality: key })); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: userDoc?.aiPersonality === key ? t.primaryLight : t.bg, border: `1px solid ${userDoc?.aiPersonality === key ? t.primary : t.border}`, cursor: "pointer" }}>
+                      <div key={key} onClick={() => { setAIPersonality(myUid, key); setLiveUserDoc((prev) => ({ ...(prev || userDoc || {}), aiPersonality: key })); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: userDoc?.aiPersonality === key ? t.primaryLight : t.bg, border: `1px solid ${userDoc?.aiPersonality === key ? t.primary : t.border}`, cursor: "pointer" }}>
                         <span style={{ fontSize: 18 }}>{p.icon}</span>
                         <span style={{ fontWeight: 600, fontSize: 14, color: userDoc?.aiPersonality === key ? t.primary : t.text }}>{p.label}</span>
                         {userDoc?.aiPersonality === key && <span style={{ marginLeft: "auto", color: t.primary, fontWeight: 700 }}>✓</span>}
@@ -1007,6 +1045,74 @@ function AppShell({ appLocked, setAppLocked }) {
   // pageIndex to the active tab and we can stop using the derived value.
   const firstRenderRef = useRef(true);
 
+  // ── App state persistence ──────────────────────────────────────────
+  // Persists navigation state to localStorage so relaunching the app
+  // restores the last screen, active tab, open chat/group and bottom nav
+  // configuration. Keyed by uid so one user's state never leaks to another.
+  // Transient overlays (splash, theme sheet, story viewer) are intentionally
+  // excluded — they must never be reopened from a cold start.
+  const saveAppState = () => {
+    try {
+      const state = {
+        myUid,
+        screen,
+        activeNavTab,
+        activeChat,
+        activeGroup,
+        uiScale,
+        showScrollDown,
+        animatedScrollEntry,
+        compactList,
+        navConfig,
+        searchMode,
+        topBarVisible,
+        animateOnTap,
+        searchBarScale,
+        aiSidebarOn,
+      };
+      localStorage.setItem("nextext_app_state", JSON.stringify(state));
+    } catch (e) {
+      console.warn("Failed to save app state:", e);
+    }
+  };
+
+  // Always-fresh reference so the backgrounded listener (registered once in
+  // a []-dep effect) never captures stale state via a closure.
+  const saveAppStateRef = useRef(saveAppState);
+  saveAppStateRef.current = saveAppState;
+
+  const restoreAppState = () => {
+    try {
+      const raw = localStorage.getItem("nextext_app_state");
+      if (!raw) return;
+      const state = JSON.parse(raw);
+      if (state.myUid && state.myUid !== myUid) return;
+      if (state.screen) setScreen(state.screen);
+      if (state.activeNavTab) setActiveNavTab(state.activeNavTab);
+      if (state.activeChat) setActiveChat(state.activeChat);
+      if (state.activeGroup) setActiveGroup(state.activeGroup);
+      if (state.uiScale !== undefined) setUiScale(state.uiScale);
+      if (state.showScrollDown !== undefined) setShowScrollDown(state.showScrollDown);
+      if (state.animatedScrollEntry !== undefined) setAnimatedScrollEntry(state.animatedScrollEntry);
+      if (state.compactList !== undefined) setCompactList(state.compactList);
+      if (Array.isArray(state.navConfig) && state.navConfig.length >= 2) setNavConfig(state.navConfig);
+      if (state.searchMode) setSearchMode(state.searchMode);
+      if (state.topBarVisible !== undefined) setTopBarVisible(state.topBarVisible);
+      if (state.animateOnTap !== undefined) setAnimateOnTap(state.animateOnTap);
+      if (state.searchBarScale !== undefined) setSearchBarScale(state.searchBarScale);
+      if (state.aiSidebarOn !== undefined) setAiSidebarOn(state.aiSidebarOn);
+    } catch (e) {
+      console.warn("Failed to restore app state:", e);
+    }
+  };
+
+  // Restore the last session once the user identity is known.
+  useEffect(() => {
+    if (!myUid) return;
+    restoreAppState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myUid]);
+
   const swipeAnimationEnabled = () => {
     try { return localStorage.getItem("nextext_swipe_animation") !== "off"; } catch { return true; }
   };
@@ -1038,6 +1144,13 @@ function AppShell({ appLocked, setAppLocked }) {
 
   const myUid = auth.user?.uid;
   usePresenceHeartbeat(myUid);
+
+  const [pendingNotifChatId, setPendingNotifChatId] = useState(null);
+
+  useEffect(() => {
+    setNotificationTapHandler((chatId) => setPendingNotifChatId(chatId));
+    return () => setNotificationTapHandler(null);
+  }, []);
 
   useEffect(() => {
     if (!myUid) return;
@@ -1203,9 +1316,12 @@ function AppShell({ appLocked, setAppLocked }) {
   // Re-lock app whenever the user returns to it from the background.
   // Uses Capacitor's appStateChange (fires reliably on Android WebView when the
   // app is backgrounded) plus visibilitychange as a fallback for browsers.
+  // Also persists app state (last screen/tab/chat/bottom-nav) when leaving so
+  // the next launch restores it.
   useEffect(() => {
     const relock = () => {
       if (document.visibilityState !== "hidden") return;
+      saveAppStateRef.current();
       const enabled = localStorage.getItem("nextext_app_lock") === "true";
       const pass = localStorage.getItem("nextext_app_lock_pass");
       const shouldLock = enabled && !!pass;
@@ -1213,6 +1329,7 @@ function AppShell({ appLocked, setAppLocked }) {
     };
     const relockNative = ({ isActive }) => {
       if (isActive) return;
+      saveAppStateRef.current();
       const enabled = localStorage.getItem("nextext_app_lock") === "true";
       const pass = localStorage.getItem("nextext_app_lock_pass");
       const shouldLock = enabled && !!pass;
@@ -1252,6 +1369,22 @@ function AppShell({ appLocked, setAppLocked }) {
     setActiveChat({ chatId: chatDoc?.id || null, otherUid, contact, origin: "chat", openSettings: options?.openSettings || false });
     setScreen("chat");
   };
+
+  // Route into a chat when the user taps a notification (or a background
+  // payload arrived while the app was closed). Waits for the chat list to load
+  // on cold start, then drops the request if the chat can't be found.
+  useEffect(() => {
+    if (!pendingNotifChatId) return;
+    const chat = (myChats || []).find((c) => c.id === pendingNotifChatId);
+    if (chat) {
+      setPendingNotifChatId(null);
+      const otherUid = (chat.participants || []).find((p) => p !== myUid);
+      openChat(chat, otherUid, (contacts || []).find((c) => c.uid === otherUid));
+    } else if ((myChats || []).length > 0) {
+      const t = setTimeout(() => setPendingNotifChatId((cur) => (cur === pendingNotifChatId ? null : cur)), 8000);
+      return () => clearTimeout(t);
+    }
+  }, [pendingNotifChatId, myChats, myUid, contacts]);
 
   const openGroupInfo = (chat) => {
     setActiveGroup({ chatId: chat?.id, groupName: chat?.groupName });
@@ -1526,6 +1659,7 @@ function AppShell({ appLocked, setAppLocked }) {
                 setAnimateOnTap={setAnimateOnTap}
                 searchBarScale={searchBarScale}
                 setSearchBarScale={setSearchBarScale}
+                setLiveUserDoc={setLiveUserDoc}
               />
               </PageErrorBoundary>
             </div>

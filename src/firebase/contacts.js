@@ -47,9 +47,28 @@ export async function acceptContactRequest(myUid, theirUid) {
   await setDoc(doc(db, "users", theirUid, "contacts", myUid), { status: "accepted" }, { merge: true });
 }
 
+// Local cache of the last-known contact list so the chat list can paint
+// instantly on relaunch instead of waiting on Firestore. Refreshed on every
+// snapshot; keyed by uid.
+const contactsCacheKey = (myUid) => `nextext_contacts_${myUid}`;
+
+function loadContactsCache(myUid) {
+  try {
+    const raw = localStorage.getItem(contactsCacheKey(myUid));
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch { return []; }
+}
+
+function saveContactsCache(myUid, rows) {
+  try {
+    localStorage.setItem(contactsCacheKey(myUid), JSON.stringify(rows));
+  } catch { /* cache is best-effort */ }
+}
+
 // Live list of this user's accepted contacts, with their profile data joined in.
 export function useContacts(myUid) {
-  const [contacts, setContacts] = useState([]);
+  const [contacts, setContacts] = useState(() => loadContactsCache(myUid));
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -67,6 +86,7 @@ export function useContacts(myUid) {
         })
       );
       setContacts(rows);
+      saveContactsCache(myUid, rows);
       setLoading(false);
     });
     return unsub;

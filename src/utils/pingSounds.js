@@ -1,5 +1,5 @@
 // Voice-note completion chimes, generated with the Web Audio API so no audio
-// assets ship with the app. "classic" is the two-tone default.
+// assets ship with the app. "warm" is the three-note default.
 
 export const PING_SOUNDS = [
   { id: "classic", label: "Classic chime" },
@@ -34,7 +34,7 @@ const PATTERNS = {
 let pingCtx = null;
 
 export function getPingSoundId() {
-  try { return localStorage.getItem("nextext_voice_ping_sound") || "classic"; } catch { return "classic"; }
+  try { return localStorage.getItem("nextext_voice_ping_sound") || "warm"; } catch { return "warm"; }
 }
 
 function tone(ac, freq, start, dur, gain) {

@@ -7,6 +7,22 @@ import { db } from "./config";
 
 const VAPID_KEY = "BDPG3EWg1tJKh1nN_yOnWgK3BYJjQ-fpYTk1NQrGqU0EHTRZWMWhOUNyANHv52BnUvPBmZFK8ssfsOKWLtqJasA";
 
+// Holds a chatId that arrived via a notification tap or background payload
+// before the app was ready to route it, so it isn't lost on cold start.
+let notificationTapHandler = null;
+let pendingTapChatId = null;
+
+// App registers a handler once; any chatId captured before that (cold start)
+// is delivered immediately.
+export function setNotificationTapHandler(handler) {
+  notificationTapHandler = handler;
+  if (pendingTapChatId) {
+    const chatId = pendingTapChatId;
+    pendingTapChatId = null;
+    handler?.(chatId);
+  }
+}
+
 export function triggerNotificationVibration() {
   try {
     if ("vibrate" in navigator) {
@@ -54,8 +70,22 @@ export async function initNotifications(myUid) {
         triggerNotificationVibration();
         const title = (notification && (notification.title || notification.data?.title)) || "NexText";
         const body = (notification && (notification.body || notification.data?.body)) || "You have a new message";
-        const tag = (notification && (notification.data?.chatId || notification.id)) || "nextext-native";
+        const chatId = notification?.data?.chatId;
+        const tag = chatId || (notification && (notification.id || notification.data?.notificationId)) || "nextext-native";
+        if (chatId) {
+          if (notificationTapHandler) notificationTapHandler(chatId);
+          else pendingTapChatId = chatId;
+        }
         showLocalNotification(title, body, tag);
+      }).catch(() => {});
+
+      // Tap on a background/terminated notification → route into that chat.
+      PushNotifications.addListener("pushNotificationActionPerformed", ({ notification }) => {
+        const chatId = notification?.data?.chatId;
+        if (chatId) {
+          if (notificationTapHandler) notificationTapHandler(chatId);
+          else pendingTapChatId = chatId;
+        }
       }).catch(() => {});
 
       await PushNotifications.register();

@@ -383,9 +383,14 @@ export async function deleteMessageForSelf(chatId, messageId, myUid) {
 }
 
 export async function deleteMessageForEveryone(chatId, messageId) {
+  // Only flag the message as deleted — never blank `text` in the same write.
+  // firestore.rules treats any `text` change as an edit (15-min window), so a
+  // write that also cleared text would be REJECTED for messages older than
+  // 15 min. Firestore then rolls back the optimistic local change, which
+  // made deleted-for-everyone messages "snap back" (the zombie-message bug).
+  // Clients render deletedForEveryone as a placeholder regardless of text.
   await updateDoc(doc(db, "chats", chatId, "messages", messageId), {
     deletedForEveryone: true,
-    text: "",
   });
 }
 

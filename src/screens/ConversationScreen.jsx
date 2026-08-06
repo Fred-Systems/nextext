@@ -225,6 +225,8 @@ function VoicePlayer({ url, duration, mine, t, msgId, onEnded, autoPlayToken, is
   const [error, setError] = useState(false);
   // Real waveform heights (0..1), filled progressively as the note plays.
   const [wave, setWave] = useState(null);
+  // "waveform" (raw bars) or "scrubber" (clean seek bar) — chosen in Settings.
+  const [playerStyle] = useState(() => { try { return localStorage.getItem("nextext_voice_player_style") || "waveform"; } catch { return "waveform"; } });
   const audioRef = useRef(null);
   const barRef = useRef(null);
   const dragging = useRef(false);
@@ -367,18 +369,32 @@ function VoicePlayer({ url, duration, mine, t, msgId, onEnded, autoPlayToken, is
         {playing ? <Pause size={14} color={mine ? t.bubbleMeText : t.primary} /> : <Play size={14} color={mine ? t.bubbleMeText : t.primary} />}
       </div>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-        <div
-          onPointerDown={onBarPointerDown(barRef)}
-          style={{ display: "flex", alignItems: "center", gap: 1.5, height: 26, cursor: "pointer", touchAction: "none" }}
-        >
-          {heights.map((h, i) => (
-            <div key={i} style={{
-              flex: 1, height: `${Math.max(8, h * 100)}%`, minHeight: 4, borderRadius: 2,
-              background: (i / waveBarCount) <= progress ? playedColor : idleColor,
-              transition: "background 0.08s linear",
-            }} />
-          ))}
-        </div>
+        {playerStyle === "scrubber" ? (
+          <div
+            ref={barRef}
+            onPointerDown={onBarPointerDown(barRef)}
+            style={{ position: "relative", height: 26, display: "flex", alignItems: "center", cursor: "pointer", touchAction: "none" }}
+          >
+            <div style={{ flex: 1, height: 3.5, borderRadius: 2, background: idleColor, position: "relative", overflow: "visible" }}>
+              <div style={{ width: `${progress * 100}%`, height: "100%", borderRadius: 2, background: playedColor }} />
+            </div>
+            <div style={{ position: "absolute", left: `calc(${progress * 100}% - 6px)`, top: "50%", transform: "translateY(-50%)", width: 12, height: 12, borderRadius: "50%", background: playedColor, boxShadow: "0 0 4px rgba(0,0,0,0.35)", transition: "left 0.1s linear" }} />
+          </div>
+        ) : (
+          <div
+            ref={barRef}
+            onPointerDown={onBarPointerDown(barRef)}
+            style={{ display: "flex", alignItems: "center", gap: 1.5, height: 26, cursor: "pointer", touchAction: "none" }}
+          >
+            {heights.map((h, i) => (
+              <div key={i} style={{
+                flex: 1, height: `${Math.max(8, h * 100)}%`, minHeight: 4, borderRadius: 2,
+                background: (i / waveBarCount) <= progress ? playedColor : idleColor,
+                transition: "background 0.08s linear",
+              }} />
+            ))}
+          </div>
+        )}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 9.5, opacity: 0.65 }}>
           <span>{error ? "⚠ play error" : formatTime(currentTime)}</span>
           <span>{error ? "" : formatTime(totalDuration || duration || 0)}</span>
@@ -829,8 +845,8 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   };
 
   const handleEdit = () => { if (!activeMsg) return; setEditingMsg(activeMsg); setInput(activeMsg.text || ""); setActiveMsg(null); setTimeout(autoResizeComposer, 0); };
-  const handleDeleteSelf = async () => { if (!chatId || !activeMsg) return; try { await deleteMessageForSelf(chatId, activeMsg.id, myUid); } catch { /* silent */ } setActiveMsg(null); };
-  const handleDeleteEveryone = async () => { if (!chatId || !activeMsg) return; try { await deleteMessageForEveryone(chatId, activeMsg.id); } catch { /* silent */ } setActiveMsg(null); };
+  const handleDeleteSelf = async () => { if (!chatId || !activeMsg) return; try { await deleteMessageForSelf(chatId, activeMsg.id, myUid); } catch (e) { setSendError("Couldn't delete: " + (e.message || "server rejected the write")); } setActiveMsg(null); };
+  const handleDeleteEveryone = async () => { if (!chatId || !activeMsg) return; try { await deleteMessageForEveryone(chatId, activeMsg.id); } catch (e) { setSendError("Couldn't delete for everyone: " + (e.message || "server rejected the write")); } setActiveMsg(null); };
 
   const createPoll = async (question, opts) => {
     try { await sendPollMessage(chatId, myUid, question, opts); }
@@ -1180,11 +1196,16 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
           // onstop was cutting the last ~200ms of audio and producing
           // silent-tail / flat-wave voice notes on several Android WebViews.
           await new Promise((resolve) => {
-            recorder.onstop = resolve;
-            try { recorder.stop(); } catch { resolve(); }
-          }).finally(() => {
-            try { recorder.stream?.getTracks?.().forEach((tr) => tr.stop()); } catch {}
+            const timer = setTimeout(resolve, 2000);
+            recorder.onstop = () => { clearTimeout(timer); resolve(); };
+            recorder.onerror = () => { clearTimeout(timer); resolve(); };
+            try { if (recorder.state !== "inactive") recorder.stop(); else resolve(); } catch { resolve(); }
           });
+          // Some WebViews deliver the final dataavailable chunk as a trailing
+          // task AFTER onstop despite the spec. One macrotask drain guarantees
+          // those chunks are in recordedChunksRef before we build the blob.
+          await new Promise((r) => setTimeout(r, 0));
+          try { recorder.stream?.getTracks?.().forEach((tr) => tr.stop()); } catch {}
           mediaRecorderRef.current = null;
           blob = new Blob(recordedChunksRef.current, { type: "audio/webm" });
         }

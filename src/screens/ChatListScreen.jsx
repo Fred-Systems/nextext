@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Search, Settings, Camera, Plus, Users, Star, Archive, BellOff, X, Smartphone, Lock, Trash2, CheckCheck, MessageCircle, Info, Image as ImageIcon, Mic } from "lucide-react";
+import { Search, Settings, Camera, Plus, Users, Star, Archive, BellOff, X, Smartphone, Lock, Trash2, CheckCheck, MessageCircle, Info, Image as ImageIcon, Mic, ChevronLeft, ChevronRight, Megaphone } from "lucide-react";
 import { useTheme } from "../theme/ThemeContext";
 import { useChats, toggleArchive, toggleFavorite, toggleLocked, deleteChatCompletely } from "../firebase/chats";
 import { useContacts, searchUsersByUsername, sendContactRequest, acceptContactRequest } from "../firebase/contacts";
@@ -7,6 +7,7 @@ import { sendMediaMessage, getOrCreateDirectChat } from "../firebase/chats";
 import { usePresence, formatLastSeen } from "../firebase/presence";
 import { useStatuses } from "../firebase/status";
 import { useSystemConfigHook, getAIContact, AI_CONTACT_UID } from "../firebase/ai";
+import { useBroadcastLists, createBroadcastList, deleteBroadcastList, sendBroadcastText } from "../firebase/broadcast";
 
 const VIEWED_KEY = "nextext_status_viewed";
 function getStoredViewed() {
@@ -91,6 +92,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
   const [showSearch, setShowSearch] = useState(() => searchMode === "visible");
   const [searchQuery, setSearchQuery] = useState("");
   const [contextMenuChat, setContextMenuChat] = useState(null);
+  const [menuError, setMenuError] = useState("");
   const [groupMenu, setGroupMenu] = useState(null);
   const [groupPictureFullscreen, setGroupPictureFullscreen] = useState(null);
   const [showGlobalCamera, setShowGlobalCamera] = useState(false);
@@ -109,6 +111,14 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
   const longPressTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
   const sysConfig = useSystemConfigHook();
+  const { lists: broadcastLists } = useBroadcastLists(myUid);
+  const [showNewBroadcast, setShowNewBroadcast] = useState(false);
+  const [newBroadcastName, setNewBroadcastName] = useState("");
+  const [newBroadcastMembers, setNewBroadcastMembers] = useState([]);
+  const [composingBroadcast, setComposingBroadcast] = useState(null);
+  const [broadcastMsg, setBroadcastMsg] = useState("");
+  const [broadcastBusy, setBroadcastBusy] = useState(false);
+  const [broadcastStatus, setBroadcastStatus] = useState("");
 
   const acceptedContacts = contacts.filter((c) => c.status === "accepted");
   const pendingContacts = contacts.filter((c) => c.status === "pending");
@@ -156,6 +166,41 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
     const updated = customLists.filter((l) => l.id !== listId);
     saveCustomLists(updated);
     if (activeTab === `custom_${listId}`) setActiveTab("all");
+  };
+
+  const toggleBroadcastMember = (uid) => {
+    setNewBroadcastMembers((prev) => (prev.includes(uid) ? prev.filter((u) => u !== uid) : [...prev, uid]));
+  };
+
+  const handleCreateBroadcast = async () => {
+    const name = newBroadcastName.trim();
+    if (!name || newBroadcastMembers.length === 0) return;
+    setBroadcastBusy(true);
+    setBroadcastStatus("");
+    try {
+      await createBroadcastList(myUid, name, newBroadcastMembers);
+      setShowNewBroadcast(false);
+      setNewBroadcastName("");
+      setNewBroadcastMembers([]);
+    } catch (e) {
+      setBroadcastStatus("Couldn't create broadcast: " + (e.message || "unknown error"));
+    }
+    setBroadcastBusy(false);
+  };
+
+  const handleSendBroadcast = async () => {
+    if (!composingBroadcast || !broadcastMsg.trim()) return;
+    setBroadcastBusy(true);
+    setBroadcastStatus("");
+    try {
+      const { sent, failed } = await sendBroadcastText(myUid, composingBroadcast.memberUids || [], broadcastMsg.trim());
+      if (failed.length === 0) setBroadcastStatus(`Sent to ${sent.length} ${sent.length === 1 ? "chat" : "chats"}.`);
+      else setBroadcastStatus(`Sent to ${sent.length}, failed for ${failed.length}.`);
+      setBroadcastMsg("");
+    } catch (e) {
+      setBroadcastStatus("Couldn't send broadcast: " + (e.message || "unknown error"));
+    }
+    setBroadcastBusy(false);
   };
 
   const isMutedNow = (chat) => {
@@ -443,7 +488,7 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", overflowX: "auto", borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
         <div style={{ display: "flex", gap: 8, flex: 1, overflowX: "auto" }}>
-          {[["all", "All"], ["unread", "Unread"], ["favorites", "Favorites"], ["groups", "Groups"], ...customLists.map((l) => [`custom_${l.id}`, l.name])].map(([key, label]) => (
+          {[["all", "All"], ["unread", "Unread"], ["favorites", "Favorites"], ["groups", "Groups"], ["broadcast", "Broadcast"], ...customLists.map((l) => [`custom_${l.id}`, l.name])].map(([key, label]) => (
             <div key={key} onClick={() => setActiveTab(key)} style={{ padding: "6px 14px", borderRadius: 16, background: activeTab === key ? t.primary : t.primaryLight, color: activeTab === key ? t.bubbleMeText : t.primary, fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
               {label}
               {key.startsWith("custom_") && (
@@ -464,12 +509,63 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
             <span style={{ fontSize: 12.5, color: t.primary, fontWeight: 600 }}>Mark all as read</span>
           </div>
         )}
-        {tabFiltered.length === 0 && !(aiApproved && effectiveTab === "all") && (
-          <div style={{ padding: 30, textAlign: "center", color: t.textMuted, fontSize: 13.5, lineHeight: 1.6 }}>
-            {effectiveTab === "all" ? "No chats here yet." : `No ${effectiveTab} chats.`}
+        {effectiveTab === "broadcast" ? (
+          <div style={{ padding: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <div>
+                <div style={{ fontWeight: 700, color: t.text, fontSize: 16 }}>Broadcast lists</div>
+                <div style={{ fontSize: 12.5, color: t.textMuted, marginTop: 2 }}>Send one message to many contacts as individual chats.</div>
+              </div>
+              <div
+                onClick={() => { setShowNewBroadcast(true); setBroadcastStatus(""); }}
+                style={{ padding: "9px 14px", borderRadius: 10, background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: 10 }}
+              >
+                <Plus size={15} /> New broadcast
+              </div>
+            </div>
+            {broadcastStatus && effectiveTab === "broadcast" && (
+              <div style={{ color: broadcastStatus.startsWith("Couldn") ? "#FF3B30" : t.primary, fontSize: 12.5, marginBottom: 10 }}>{broadcastStatus}</div>
+            )}
+            {broadcastLists.length === 0 && (
+              <div style={{ padding: 30, textAlign: "center", color: t.textMuted, fontSize: 13.5, lineHeight: 1.6 }}>
+                No broadcast lists yet. Create one to message many contacts at once.
+              </div>
+            )}
+            {broadcastLists.map((b) => (
+              <div
+                key={b.id}
+                onClick={() => { setComposingBroadcast(b); setBroadcastMsg(""); setBroadcastStatus(""); }}
+                style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 8px", cursor: "pointer", borderBottom: `1px solid ${t.border}`, background: t.bg }}
+              >
+                <div style={{ width: 46, height: 46, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Megaphone size={20} color={t.primary} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, color: t.text, fontSize: 15 }}>{b.name}</div>
+                  <div style={{ fontSize: 12.5, color: t.textMuted }}>{(b.memberUids || []).length} recipients</div>
+                </div>
+                <X
+                  size={16}
+                  color={t.textMuted}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(`Delete broadcast "${b.name}"?`)) deleteBroadcastList(b.id).catch(() => setBroadcastStatus("Couldn't delete broadcast."));
+                  }}
+                  style={{ cursor: "pointer", flexShrink: 0 }}
+                />
+              </div>
+            ))}
           </div>
+        ) : (
+          <>
+            {tabFiltered.length === 0 && !(aiApproved && effectiveTab === "all") && (
+              <div style={{ padding: 30, textAlign: "center", color: t.textMuted, fontSize: 13.5, lineHeight: 1.6 }}>
+                {effectiveTab === "all" ? "No chats here yet." : `No ${effectiveTab} chats.`}
+              </div>
+            )}
+            {tabFiltered.map(renderChatRow)}
+          </>
         )}
-        {tabFiltered.map(renderChatRow)}
         {aiApproved && effectiveTab === "all" && (
           <div
             onClick={() => onOpenChat({ id: `ai_${myUid}`, type: "direct", participants: [myUid, AI_CONTACT_UID] }, AI_CONTACT_UID, getAIContact(), { isAI: true })}
@@ -491,25 +587,12 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
         )}
 
         {effectiveTab === "all" && archived.length > 0 && (
-          <div onClick={() => setShowArchived(!showArchived)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
+          <div onClick={() => setShowArchived(true)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
             <div style={{ width: 50, height: 50, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center" }}><Archive size={22} color={t.primary} /></div>
             <span style={{ fontWeight: 600, color: t.textMuted, fontSize: 14 }}>Archived ({archived.length})</span>
+            <ChevronRight size={16} color={t.textMuted} style={{ marginLeft: "auto" }} />
           </div>
         )}
-        {showArchived && archived.map((c) => (
-          <div key={c.id} style={{ position: "relative", overflow: "hidden", marginBottom: 1 }}>
-            <div style={{ opacity: 0.7 }}>
-              {renderChatRow(c)}
-            </div>
-            <div
-              onClick={async () => { await toggleArchive(c.id, myUid, (c.archivedBy || []).includes(myUid)); }}
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px 16px", cursor: "pointer", borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}`, background: t.primaryLight }}
-            >
-              <Archive size={15} color={t.primary} />
-              <span style={{ fontSize: 13.5, fontWeight: 700, color: t.primary }}>Unarchive Chat</span>
-            </div>
-          </div>
-        ))}
 
         <div style={{ padding: "16px", borderTop: `1px solid ${t.border}`, marginTop: 8 }}>
           {pendingContacts.length > 0 && (
@@ -676,19 +759,21 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
 
       {contextMenuChat && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setContextMenuChat(null)} onTouchStart={() => setContextMenuChat(null)} onMouseDown={() => setContextMenuChat(null)}>
-          <div style={{ background: t.surface, borderRadius: 14, overflow: "hidden", minWidth: 200, boxShadow: "0 4px 20px rgba(0,0,0,0.25)" }} onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
-            <div style={{ padding: "14px 18px 8px", borderBottom: `1px solid ${t.border}` }}>
-              <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{chatDisplayName(contextMenuChat)}</div>
+          <div style={{ background: t.surface, borderRadius: 14, overflow: "hidden", minWidth: 200, boxShadow: "0 4px 20px rgba(0,0,0,0.25)" }} onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", padding: "14px 18px 8px", borderBottom: `1px solid ${t.border}`, gap: 10 }}>
+              <div style={{ flex: 1, fontWeight: 700, fontSize: 15, color: t.text }}>{chatDisplayName(contextMenuChat)}</div>
+              <X size={18} color={t.textMuted} onClick={(e) => { e.stopPropagation(); setContextMenuChat(null); setMenuError(""); }} style={{ cursor: "pointer", flexShrink: 0 }} />
             </div>
-            <div onClick={() => { toggleLocked(contextMenuChat.id, myUid, !!contextMenuChat.lockedBy?.[myUid]); setContextMenuChat(null); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", cursor: "pointer" }}>
+            {menuError && <div style={{ padding: "8px 18px", fontSize: 12, color: "#FF3B30", background: "#FF3B3015" }}>{menuError}</div>}
+            <div onClick={() => { setMenuError(""); toggleLocked(contextMenuChat.id, myUid, !!contextMenuChat.lockedBy?.[myUid]).catch((e) => setMenuError(e?.message || "Couldn't lock/unlock chat.")); setContextMenuChat(null); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", cursor: "pointer" }}>
               <Lock size={17} color={contextMenuChat.lockedBy?.[myUid] ? t.accent : t.text} />
               <span style={{ fontSize: 14.5, color: contextMenuChat.lockedBy?.[myUid] ? t.accent : t.text }}>{contextMenuChat.lockedBy?.[myUid] ? "Unlock chat" : "Lock chat"}</span>
             </div>
-            <div onClick={() => { toggleArchive(contextMenuChat.id, myUid, (contextMenuChat.archivedBy || []).includes(myUid)); setContextMenuChat(null); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
+            <div onClick={() => { setMenuError(""); toggleArchive(contextMenuChat.id, myUid, (contextMenuChat.archivedBy || []).includes(myUid)).catch((e) => setMenuError(e?.message || "Couldn't archive chat.")); setContextMenuChat(null); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
               <Archive size={17} color={t.text} />
               <span style={{ fontSize: 14.5, color: t.text }}>{(contextMenuChat.archivedBy || []).includes(myUid) ? "Unarchive" : "Archive"}</span>
             </div>
-            <div onClick={() => { toggleFavorite(contextMenuChat.id, myUid, (contextMenuChat.favoritedBy || []).includes(myUid)); setContextMenuChat(null); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
+            <div onClick={() => { setMenuError(""); toggleFavorite(contextMenuChat.id, myUid, (contextMenuChat.favoritedBy || []).includes(myUid)).catch((e) => setMenuError(e?.message || "Couldn't favorite chat.")); setContextMenuChat(null); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
               <Star size={17} fill={(contextMenuChat.favoritedBy || []).includes(myUid) ? t.accent : "none"} color={(contextMenuChat.favoritedBy || []).includes(myUid) ? t.accent : t.text} />
               <span style={{ fontSize: 14.5, color: t.text }}>{(contextMenuChat.favoritedBy || []).includes(myUid) ? "Unfavorite" : "Favorite"}</span>
             </div>
@@ -742,6 +827,106 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
           <img src={groupPictureFullscreen} alt="" style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 12, objectFit: "contain" }} />
           <div onClick={() => setGroupPictureFullscreen(null)} style={{ position: "fixed", top: 16, right: 16, width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,0.25)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 1000000 }}>
             <X size={24} color="#fff" strokeWidth={3} />
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated Archived Chats screen */}
+      {showArchived && (
+        <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(12px + var(--safe-top)) 16px 12px", background: t.surface, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
+            <ChevronLeft size={22} color={t.text} onClick={() => setShowArchived(false)} style={{ cursor: "pointer" }} />
+            <span style={{ color: t.text, fontWeight: 700, fontSize: 18 }}>Archived Chats</span>
+            <span style={{ marginLeft: "auto", color: t.textMuted, fontSize: 13 }}>{archived.length}</span>
+          </div>
+          <div className="nx-scroll" style={{ paddingBottom: 60 }}>
+            {archived.length === 0 && (
+              <div style={{ padding: 40, textAlign: "center", color: t.textMuted, fontSize: 13.5 }}>No archived chats.</div>
+            )}
+            {archived.map((c) => (
+              <div key={c.id} style={{ position: "relative", overflow: "hidden", marginBottom: 1 }}>
+                <div style={{ opacity: 0.75 }}>{renderChatRow(c)}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}`, background: t.surface }}>
+                  <div onClick={() => toggleArchive(c.id, myUid, true).catch(() => {})} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, background: t.primaryLight, cursor: "pointer" }}>
+                    <Archive size={15} color={t.primary} />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: t.primary }}>Unarchive</span>
+                  </div>
+                  <div onClick={() => { if (window.confirm("Delete this chat permanently?")) deleteChatCompletely(c.id).catch(() => {}); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, cursor: "pointer" }}>
+                    <Trash2 size={15} color="#FF3B30" />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#FF3B30" }}>Delete</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* New broadcast sheet */}
+      {showNewBroadcast && (
+        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50, display: "flex", alignItems: "flex-end" }} onClick={() => setShowNewBroadcast(false)}>
+          <div className="nx-scroll" style={{ background: t.surface, width: "100%", borderRadius: "20px 20px 0 0", padding: 20, maxHeight: "78%", boxSizing: "border-box" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <span style={{ fontWeight: 700, fontSize: 17, color: t.text }}>New broadcast</span>
+              <X size={20} color={t.textMuted} onClick={() => setShowNewBroadcast(false)} style={{ cursor: "pointer" }} />
+            </div>
+            {broadcastStatus && <div style={{ color: "#FF3B30", fontSize: 12.5, marginBottom: 10 }}>{broadcastStatus}</div>}
+            <input
+              value={newBroadcastName}
+              onChange={(e) => setNewBroadcastName(e.target.value)}
+              placeholder="Broadcast name (e.g. Family)"
+              style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 14, boxSizing: "border-box", marginBottom: 14, background: t.bg, color: t.text }}
+            />
+            <div style={{ fontWeight: 600, color: t.text, fontSize: 14, marginBottom: 8 }}>Select recipients ({newBroadcastMembers.length})</div>
+            {acceptedContacts.length === 0 && (
+              <div style={{ fontSize: 13, color: t.textMuted, padding: "8px 0" }}>No contacts yet. Add contacts before creating a broadcast.</div>
+            )}
+            {acceptedContacts.map((c) => (
+              <div key={c.uid} onClick={() => toggleBroadcastMember(c.uid)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 4px", cursor: "pointer" }}>
+                <Avatar photoURL={c.profile?.photoURL} name={c.profile?.displayName} uid={c.uid} size={38} />
+                <span style={{ flex: 1, fontWeight: 600, color: t.text, fontSize: 14.5 }}>{c.profile?.displayName}</span>
+                <div style={{ width: 22, height: 22, borderRadius: "50%", border: `2px solid ${newBroadcastMembers.includes(c.uid) ? t.primary : t.border}`, background: newBroadcastMembers.includes(c.uid) ? t.primary : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {newBroadcastMembers.includes(c.uid) && <span style={{ color: t.bubbleMeText, fontSize: 12, fontWeight: 700 }}>✓</span>}
+                </div>
+              </div>
+            ))}
+            <button
+              disabled={!newBroadcastName.trim() || newBroadcastMembers.length === 0 || broadcastBusy}
+              onClick={handleCreateBroadcast}
+              style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: (!newBroadcastName.trim() || newBroadcastMembers.length === 0 || broadcastBusy) ? t.border : t.primary, color: (!newBroadcastName.trim() || newBroadcastMembers.length === 0 || broadcastBusy) ? t.textMuted : t.bubbleMeText, fontWeight: 700, fontSize: 15, cursor: (!newBroadcastName.trim() || newBroadcastMembers.length === 0 || broadcastBusy) ? "not-allowed" : "pointer", marginTop: 14 }}
+            >
+              {broadcastBusy ? "Creating…" : "Create broadcast"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Compose broadcast sheet */}
+      {composingBroadcast && (
+        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50, display: "flex", alignItems: "flex-end" }} onClick={() => setComposingBroadcast(null)}>
+          <div style={{ background: t.surface, width: "100%", borderRadius: "20px 20px 0 0", padding: 20, boxSizing: "border-box" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+              <div>
+                <span style={{ fontWeight: 700, fontSize: 17, color: t.text }}>{composingBroadcast.name}</span>
+                <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>Broadcast to {(composingBroadcast.memberUids || []).length} recipients as individual chats</div>
+              </div>
+              <X size={20} color={t.textMuted} onClick={() => setComposingBroadcast(null)} style={{ cursor: "pointer", flexShrink: 0 }} />
+            </div>
+            {broadcastStatus && <div style={{ fontSize: 12.5, marginBottom: 10, color: broadcastStatus.startsWith("Couldn") ? "#FF3B30" : t.primary }}>{broadcastStatus}</div>}
+            <textarea
+              value={broadcastMsg}
+              onChange={(e) => setBroadcastMsg(e.target.value)}
+              placeholder="Type your broadcast message…"
+              rows={4}
+              style={{ width: "100%", boxSizing: "border-box", padding: "11px 14px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 14, background: t.bg, color: t.text, resize: "none" }}
+            />
+            <button
+              disabled={!broadcastMsg.trim() || broadcastBusy}
+              onClick={handleSendBroadcast}
+              style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: (!broadcastMsg.trim() || broadcastBusy) ? t.border : t.primary, color: (!broadcastMsg.trim() || broadcastBusy) ? t.textMuted : t.bubbleMeText, fontWeight: 700, fontSize: 15, cursor: (!broadcastMsg.trim() || broadcastBusy) ? "not-allowed" : "pointer", marginTop: 14 }}
+            >
+              {broadcastBusy ? "Sending…" : `Send to ${(composingBroadcast.memberUids || []).length} recipients`}
+            </button>
           </div>
         </div>
       )}

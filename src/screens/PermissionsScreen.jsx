@@ -68,15 +68,29 @@ export default function PermissionsScreen({ myUid, onBack }) {
     return "unavailable";
   };
 
+  const queryContacts = async () => {
+    const native = await queryNativePermission("getContactsPermission");
+    if (native) return native;
+    return navigator.contacts && navigator.contacts.select ? "granted" : "unavailable";
+  };
+
+  const queryMedia = async () => {
+    const native = await queryNativePermission("getMediaPermission");
+    if (native) return native;
+    // Browser file pickers need no permission, so the feature always works.
+    return "granted";
+  };
+
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    const [mic, cam, notif, contacts] = await Promise.all([
+    const [mic, cam, notif, contacts, media] = await Promise.all([
       queryMic(),
       queryCam(),
       queryNotification(),
-      navigator.contacts && navigator.contacts.select ? "granted" : "unavailable",
+      queryContacts(),
+      queryMedia(),
     ]);
-    setStatuses({ mic, cam, notif, contacts });
+    setStatuses({ mic, cam, notif, contacts, media });
     setRefreshing(false);
   }, []);
 
@@ -130,6 +144,28 @@ export default function PermissionsScreen({ myUid, onBack }) {
         flash("Notifications not available on this device.");
       }
     } catch { flash("Notifications permission denied."); }
+    refresh();
+  };
+
+  const requestContacts = async () => {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const res = await NextextNative.requestContacts();
+        if (res && res.granted) { flash("Contacts allowed."); await refresh(); return; }
+      }
+      flash("Contacts permission denied or unavailable.");
+    } catch { flash("Contacts permission denied or unavailable."); }
+    refresh();
+  };
+
+  const requestMedia = async () => {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const res = await NextextNative.requestMedia();
+        if (res && res.granted) { flash("Files & media allowed."); await refresh(); return; }
+      }
+      flash("Files & media permission denied or unavailable.");
+    } catch { flash("Files & media permission denied or unavailable."); }
     refresh();
   };
 
@@ -214,13 +250,15 @@ export default function PermissionsScreen({ myUid, onBack }) {
             label: "Contacts",
             desc: "Find friends — requires device contacts picker support",
             status: statuses.contacts,
+            onAllow: requestContacts,
             onManage: openAppSettings,
           })}
           {renderRow({
             icon: <ImageIcon size={18} color={t.primary} />,
             label: "Files & Media",
             desc: "Sending and saving photos, videos, and files",
-            status: "unknown",
+            status: statuses.media,
+            onAllow: requestMedia,
             onManage: openAppSettings,
           })}
         </div>

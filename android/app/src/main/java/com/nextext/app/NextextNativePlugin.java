@@ -28,7 +28,14 @@ import java.net.URL;
     name = "NextextNative",
     permissions = {
         @Permission(strings = { Manifest.permission.RECORD_AUDIO }, alias = "microphone"),
-        @Permission(strings = { Manifest.permission.CAMERA }, alias = "camera")
+        @Permission(strings = { Manifest.permission.CAMERA }, alias = "camera"),
+        @Permission(strings = { Manifest.permission.READ_CONTACTS }, alias = "contacts"),
+        @Permission(strings = {
+            Manifest.permission.READ_MEDIA_IMAGES,
+            Manifest.permission.READ_MEDIA_VIDEO,
+            Manifest.permission.READ_MEDIA_AUDIO,
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }, alias = "media")
     }
 )
 public class NextextNativePlugin extends Plugin {
@@ -107,6 +114,48 @@ public class NextextNativePlugin extends Plugin {
         JSObject ret = new JSObject();
         ret.put("granted", camGranted());
         call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void getContactsPermission(PluginCall call) {
+        resolveGranted(call, contactsGranted());
+    }
+
+    @PluginMethod
+    public void getMediaPermission(PluginCall call) {
+        resolveGranted(call, mediaGranted());
+    }
+
+    @PluginMethod
+    public void requestContacts(PluginCall call) {
+        if (contactsGranted()) {
+            resolveGranted(call, true);
+            return;
+        }
+        requestPermissionForAlias("contacts", call, "contactsPermissionResult");
+    }
+
+    @PluginMethod
+    public void requestMedia(PluginCall call) {
+        if (mediaGranted()) {
+            resolveGranted(call, true);
+            return;
+        }
+        // On API 33+ only the READ_MEDIA_* permissions are real runtime
+        // permissions (READ_EXTERNAL_STORAGE is ignored). Below 33 the reverse
+        // is true. Requesting both sets is harmless — the OS silently denies
+        // the ones that don't apply to this version.
+        requestPermissionForAlias("media", call, "mediaPermissionResult");
+    }
+
+    @PermissionCallback
+    private void contactsPermissionResult(PluginCall call) {
+        resolveGranted(call, contactsGranted());
+    }
+
+    @PermissionCallback
+    private void mediaPermissionResult(PluginCall call) {
+        resolveGranted(call, mediaGranted());
     }
 
     @PluginMethod
@@ -451,6 +500,19 @@ public class NextextNativePlugin extends Plugin {
 
     private boolean camGranted() {
         return getContext().checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean contactsGranted() {
+        return getContext().checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean mediaGranted() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            boolean images = getContext().checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED;
+            boolean video = getContext().checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED;
+            return images || video;
+        }
+        return getContext().checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
     }
 
     private void resolveGranted(PluginCall call, boolean granted) {

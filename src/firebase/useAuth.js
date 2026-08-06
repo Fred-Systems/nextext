@@ -29,6 +29,28 @@ const withTimeout = (promise, ms, message) =>
     );
   });
 
+// Capgo and Legacy Google Sign-In can return the credential in several shapes
+// (idToken/accessToken at the top level, under .response, or nested inside
+// .authentication). Calling GoogleAuthProvider.credential(undefined) throws
+// auth/argument-error, so build the Firebase credential from whatever token
+// actually came back — preferring an ID token, falling back to an access token.
+function buildGoogleCredential(profile = {}) {
+  const idToken =
+    profile.idToken ||
+    profile.id_token ||
+    profile.authentication?.idToken ||
+    profile.authentication?.id_token;
+  const accessToken =
+    profile.accessToken ||
+    profile.access_token ||
+    profile.authentication?.accessToken ||
+    profile.authentication?.access_token;
+  if (!idToken && !accessToken) {
+    throw new Error("Google sign-in returned no usable credential.");
+  }
+  return GoogleAuthProvider.credential(idToken, accessToken);
+}
+
 // One account per email: Firebase Auth itself already prevents creating a
 // second account with the same email under a different password (it'll
 // throw auth/email-already-in-use). For Google Sign-In merging into an
@@ -141,11 +163,8 @@ export function useAuth() {
           4000,
           "Play Services unavailable"
         );
-        const legacyToken = legacy?.idToken;
-        if (legacyToken) {
-          const legacyUser = await signInWithCredential(auth, GoogleAuthProvider.credential(legacyToken));
-          return await ensureProfile(legacyUser, legacy);
-        }
+        const legacyUser = await signInWithCredential(auth, buildGoogleCredential(legacy || {}));
+        return await ensureProfile(legacyUser, legacy);
       } catch (legacyErr) {
         if (legacyErr?.code === "CANCELLED" || legacyErr?.message?.includes("cancelled")) {
           throw legacyErr;
@@ -158,11 +177,8 @@ export function useAuth() {
           4000,
           "Play Services unavailable"
         );
-        const capgoToken = capgoRes?.response?.idToken;
-        if (capgoToken) {
-          const capgoUser = await signInWithCredential(auth, GoogleAuthProvider.credential(capgoToken));
-          return await ensureProfile(capgoUser, capgoRes?.response);
-        }
+        const capgoUser = await signInWithCredential(auth, buildGoogleCredential(capgoRes?.response || {}));
+        return await ensureProfile(capgoUser, capgoRes?.response);
       } catch (capgoErr) {
         if (capgoErr?.code === "CANCELLED" || capgoErr?.message?.includes("cancelled")) {
           throw capgoErr;
