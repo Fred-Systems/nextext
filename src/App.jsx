@@ -1081,6 +1081,11 @@ function AppShell({ appLocked, setAppLocked }) {
   const saveAppStateRef = useRef(saveAppState);
   saveAppStateRef.current = saveAppState;
 
+  // Declared before restoreAppState: the restore effect below references it in
+  // its dependency array, and deps are evaluated during render (a const
+  // declared later in the same scope would be in the temporal dead zone).
+  const myUid = auth.user?.uid;
+
   const restoreAppState = () => {
     try {
       const raw = localStorage.getItem("nextext_app_state");
@@ -1142,7 +1147,6 @@ function AppShell({ appLocked, setAppLocked }) {
     return `left ${swipeDuration()}s ${swipeBezier()}`;
   };
 
-  const myUid = auth.user?.uid;
   usePresenceHeartbeat(myUid);
 
   const [pendingNotifChatId, setPendingNotifChatId] = useState(null);
