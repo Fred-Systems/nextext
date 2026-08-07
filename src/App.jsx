@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { ThemeProvider, useTheme, themes, ROTATE_INTERVALS } from "./theme/ThemeContext";
 import { useAuth } from "./firebase/useAuth";
@@ -279,11 +279,12 @@ function NotificationsRow({ myUid, t }) {
     try { setStatus(await getNotificationsStatus()); } catch { setStatus({ supported: false, hasPrompt: false, receive: "unknown" }); }
   };
   useEffect(() => { refresh(); }, []);
-  // On Android < 13 there is no prompt/toggle at all — notifications are
-  // granted automatically and there's nothing to "enable". Surfacing that
-  // here so the user doesn't expect a permission pop-up that will never come.
+  // On Android < 13 (API < 33) there is no POST_NOTIFICATIONS runtime
+  // permission — notifications are granted automatically and no prompt/toggle
+  // exists in system settings. We surface that honestly here.
   const hasPrompt = status?.hasPrompt;
   const granted = status?.receive === "granted";
+  const isOldAndroid = status?.androidSdk === "<33";
   return (
     <SettingsRow
       t={t}
@@ -292,6 +293,7 @@ function NotificationsRow({ myUid, t }) {
       sub={
         !status ? "Checking…" :
         !status.supported ? "Not supported on this device" :
+        isOldAndroid ? "Enabled (Android 11 handles automatically)" :
         hasPrompt === false ? "Enabled automatically on this device (no prompt needed)" :
         granted ? "Allowed — you'll get message notifications" :
         "Tap to allow message notifications"
@@ -1357,7 +1359,7 @@ function AppShell({ appLocked, setAppLocked }) {
   }, [myUid, auth.userDoc?.profileComplete]);
 
   const finishTour = () => { setShowTour(false); setTourStep(0); };
-  const startTour = () => { setTourStep(0); setShowTour(true); };
+  const startTour = useCallback(() => { setTourStep(0); setShowTour(true); }, []);
 
   const { contacts } = useContacts(myUid);
   const { chats: myChats } = useChats(myUid);
@@ -1733,9 +1735,32 @@ function AppShell({ appLocked, setAppLocked }) {
         el.style.transform = `translate3d(${(i - target) * 100}%, 0, 0)`;
       }
     });
-    setPageIndex(target);
+setPageIndex(target);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bootKick]);
+
+  // Cold-start pager lock: runs synchronously after first render (before paint)
+  // to guarantee the Chats tab is at position 0 and activeNavTab="chats" when
+  // screen="list". This prevents the "blank list + missing bottom bar" bug
+  // where a restored activeNavTab="settings" with screen="list" put the
+  // pager on the Settings page (blank because screen≠"settings").
+  useLayoutEffect(() => {
+    if (!myUid) return;
+    const target = orderedTabs.indexOf("chats");
+    if (target === -1) return;
+    // Force activeNavTab to "chats" when on list screen
+    setActiveNavTab("chats");
+    // Snap all pages to correct positions with Chats at origin
+    orderedTabs.forEach((key, i) => {
+      const el = pageRefs.current[key];
+      if (el) {
+        el.style.transition = "none";
+        el.style.transform = `translate3d(${(i - target) * 100}%, 0, 0)`;
+      }
+    });
+    setPageIndex(target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myUid]);
 
   const navigateToTab = (key) => {
     const idx = orderedTabs.indexOf(key);

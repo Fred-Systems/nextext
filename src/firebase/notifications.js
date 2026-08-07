@@ -151,7 +151,15 @@ export async function getNotificationsStatus() {
   try {
     if (Capacitor.isNativePlatform()) {
       const perm = await PushNotifications.checkPermissions();
-      return { supported: true, hasPrompt: true, receive: perm.receive };
+      // On Android < 13 (API < 33) there is no POST_NOTIFICATIONS runtime
+      // permission — notifications are granted automatically and no prompt
+      // exists. We detect this via the native SDK version.
+      let hasPrompt = true;
+      try {
+        const { sdkInt } = await NextextNative.getAndroidSdkVersion();
+        hasPrompt = sdkInt >= 33;
+      } catch { /* fallback: assume prompt exists */ }
+      return { supported: true, hasPrompt, receive: perm.receive, androidSdk: hasPrompt ? ">=33" : "<33" };
     }
     if ("Notification" in window) {
       return { supported: true, hasPrompt: true, receive: Notification.permission === "granted" ? "granted" : "prompt" };

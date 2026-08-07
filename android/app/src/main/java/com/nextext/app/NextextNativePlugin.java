@@ -37,7 +37,8 @@ import java.net.URL;
             Manifest.permission.READ_MEDIA_AUDIO,
             Manifest.permission.READ_EXTERNAL_STORAGE
         }, alias = "media"),
-        @Permission(strings = { Manifest.permission.POST_NOTIFICATIONS }, alias = "notifications")
+        @Permission(strings = { Manifest.permission.POST_NOTIFICATIONS }, alias = "notifications"),
+        @Permission(strings = { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION }, alias = "location")
     }
 )
 public class NextextNativePlugin extends Plugin {
@@ -101,6 +102,36 @@ public class NextextNativePlugin extends Plugin {
             return;
         }
         requestPermissionForAlias("notifications", call, "notifPermsCallback");
+    }
+
+    @PluginMethod
+    public void getAndroidSdkVersion(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("sdkInt", android.os.Build.VERSION.SDK_INT);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void requestLocationPermission(PluginCall call) {
+        // Android 10+ (API 29) requires ACCESS_FINE_LOCATION or ACCESS_COARSE_LOCATION.
+        // We request ACCESS_FINE_LOCATION for best accuracy.
+        if (getContext().checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            JSObject ret = new JSObject();
+            ret.put("granted", true);
+            ret.put("status", "granted");
+            call.resolve(ret);
+            return;
+        }
+        requestPermissionForAlias("location", call, "locationPermsCallback");
+    }
+
+    @PermissionCallback
+    private void locationPermsCallback(PluginCall call) {
+        JSObject ret = new JSObject();
+        boolean granted = getContext().checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+        ret.put("granted", granted);
+        ret.put("status", granted ? "granted" : "denied");
+        call.resolve(ret);
     }
 
     @PermissionCallback

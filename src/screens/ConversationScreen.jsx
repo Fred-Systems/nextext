@@ -498,10 +498,12 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   }, []);
 
   // ── Share location ─────────────────────────────────────────────
-  const openLocationSheet = () => {
+  const openLocationSheet = async () => {
     closeAttach();
     setLocError("");
     setLocPosition(null);
+    // Request location permission right when user taps the button.
+    try { await NextextNative.requestLocationPermission(); } catch { /* fallback to geolocation */ }
     setShowLocationSheet(true);
     fetchCurrentPosition();
   };
@@ -2169,9 +2171,14 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
             {showLocationSheet && createPortal(
               <>
               <style>{`@keyframes nextext-spin { to { transform: rotate(360deg); } }`}</style>
-              <div onClick={() => { if (!locBusy) setShowLocationSheet(false); }} style={{ position: "fixed", inset: 0, zIndex: 2147481200, background: "rgba(0,0,0,0.45)" }} />
+              <div onClick={() => setShowLocationSheet(false)} style={{ position: "fixed", inset: 0, zIndex: 2147481200, background: "rgba(0,0,0,0.45)" }} />
               <div style={{ position: "fixed", left: "50%", top: "50%", transform: "translate(-50%, -50%)", width: "min(330px, 90vw)", background: t.surface, borderRadius: 16, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", zIndex: 2147481201, padding: 18 }}>
-                <div style={{ fontWeight: 700, fontSize: 16, color: t.text, marginBottom: 4 }}>Share location</div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16, color: t.text }}>Share location</div>
+                  <button onClick={() => setShowLocationSheet(false)} style={{ width: 28, height: 28, borderRadius: "50%", background: "transparent", border: "none", color: t.textMuted, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                    <X size={18} />
+                  </button>
+                </div>
                 <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 12, lineHeight: 1.5 }}>Send your current location. Live sharing updates the pin automatically for the chosen duration.</div>
                 {locPosition && (
                   <div style={{ height: 140, borderRadius: 10, overflow: "hidden", marginBottom: 12, position: "relative" }}>

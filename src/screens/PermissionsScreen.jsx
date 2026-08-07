@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { ChevronLeft, Mic, Camera, Bell, Users, Image as ImageIcon, ExternalLink, RefreshCw } from "lucide-react";
+import { ChevronLeft, Mic, Camera, Bell, Users, Image as ImageIcon, ExternalLink, RefreshCw, MapPin } from "lucide-react";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { useTheme } from "../theme/ThemeContext";
@@ -17,7 +17,7 @@ const STATUS_META = {
 
 export default function PermissionsScreen({ myUid, onBack }) {
   const { t } = useTheme();
-  const [statuses, setStatuses] = useState({});
+  const [statuses, setStatuses] = useState({ mic: "unknown", cam: "unknown", notif: "unknown", contacts: "unknown", media: "unknown", loc: "unknown" });
   const [refreshing, setRefreshing] = useState(false);
   const [actionMsg, setActionMsg] = useState("");
 
@@ -81,16 +81,30 @@ export default function PermissionsScreen({ myUid, onBack }) {
     return "granted";
   };
 
+  const queryLocation = async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const res = await NextextNative.requestLocationPermission();
+        return res.granted ? "granted" : "prompt";
+      } catch { return "unknown"; }
+    }
+    try {
+      const st = await navigator.permissions.query({ name: "geolocation" });
+      return st.state;
+    } catch { return "unknown"; }
+  };
+
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    const [mic, cam, notif, contacts, media] = await Promise.all([
+    const [mic, cam, notif, contacts, media, loc] = await Promise.all([
       queryMic(),
       queryCam(),
       queryNotification(),
       queryContacts(),
       queryMedia(),
+      queryLocation(),
     ]);
-    setStatuses({ mic, cam, notif, contacts, media });
+    setStatuses({ mic, cam, notif, contacts, media, loc });
     setRefreshing(false);
   }, []);
 
@@ -166,6 +180,21 @@ export default function PermissionsScreen({ myUid, onBack }) {
       }
       flash("Files & media permission denied or unavailable.");
     } catch { flash("Files & media permission denied or unavailable."); }
+    refresh();
+  };
+
+  const requestLocation = async () => {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const res = await NextextNative.requestLocationPermission();
+        if (res && res.granted) { flash("Location allowed."); await refresh(); return; }
+      }
+      // Web fallback: just try to get position, which triggers prompt
+      await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
+      });
+      flash("Location allowed.");
+    } catch { flash("Location permission denied or unavailable."); }
     refresh();
   };
 
@@ -259,6 +288,14 @@ export default function PermissionsScreen({ myUid, onBack }) {
             desc: "Sending and saving photos, videos, and files",
             status: statuses.media,
             onAllow: requestMedia,
+            onManage: openAppSettings,
+          })}
+          {renderRow({
+            icon: <MapPin size={18} color={t.primary} />,
+            label: "Location",
+            desc: "Share your location and live location updates",
+            status: statuses.loc,
+            onAllow: requestLocation,
             onManage: openAppSettings,
           })}
         </div>
