@@ -979,7 +979,10 @@ function AddContactSheet({ myUid, onClose }) {
   return (
     <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
       <div style={{ background: t.surface, width: "100%", borderRadius: "20px 20px 0 0", padding: 20, maxHeight: "70%", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ fontWeight: 700, fontSize: 17, color: t.text, marginBottom: 14 }}>Add contact</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 17, color: t.text }}>Add contact</div>
+          <X size={20} color={t.textMuted} onClick={onClose} style={{ cursor: "pointer", flexShrink: 0 }} />
+        </div>
         <input value={query} onChange={(e) => runSearch(e.target.value)} placeholder="Search by username…" style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: `1px solid ${t.border}`, fontSize: 14, boxSizing: "border-box", marginBottom: 14 }} />
         {error && <div style={{ color: "#FF3B30", fontSize: 12.5, marginBottom: 10 }}>{error}</div>}
         {results.map((u) => (

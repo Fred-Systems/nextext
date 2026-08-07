@@ -45,6 +45,27 @@ const EMOJI_PICKER_SET = [
 ];
 const READ_DELAY_MS = 1500; // deliberate small gap so "delivered" is actually visible before "read"
 
+// Animated live waveform for the recording composer bar. Bars scale with the
+// mic level (0..1) supplied by the native amplitude poller or WebView analyser.
+// Each bar has a fixed pseudo-random factor so the wave looks organic instead
+// of a uniform block. When inactive (paused), bars drop to a low static level.
+function LiveWave({ level = 0, active = true, color, height = 18, count = 20, max = 1 }) {
+  const { t } = useTheme();
+  const barColor = color || t.accent;
+  const lvl = active ? Math.max(0, Math.min(max, level)) : 0.1;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 2, height, flexShrink: 0 }}>
+      {Array.from({ length: count }).map((_, i) => {
+        const factor = 0.35 + ((i * 37) % 10) / 18;
+        const h = Math.max(3, Math.round(height * factor * (active ? (0.15 + lvl * 0.85) : 0.1)));
+        return (
+          <div key={i} style={{ width: 3, height: Math.min(height, h), borderRadius: 2, background: barColor, opacity: active ? 0.9 : 0.35, transition: "height 60ms linear" }} />
+        );
+      })}
+    </div>
+  );
+}
+
 // WhatsApp-style day divider label: "Today", "Yesterday", or "Friday, July 16".
 function formatDayLabel(date) {
   const d = new Date(date);
@@ -565,6 +586,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const [recordingHold, setRecordingHold] = useState(false);
   const [recordingTapMode, setRecordingTapMode] = useState(false);
   const [recordingSlideCancel, setRecordingSlideCancel] = useState(false);
+  const [recLevel, setRecLevel] = useState(0);
   const [theyRecordingVoice, setTheyRecordingVoice] = useState(false);
   const [voiceAutoPlayId, setVoiceAutoPlayId] = useState(null);
   const [voiceAutoPlayNonce, setVoiceAutoPlayNonce] = useState(0);
@@ -643,6 +665,11 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const recordHoldCancelRef = useRef(false);
   const recordingRef = useRef(false);
   const recordingHoldRef = useRef(false);
+  const recLevelTimerRef = useRef(null);
+  const recLevelListenerRef = useRef(null);
+  const recAudioCtxRef = useRef(null);
+  const recAnalyserRef = useRef(null);
+  const lastRecLevelRef = useRef(0);
   const voiceHeartbeatRef = useRef(null);
   const voiceSessionTokenRef = useRef(0);
   const wallpaperInputRef = useRef(null);
@@ -1166,6 +1193,75 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     recordTimerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
   };
 
+  // ── Live recording waveform ─────────────────────────────────────────
+  // Native path: NextextNative emits "voiceLevel" (0..1) events polled from
+  // MediaRecorder.getMaxAmplitude(). WebView path: an AnalyserNode on the live
+  // mic stream. Both drive the same recLevel state so the recording bar can
+  // draw real bars while the user talks.
+  const updateRecLevel = (v) => {
+    v = Math.max(0, Math.min(1, v));
+    if (Math.abs(v - lastRecLevelRef.current) < 0.03) return;
+    lastRecLevelRef.current = v;
+    setRecLevel(v);
+  };
+
+  const startRecLevelMonitor = async (stream) => {
+    stopRecLevelMonitor();
+    if (stream) {
+      // WebView recording — sample the live mic via an analyser.
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) {
+        try {
+          const actx = new Ctx();
+          const src = actx.createMediaStreamSource(stream);
+          const analyser = actx.createAnalyser();
+          analyser.fftSize = 256;
+          src.connect(analyser);
+          recAudioCtxRef.current = actx;
+          recAnalyserRef.current = analyser;
+          const buf = new Uint8Array(analyser.frequencyBinCount);
+          recLevelTimerRef.current = setInterval(() => {
+            try {
+              analyser.getByteFrequencyData(buf);
+              let sum = 0;
+              for (let i = 0; i < buf.length; i++) sum += buf[i];
+              updateRecLevel(sum / buf.length / 80);
+            } catch {}
+          }, 80);
+          return;
+        } catch { /* fall back to silent wave */ }
+      }
+      return;
+    }
+    // Native recording — subscribe to the plugin's amplitude events.
+    try {
+      const handle = await NextextNative.addListener("voiceLevel", (e) => {
+        if (typeof e?.level === "number") updateRecLevel(e.level);
+      });
+      if (handle && typeof handle.then === "function") {
+        handle.then((h) => { recLevelListenerRef.current = h; }).catch(() => {});
+      } else {
+        recLevelListenerRef.current = handle;
+      }
+    } catch {
+      /* no wave available on this build */
+    }
+  };
+
+  const stopRecLevelMonitor = () => {
+    clearInterval(recLevelTimerRef.current);
+    recLevelTimerRef.current = null;
+    if (recAudioCtxRef.current) { try { recAudioCtxRef.current.close(); } catch {} }
+    recAudioCtxRef.current = null;
+    recAnalyserRef.current = null;
+    if (recLevelListenerRef.current && typeof recLevelListenerRef.current.remove === "function") {
+      try { recLevelListenerRef.current.remove(); } catch {}
+    }
+    recLevelListenerRef.current = null;
+    lastRecLevelRef.current = 0;
+    setRecLevel(0);
+  };
+
   const startVoiceRecording = async () => {
     setSendError("");
     const token = ++voiceSessionTokenRef.current;
@@ -1187,6 +1283,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
           setRecordSeconds(0);
           beginRecordTimer();
           startVoiceHeartbeat();
+          startRecLevelMonitor(null);
           return;
         } catch { /* fall through to the WebView path */ }
       }
@@ -1235,6 +1332,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       setRecordSeconds(0);
       beginRecordTimer();
       startVoiceHeartbeat();
+      startRecLevelMonitor(stream);
     } catch (err) {
       let msg = "Microphone access denied or unavailable. Please check your device settings and ensure microphone permission is granted for NexText, then try again.";
       if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
@@ -1266,6 +1364,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     recordHoldCancelRef.current = false;
     recordingRef.current = false;
     recordingHoldRef.current = false;
+    stopRecLevelMonitor();
   };
 
   const stopVoiceRecording = async (send) => {
@@ -1397,6 +1496,10 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const micPointerDown = (e) => {
     e.preventDefault();
     if (recordingRef.current) return;
+    // Haptic confirmation that the hold-to-record gesture started.
+    if (isNativePlatform() && typeof NextextNative.vibrate === "function") {
+      try { NextextNative.vibrate({ ms: 40 }).catch(() => {}); } catch {}
+    }
     const clientX = e.clientX || e.touches?.[0]?.clientX || 0;
     const clientY = e.clientY || e.touches?.[0]?.clientY || 0;
     recordHoldStartRef.current = { x: clientX, y: clientY, t: Date.now() };
@@ -1933,7 +2036,8 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
               <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, background: t.surface, borderRadius: 24, padding: "10px 16px" }}>
                 <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#FF3B30", flexShrink: 0, animation: "nextext-rec-pulse 1s ease-in-out infinite" }} />
                 <span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>{Math.floor(recordSeconds / 60)}:{String(recordSeconds % 60).padStart(2, "0")}</span>
-                <span style={{ marginLeft: "auto", fontSize: 12, color: t.textMuted }}>‹ Slide to cancel</span>
+                <LiveWave level={recLevel} active color={t.accent} height={20} count={22} />
+                <span style={{ marginLeft: "auto", fontSize: 12, color: t.textMuted, flexShrink: 0 }}>‹ Slide to cancel</span>
               </div>
             )}
             {recordingHold && recordingSlideCancel && (
@@ -1958,6 +2062,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
                 <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, background: t.surface, borderRadius: 24, padding: "6px 10px", minWidth: 0 }}>
                   <div style={{ width: 10, height: 10, borderRadius: "50%", background: recordingPaused ? "#F5A623" : "#FF3B30", flexShrink: 0, animation: recordingPaused ? "none" : "nextext-rec-pulse 1s ease-in-out infinite" }} />
                   <span style={{ fontSize: 14, fontWeight: 600, color: t.text, minWidth: 40, fontVariantNumeric: "tabular-nums" }}>{Math.floor(recordSeconds / 60)}:{String(recordSeconds % 60).padStart(2, "0")}</span>
+                  <LiveWave level={recLevel} active={!recordingPaused} color={recordingPaused ? "#F5A623" : t.accent} height={16} count={14} />
                   <div onClick={recordingPaused ? resumeVoiceRecording : pauseVoiceRecording} style={{ width: 30, height: 30, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
                     {recordingPaused ? <Play size={13} color={t.primary} /> : <Pause size={13} color={t.primary} />}
                   </div>

@@ -32,6 +32,7 @@ export default function FindFriendsScreen({ myUid, onBack }) {
   const [sentTo, setSentTo] = useState([]);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [invited, setInvited] = useState([]);
+  const [shareStatus, setShareStatus] = useState("");
 
   const ensurePermission = async () => {
     if (!Capacitor.isNativePlatform()) return true;
@@ -57,16 +58,29 @@ export default function FindFriendsScreen({ myUid, onBack }) {
     }
   };
 
-  const handleShare = (name, phone) => {
+  const handleShare = async (name, phone) => {
+    setShareStatus("");
     const link = `https://nextext.app/invite?r=${encodeURIComponent(myUid || "")}`;
     const text = `Hey${name ? " " + name : ""}! Let's chat on NexText — a fast, private messaging app. Sign up here: ${link}`;
+    // navigator.share is unreliable inside Android WebViews — it often exists
+    // but rejects immediately, which the old code silently swallowed (the
+    // "Invite button does nothing" report). Try it, but on any failure other
+    // than the user cancelling, fall through to the clipboard/SMS paths.
     if (navigator.share) {
-      navigator.share({ text }).catch(() => {});
-    } else if (navigator.clipboard) {
-      navigator.clipboard.writeText(text).then(() => {
+      try {
+        await navigator.share({ text });
         setInvited((s) => [...s, phone]);
-      }).catch(() => {});
-    } else {
+        return;
+      } catch (e) {
+        if (e?.name === "AbortError" || e?.name === "ShareCanceledError") return; // user cancelled
+        // fall through to clipboard/SMS below
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setInvited((s) => [...s, phone]);
+      setShareStatus(`Invite link for ${name || "your friend"} copied — send it to them!`);
+    } catch {
       window.open(`sms:${phone}?body=${encodeURIComponent(text)}`, "_system");
     }
   };
@@ -155,6 +169,7 @@ export default function FindFriendsScreen({ myUid, onBack }) {
           We compare your device contacts against NexText users so you can add friends who are already here — and invite everyone else.
         </div>
         {error && <div style={{ color: "#FF3B30", fontSize: 12.5, marginBottom: 10 }}>{error}</div>}
+        {shareStatus && <div style={{ color: t.primary, fontSize: 12.5, marginBottom: 10 }}>{shareStatus}</div>}
         {permissionDenied && (
           <div style={{ background: t.primaryLight, borderRadius: 12, padding: 14, marginBottom: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>

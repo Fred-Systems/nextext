@@ -1,6 +1,7 @@
 package com.nextext.app;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -484,21 +485,32 @@ public class NextextNativePlugin extends Plugin {
             stopAndReleaseRecorder();
             File out = new File(getContext().getCacheDir(), "nextext_voice_" + System.currentTimeMillis() + ".m4a");
             android.media.MediaRecorder r = new android.media.MediaRecorder();
-            r.setAudioSource(android.media.MediaRecorder.AudioSource.MIC);
-            r.setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4);
-            r.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC);
-            r.setAudioEncodingBitRate(96000);
-            r.setAudioSamplingRate(44100);
-            // Explicit mono channel — some Android devices ship AAC encoders
-            // that silently produce flat/silent output when the default channel
-            // count is unset or zero. Locking to mono (1 channel) guarantees
-            // an audible recording.
-            r.setAudioChannels(1);
-            r.setOutputFile(out.getAbsolutePath());
-            r.prepare();
+            // Preferred config: mono AAC/MPEG-4 at 44.1kHz, 96kbps. Explicit
+            // mono channels prevent some AAC encoders from emitting flat/silent
+            // output when the channel count is unset. If a device rejects this
+            // config at prepare() (exotic encoders), retry with a minimal
+            // config so recording still works instead of failing to the webview.
+            try {
+                r.setAudioSource(android.media.MediaRecorder.AudioSource.MIC);
+                r.setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4);
+                r.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC);
+                r.setAudioEncodingBitRate(96000);
+                r.setAudioSamplingRate(44100);
+                r.setAudioChannels(1);
+                r.setOutputFile(out.getAbsolutePath());
+                r.prepare();
+            } catch (final Exception first) {
+                try { r.reset(); } catch (final Exception ignored) {}
+                r.setAudioSource(android.media.MediaRecorder.AudioSource.MIC);
+                r.setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4);
+                r.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC);
+                r.setOutputFile(out.getAbsolutePath());
+                r.prepare();
+            }
             r.start();
             activeRecorder = r;
             activeRecorderFile = out;
+            startAmplitudeTimer(r);
             call.resolve();
         } catch (final Exception e) {
             stopAndReleaseRecorder();
@@ -515,6 +527,66 @@ public class NextextNativePlugin extends Plugin {
             return;
         }
         startVoiceRecording(call);
+    }
+
+    // Tiny one-shot haptic buzz used to confirm a press (e.g. starting a
+    // hold-to-record gesture). Clamped to 1-400ms so a bad arg can't vibrate
+    // the phone for minutes.
+    @PluginMethod
+    public void vibrate(PluginCall call) {
+        Long ms = call.getLong("ms");
+        if (ms == null) ms = 30L;
+        final long duration = Math.max(1, Math.min(400, ms));
+        try {
+            android.os.Vibrator v = (android.os.Vibrator) getContext().getSystemService(Context.VIBRATOR_SERVICE);
+            if (v == null) { call.resolve(); return; }
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                v.vibrate(android.os.VibrationEffect.createOneShot(duration, android.os.VibrationEffect.DEFAULT_AMPLITUDE));
+            } else {
+                v.vibrate(duration);
+            }
+            call.resolve();
+        } catch (final Exception e) {
+            call.reject("vibrate failed: " + (e.getMessage() == null ? String.valueOf(e) : e.getMessage()));
+        }
+    }
+
+    // Polls MediaRecorder.getMaxAmplitude() on a background timer and emits a
+    // "voiceLevel" event (0..1) so the JS side can draw a live waveform while
+    // the user is recording. getMaxAmplitude() returns the peak since the last
+    // call, so polling every ~80ms produces a real audio envelope.
+    private java.util.Timer amplitudeTimer = null;
+
+    private void startAmplitudeTimer(final android.media.MediaRecorder r) {
+        stopAmplitudeTimer();
+        if (r == null) return;
+        final java.util.Timer t = new java.util.Timer();
+        amplitudeTimer = t;
+        t.scheduleAtFixedRate(new java.util.TimerTask() {
+            @Override
+            public void run() {
+                if (r != null) {
+                    int amp = 0;
+                    try { amp = r.getMaxAmplitude(); } catch (final Exception ignored) {}
+                    // getMaxAmplitude returns 0 during initial silence, else 1..32767.
+                    // 16000 is a comfortable full-scale threshold for a voice level.
+                    final double norm = Math.min(1.0, amp / 16000.0);
+                    try {
+                        JSObject data = new JSObject();
+                        data.put("level", norm);
+                        getActivity().runOnUiThread(() -> {
+                            try { notifyListeners("voiceLevel", data); } catch (final Exception ignored) {}
+                        });
+                    } catch (final Exception ignored) {}
+                }
+            }
+        }, 120, 80);
+    }
+
+    private void stopAmplitudeTimer() {
+        final java.util.Timer t = amplitudeTimer;
+        amplitudeTimer = null;
+        if (t != null) { try { t.cancel(); } catch (final Exception ignored) {} }
     }
 
     @PluginMethod
@@ -545,6 +617,7 @@ public class NextextNativePlugin extends Plugin {
         // a moment and base64-encoding a multi-MB file must never run on the
         // main thread.
         new Thread(() -> {
+            stopAmplitudeTimer();
             File out = activeRecorderFile;
             android.media.MediaRecorder r = activeRecorder;
             activeRecorder = null;
@@ -589,6 +662,7 @@ public class NextextNativePlugin extends Plugin {
     }
 
     private void stopAndReleaseRecorder() {
+        stopAmplitudeTimer();
         android.media.MediaRecorder r = activeRecorder;
         activeRecorder = null;
         File out = activeRecorderFile;

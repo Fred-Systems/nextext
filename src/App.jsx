@@ -1193,6 +1193,22 @@ function AppShell({ appLocked, setAppLocked }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myUid]);
 
+  // Cold-start safety net. Runs a beat AFTER the restore effect so any late
+  // state writes (a notification tap routing to screen="chat" before the chat
+  // list loaded, a stale mid-sign-out app_state, a blocked tab in navConfig)
+  // are corrected. Guarantees the app always lands on the chat list with the
+  // bottom nav visible — the reported "bottom bar missing / dead group row
+  // until I tap Settings" cold start. Only fires once per user session.
+  useEffect(() => {
+    if (!myUid) return;
+    const t = setTimeout(() => {
+      setScreen((prev) => (["list", "status", "settings"].includes(prev) ? prev : "list"));
+      setActiveNavTab((prev) => (TAB_KEYS.includes(prev) ? prev : "chats"));
+    }, 900);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myUid]);
+
   const swipeAnimationEnabled = () => swipeAnimationOn;
 
   // Duration (s) for the swipe snap animation, chosen by the Settings slider.

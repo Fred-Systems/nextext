@@ -33,6 +33,21 @@ function buildMsg(overrides) {
   return { ...MSG_FIELDS, ...overrides, sentAt: overrides.sentAt || serverTimestamp() };
 }
 
+// AI chat bubbles render plain text, so markdown emphasis from the model
+// (bold **…**, italics *…*, code backticks, heading #) shows up as raw
+// asterisks/hashes. Strip those markers for a clean summary read-out.
+function cleanAIText(text) {
+  if (!text) return text;
+  return String(text)
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 // Ordinal suffix (1st, 2nd, 3rd, 4th, …) for date divider labels.
 function getOrdinalSuffix(day) {
   if (day > 3 && day < 21) return "th";
@@ -79,6 +94,7 @@ export default function AIChatScreen({ myUid, onBack }) {
   const [summarizing, setSummarizing] = useState(false);
   const [showChatPicker, setShowChatPicker] = useState(false);
   const [allChats, setAllChats] = useState([]);
+  const [contactNames, setContactNames] = useState({});
   const [summarizingExternal, setSummarizingExternal] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isArchived, setIsArchived] = useState(false);
@@ -274,7 +290,7 @@ export default function AIChatScreen({ myUid, onBack }) {
       const transcript = recentMsgs.map((m) => `${m.senderId === myUid ? "Me" : "AI"}: ${m.text || "[media]"}`).join("\n");
       const summary = await sendAIContextMessageWithActiveChat(myUid, "Provide a concise summary of this conversation, highlighting key topics, decisions, and any action items.", transcript, recentMsgs);
       await addDoc(collection(db, "chats", chatId, "messages"), buildMsg({
-        senderId: AI_CONTACT_UID, type: "text", text: `📝 **Chat Summary:**\n\n${summary}`,
+        senderId: AI_CONTACT_UID, type: "text", text: `📝 **Chat Summary:**\n\n${cleanAIText(summary)}`,
       }));
       await updateDoc(doc(db, "chats", chatId), {
         lastMessage: { text: "📝 AI summarized this chat", senderId: AI_CONTACT_UID, sentAt: serverTimestamp(), type: "text" },
@@ -300,9 +316,40 @@ export default function AIChatScreen({ myUid, onBack }) {
         .map((d) => ({ id: d.id, ...d.data() }))
         .filter((c) => c.id !== chatId && (c.type === "group" || (allow1on1 && (c.participants || []).length === 2)));
       setAllChats(chats);
+      // Resolve real display names for direct-chat partners so the picker
+      // lists "Chat with Sarah" instead of a generic "Direct Chat" label.
+      resolveParticipantNames(chats);
     } catch {
       setAllChats([]);
     }
+  };
+
+  // Fetches display names for every other participant across the given chats
+  // and stores them in contactNames so both the picker and the summary prompt
+  // can use real names instead of raw UIDs.
+  const resolveParticipantNames = async (chats) => {
+    const others = [];
+    chats.forEach((c) => {
+      (c.participants || []).forEach((p) => {
+        if (p !== myUid && p !== AI_CONTACT_UID && !others.includes(p)) others.push(p);
+      });
+    });
+    if (others.length === 0) return;
+    const names = {};
+    await Promise.all(others.map(async (uid) => {
+      try {
+        const s = await getDoc(doc(db, "users", uid));
+        const d = s.exists() ? s.data() : {};
+        names[uid] = d.displayName || d.username || uid.slice(0, 8);
+      } catch { names[uid] = uid.slice(0, 8); }
+    }));
+    setContactNames((prev) => ({ ...prev, ...names }));
+  };
+
+  const nameFor = (uid) => {
+    if (uid === myUid) return "Me";
+    if (uid === AI_CONTACT_UID) return "AI";
+    return contactNames[uid] || null;
   };
 
   const handleSummarizeExternalChat = async (targetChat) => {
@@ -311,18 +358,20 @@ export default function AIChatScreen({ myUid, onBack }) {
     setShowChatPicker(false);
     try {
       await ensureChatExists();
+      await resolveParticipantNames([targetChat]);
       const msgsQuery = query(collection(db, "chats", targetChat.id, "messages"), orderBy("sentAt", "desc"));
       const msgsSnap = await getDocs(msgsQuery);
       const recentMsgs = msgsSnap.docs.slice(0, 50).reverse().map((d) => ({ id: d.id, ...d.data() }));
       const transcript = recentMsgs.map((m) => {
-        const role = m.senderId === myUid ? "Me" : (m.senderId === AI_CONTACT_UID ? "AI" : (m.senderName || m.senderId?.slice(0, 8) || "Unknown"));
+        const role = nameFor(m.senderId) || m.senderName || m.senderId?.slice(0, 8) || "Unknown";
         return `${role}: ${m.text || "[media]"}`;
       }).join("\n");
-      const chatLabel = targetChat.groupName || "Unknown Chat";
-      const question = `Summarize this ${targetChat.type === "group" ? "group" : ""} chat conversation. Highlight key topics, decisions, important messages, and any action items. Provide context about who said what.`;
+      const otherUid = (targetChat.participants || []).find((p) => p !== myUid);
+      const chatLabel = targetChat.groupName || nameFor(otherUid) || "Unknown Chat";
+      const question = `Summarize this chat conversation. Highlight key topics, decisions, important messages, and any action items. Provide context about who said what using the participants' real names.`;
       const summary = await sendAIContextMessageWithActiveChat(myUid, question, `[Chat: ${chatLabel}]\n\n${transcript}`, recentMsgs);
       await addDoc(collection(db, "chats", chatId, "messages"), buildMsg({
-        senderId: AI_CONTACT_UID, type: "text", text: `📋 **External Chat Summary — ${chatLabel}:**\n\n${summary}`,
+        senderId: AI_CONTACT_UID, type: "text", text: `📋 **External Chat Summary — ${chatLabel}:**\n\n${cleanAIText(summary)}`,
       }));
       await updateDoc(doc(db, "chats", chatId), {
         lastMessage: { text: `📋 Summarized: ${chatLabel}`, senderId: AI_CONTACT_UID, sentAt: serverTimestamp(), type: "text" },
@@ -527,17 +576,22 @@ export default function AIChatScreen({ myUid, onBack }) {
                 No chats available to summarize.
               </div>
             )}
-            {allChats.map((c) => (
-              <div key={c.id} onClick={() => handleSummarizeExternalChat(c)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", cursor: "pointer", borderBottom: `1px solid ${t.border}` }}>
-                <div style={{ width: 42, height: 42, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <Users size={20} color={t.primary} />
+            {allChats.map((c) => {
+              const otherUid = (c.participants || []).find((p) => p !== myUid);
+              return (
+                <div key={c.id} onClick={() => handleSummarizeExternalChat(c)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", cursor: "pointer", borderBottom: `1px solid ${t.border}` }}>
+                  <div style={{ width: 42, height: 42, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Users size={20} color={t.primary} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {c.groupName || (nameFor(otherUid) ? `Chat with ${nameFor(otherUid)}` : "Direct Chat")}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: t.textMuted }}>{(c.participants || []).length} members · {c.type === "group" ? "Group" : "Direct"}</div>
+                  </div>
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.groupName || "Direct Chat"}</div>
-                  <div style={{ fontSize: 12.5, color: t.textMuted }}>{(c.participants || []).length} members · {c.type === "group" ? "Group" : "Direct"}</div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
