@@ -712,9 +712,9 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
 
       {capturedPhoto && !cameraPreviewStep && (
         <div style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 60, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", background: t.primary, flexShrink: 0 }}>
-            <span onClick={() => setCapturedPhoto(null)} style={{ color: "#fff", fontSize: 15, cursor: "pointer" }}>Cancel</span>
-            <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>Send to…</span>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", background: t.surface, flexShrink: 0, borderBottom: `1px solid ${t.border}` }}>
+            <span onClick={() => setCapturedPhoto(null)} style={{ color: t.text, fontSize: 15, cursor: "pointer" }}>Cancel</span>
+            <span style={{ color: t.text, fontWeight: 700, fontSize: 16 }}>Send to…</span>
             <span style={{ width: 50 }} />
           </div>
           <div style={{ padding: 16, borderBottom: `1px solid ${t.border}` }}>

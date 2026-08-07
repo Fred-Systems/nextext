@@ -517,9 +517,9 @@ export default function AIChatScreen({ myUid, onBack }) {
       {/* External chat picker overlay */}
       {showChatPicker && (
         <div style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 50, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 12px", background: t.primary }}>
-            <X size={22} color="#fff" onClick={() => { setShowChatPicker(false); setAllChats([]); }} style={{ cursor: "pointer" }} />
-            <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>Select Chat to Summarize</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 12px", background: t.surface, borderBottom: `1px solid ${t.border}` }}>
+            <X size={22} color={t.text} onClick={() => { setShowChatPicker(false); setAllChats([]); }} style={{ cursor: "pointer" }} />
+            <span style={{ color: t.text, fontWeight: 700, fontSize: 16 }}>Select Chat to Summarize</span>
           </div>
           <div style={{ flex: 1, overflowY: "auto" }}>
             {allChats.length === 0 && (
