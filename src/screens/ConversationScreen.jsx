@@ -484,16 +484,17 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     setTimeout(() => { setAttachRendered(false); setShowAttach(false); setAttachClosing(false); }, 150);
   };
 
-  // The gallery button stays highlighted (galleryActive) while the system file
-  // picker is open. Android's WebView does NOT reliably fire the file input's
-  // "cancel" event when the user backs out without choosing a file, which left
-  // the icon stuck highlighted. Clearing it whenever the window regains focus
-  // covers that case (picker closes → focus returns), and onCancel handles the
-  // few browsers that do fire it.
   useEffect(() => {
-    const onWinFocus = () => setGalleryActive(false);
-    window.addEventListener("focus", onWinFocus);
-    return () => window.removeEventListener("focus", onWinFocus);
+    // The gallery button stays highlighted (galleryActive) while the system
+    // file picker is open. Android's WebView does NOT reliably fire the file
+    // input's "cancel" event when the user backs out without choosing a file,
+    // and it also doesn't fire window "focus" on return — but it DOES fire
+    // visibilitychange (the page hides while the chooser activity is on top,
+    // and becomes visible again when it closes). Reset on visible, plus a
+    // fallback reset when the composer is interacted with again.
+    const onVis = () => { if (document.visibilityState === "visible") setGalleryActive(false); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
   // ── Share location ─────────────────────────────────────────────
@@ -591,6 +592,12 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const [customEmoji, setCustomEmoji] = useState("");
   const [uploading, setUploading] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  // Media caption preview: instead of instantly sending a gallery photo/video,
+  // show it full-width with a caption input + Send/Cancel so the user can add
+  // a message (or back out) before it goes.
+  const [pendingMedia, setPendingMedia] = useState(null); // { file, isImage, previewUrl }
+  const [captionText, setCaptionText] = useState("");
+  const [captionBusy, setCaptionBusy] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [recording, setRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
@@ -1003,20 +1010,41 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     const file = e.target.files?.[0];
     e.target.value = ""; // allow picking the same file again later
     if (!file || !chatId) { setGalleryActive(false); return; }
+    setGalleryActive(false);
+    closeAttach();
+    // Open a caption preview instead of sending instantly — the user can add
+    // a caption, then Send, or Cancel. (File attachment from the paperclip
+    // still sends instantly, this only changes gallery photo/video.)
+    const isImage = file.type.startsWith("image/");
+    let previewUrl = null;
+    try { previewUrl = URL.createObjectURL(file); } catch { /* preview optional */ }
+    setCaptionText("");
+    setPendingMedia({ file, isImage, previewUrl });
+  };
+
+  const cancelPendingMedia = () => {
+    if (pendingMedia?.previewUrl) { try { URL.revokeObjectURL(pendingMedia.previewUrl); } catch {} }
+    setPendingMedia(null);
+    setCaptionText("");
+  };
+
+  const sendPendingMedia = async () => {
+    const pm = pendingMedia;
+    if (!pm?.file || !chatId || captionBusy) return;
+    setCaptionBusy(true);
     setSendError("");
-    setUploading(true);
     try {
-      const isImage = file.type.startsWith("image/");
-      const result = await uploadChatFile(chatId, myUid, file, { compress: isImage });
-      await sendMediaMessage(chatId, myUid, isImage ? "image" : "video", result, otherParticipants, { replyTo: replyingTo });
+      const result = await uploadChatFile(chatId, myUid, pm.file, { compress: pm.isImage });
+      const caption = captionText.trim();
+      await sendMediaMessage(chatId, myUid, pm.isImage ? "image" : "video", result, otherParticipants, { replyTo: replyingTo, text: caption || null });
       setReplyingTo(null);
+      cancelPendingMedia();
     } catch (err) {
       if (err instanceof FileTooLargeError) setSendError("Files must be under 50MB.");
       else setSendError("Couldn't send: " + err.message);
+    } finally {
+      setCaptionBusy(false);
     }
-    setUploading(false);
-    setGalleryActive(false);
-    closeAttach();
   };
 
   const handleFilePick = async (e) => {    const file = e.target.files?.[0];
@@ -1784,6 +1812,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         <div onClick={(e) => { e.stopPropagation(); setFullscreenImage(m.mediaURL); }} style={{ cursor: "pointer", width: 220, height: 220, overflow: "hidden", borderRadius: 8, background: "rgba(0,0,0,0.05)" }}>
           <img src={m.mediaURL} alt="Sent photo" className="nx-media-img" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
         </div>
+        {m.text && <div style={{ fontSize: 14.5 * chatTextScale, lineHeight: 1.35, marginTop: 4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.text}</div>}
         {expiryText && <div style={{ fontSize: 10, opacity: 0.55, marginTop: 3, fontStyle: "italic" }}>{expiryText}</div>}
       </div>
     );
@@ -1793,6 +1822,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
           <div style={{ width: 220, height: 220, overflow: "hidden", borderRadius: 8, background: "rgba(0,0,0,0.05)", position: "relative" }}>
             <video src={m.mediaURL} controls className="nx-media-img" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
           </div>
+        {m.text && <div style={{ fontSize: 14.5 * chatTextScale, lineHeight: 1.35, marginTop: 4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.text}</div>}
         {expiryText && <div style={{ fontSize: 10, opacity: 0.55, marginTop: 3, fontStyle: "italic" }}>{expiryText}</div>}
       </div>
     );
@@ -2404,6 +2434,47 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
         </div>,
         document.body
       )}
-    </div>
+
+      {pendingMedia && createPortal(
+        <div className="nextext-overlay-backdrop" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.92)", zIndex: 999999, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "calc(12px + var(--safe-top)) 14px 8px", flexShrink: 0 }}>
+            <div style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>Send {pendingMedia.isImage ? "photo" : "video"}</div>
+            <div onClick={() => !captionBusy && cancelPendingMedia()} style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <X size={18} color="#fff" />
+            </div>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "8px 12px", overflow: "hidden" }}>
+            {pendingMedia.isImage ? (
+              <img src={pendingMedia.previewUrl} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 10 }} />
+            ) : (
+              <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.7)", fontSize: 13 }}>
+                <video src={pendingMedia.previewUrl} controls playsInline style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 10 }} />
+              </div>
+            )}
+          </div>
+          <div style={{ flexShrink: 0, padding: "10px 12px calc(16px + var(--safe-bottom))" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 8, background: t.surface, borderRadius: 24, padding: "6px 6px 6px 16px", border: `1px solid ${t.border}` }}>
+              <textarea
+                value={captionText}
+                onChange={(e) => setCaptionText(e.target.value)}
+                placeholder="Add a caption…"
+                rows={1}
+                style={{ flex: 1, resize: "none", border: "none", outline: "none", background: "transparent", color: t.text, fontSize: 15, lineHeight: 1.4, maxHeight: 90, padding: "8px 0" }}
+                autoFocus
+              />
+              <button
+                onClick={sendPendingMedia}
+                disabled={captionBusy}
+                style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: captionBusy ? t.border : t.primary, color: "#fff", cursor: captionBusy ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+              >
+                <Send size={18} color="#fff" />
+              </button>
+            </div>
+            {sendError && <div style={{ color: "#FF6B6B", fontSize: 12, marginTop: 6, textAlign: "center" }}>{sendError}</div>}
+          </div>
+        </div>,
+        document.body
+      )}
+     </div>
   );
 }

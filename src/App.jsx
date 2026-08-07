@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { ThemeProvider, useTheme, themes, ROTATE_INTERVALS } from "./theme/ThemeContext";
 import { useAuth } from "./firebase/useAuth";
@@ -7,7 +7,7 @@ import { purgeExpiredStatuses, useStatuses } from "./firebase/status";
 import { useContacts } from "./firebase/contacts";
 import { useChats, purgeExpiredChatMedia } from "./firebase/chats";
 import { setGlobalWallpaper, fileToWallpaperDataUrl } from "./theme/wallpaper";
-import { ChevronLeft, Palette, Shield, Lock, MessageSquare, X, ShieldCheck, Phone, Image as ImageIcon, Users, CircleDot, RotateCcw, Camera, Settings as SettingsIcon, Bot, Sparkles, RefreshCw, Search, User, Compass } from "lucide-react";
+import { ChevronLeft, Palette, Shield, Lock, MessageSquare, X, ShieldCheck, Phone, Image as ImageIcon, Users, CircleDot, RotateCcw, Camera, Settings as SettingsIcon, Bot, Sparkles, RefreshCw, Search, User, Compass, Bell, BellOff } from "lucide-react";
 import { FONTS } from "./theme/ThemeContext";
 import Avatar from "./components/Avatar";
 import AvatarColorPicker from "./components/AvatarColorPicker";
@@ -1278,12 +1278,22 @@ function AppShell({ appLocked, setAppLocked }) {
   // are corrected. Guarantees the app always lands on the chat list with the
   // bottom nav visible — the reported "bottom bar missing / dead group row
   // until I tap Settings" cold start. Only fires once per user session.
+  // Also forces a fresh re-render of the pager (mirroring the manual "tap
+  // Settings" navigation that the user confirmed fixes it) so a stale inline
+  // transform or paint glitch on a pager page can't strand the app.
+  const [bootKick, setBootKick] = useState(0);
   useEffect(() => {
     if (!myUid) return;
     const t = setTimeout(() => {
-      setScreen((prev) => (["list", "status", "settings"].includes(prev) ? prev : "list"));
+      setScreen((prev) => {
+        // If we're sitting on "chat" with no conversation open (or any
+        // non-standard screen) drop back to the list so the bottom bar shows.
+        if (["list", "status", "settings"].includes(prev)) return prev;
+        return "list";
+      });
       setActiveNavTab((prev) => (TAB_KEYS.includes(prev) ? prev : "chats"));
-    }, 900);
+      setBootKick((n) => n + 1);
+    }, 600);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myUid]);
@@ -1702,6 +1712,30 @@ function AppShell({ appLocked, setAppLocked }) {
     firstRenderRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTabKey, screen, orderedTabs.join(",")]);
+
+  // Cold-start pager resync. The user reported the chat list + bottom bar are
+  // missing/dead until they manually tap the Settings gear (a re-render). The
+  // reliable trigger is a fresh re-render that re-applies each page's
+  // transform; this layout effect replicates that automatically by clearing
+  // any stale inline transform left on the page DOM and snapping the active
+  // page to the origin before paint. Driven by bootKick (bumped by the safety
+  // net shortly after sign-in) so it runs once on real cold starts.
+  useLayoutEffect(() => {
+    if (bootKick === 0) return;
+    const target = currentTabIndex >= 0 ? currentTabIndex : 0;
+    orderedTabs.forEach((key, i) => {
+      const el = pageRefs.current[key];
+      if (el) {
+        // Wipe any inline transform/transition a prior swipe write left on
+        // the element so React's style.transform (freshly recomputed below)
+        // is the source of truth on this re-render.
+        el.style.transition = "";
+        el.style.transform = `translate3d(${(i - target) * 100}%, 0, 0)`;
+      }
+    });
+    setPageIndex(target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bootKick]);
 
   const navigateToTab = (key) => {
     const idx = orderedTabs.indexOf(key);

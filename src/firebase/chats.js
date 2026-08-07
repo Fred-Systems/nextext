@@ -276,14 +276,14 @@ export async function reactToMessage(chatId, messageId, myUid, emoji) {
 // already live in Supabase Storage by the time this is called (see
 // src/supabase/media.js); this just records the message doc pointing at it.
 export async function sendMediaMessage(chatId, senderUid, type, uploadResult, otherParticipants, options = {}) {
-  const { replyTo = null, durationSeconds = null, statusRef = null } = options;
+  const { replyTo = null, durationSeconds = null, statusRef = null, text = null } = options;
   const sender = await snapshotSenderName(senderUid);
   await addDoc(collection(db, "chats", chatId, "messages"), {
     senderId: senderUid,
     senderName: sender.senderName,
     senderUsername: sender.senderUsername,
     type, // "image" | "video" | "file" | "voice"
-    text: null,
+    text: text || null,
     mediaURL: uploadResult.url,
     mediaThumbURL: null,
     mediaDurationSeconds: durationSeconds,
@@ -315,7 +315,7 @@ export async function sendMediaMessage(chatId, senderUid, type, uploadResult, ot
     statusRef,
   });
   await updateDoc(doc(db, "chats", chatId), {
-    lastMessage: { text: mediaLabel(type), senderId: senderUid, sentAt: serverTimestamp(), type },
+    lastMessage: { text: text ? (text.length > 40 ? text.slice(0, 40) + "…" : text) : mediaLabel(type), senderId: senderUid, sentAt: serverTimestamp(), type },
   });
   await incrementUnreadCounts(chatId, otherParticipants);
 }
