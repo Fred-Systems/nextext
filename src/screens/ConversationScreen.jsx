@@ -240,79 +240,81 @@ function PollCreateSheet({ t, onClose, onCreate }) {
 
 const PLACEHOLDER_WAVE = [0.3, 0.55, 0.4, 0.75, 0.5, 0.65, 0.35, 0.8, 0.45, 0.6, 0.4, 0.7, 0.55, 0.75, 0.38, 0.65, 0.5, 0.72, 0.42, 0.6, 0.35, 0.68, 0.48, 0.78, 0.55, 0.62, 0.4, 0.7, 0.52, 0.66, 0.38, 0.74, 0.46, 0.58, 0.42, 0.68, 0.5, 0.64, 0.36, 0.6];
 
+function hashSeed(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+  return h >>> 0;
+}
+
+function seededWave(seed) {
+  let s = seed >>> 0;
+  const rand = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  // Same natural envelope as the placeholder but varied per note so two notes
+  // never look identical.
+  return PLACEHOLDER_WAVE.map((h) => Math.min(1, Math.max(0.08, h * (0.7 + rand() * 0.6))));
+}
+
+// Builds a static waveform from the real audio samples (RMS per bucket).
+// Returns null if the browser can't decode the file — the caller falls back to
+// a deterministic seeded wave. This does NOT touch the <audio> element's output
+// path, so playback stays clean and unmodified.
+async function computeWaveFromAudio(url, buckets = 40) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    const ctx = new AC();
+    const audioBuffer = await ctx.decodeAudioData(buf);
+    ctx.close().catch(() => {});
+    const channel = audioBuffer.getChannelData(0);
+    const perBucket = Math.max(1, Math.floor(channel.length / buckets));
+    const out = [];
+    for (let b = 0; b < buckets; b++) {
+      let peak = 0;
+      for (let i = b * perBucket; i < (b + 1) * perBucket && i < channel.length; i++) {
+        const v = Math.abs(channel[i]);
+        if (v > peak) peak = v;
+      }
+      out.push(Math.min(1, Math.max(0.08, peak * 4)));
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
 function VoicePlayer({ url, duration, mine, t, msgId, onEnded, autoPlayToken, isAutoPlayTarget, nowPlayingId, onPlayStart }) {
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [totalDuration, setTotalDuration] = useState(duration || 0);
   const [error, setError] = useState(false);
-  // Real waveform heights (0..1), filled progressively as the note plays.
+  // Static waveform heights (0..1), computed once from the audio (or seeded).
+  // It does NOT morph while playing — only the progress sweep changes.
   const [wave, setWave] = useState(null);
   // "waveform" (raw bars) or "scrubber" (clean seek bar) — chosen in Settings.
   const [playerStyle] = useState(() => { try { return localStorage.getItem("nextext_voice_player_style") || "waveform"; } catch { return "waveform"; } });
   const audioRef = useRef(null);
   const barRef = useRef(null);
   const dragging = useRef(false);
-  const analyserRef = useRef(null);
-  const rafRef = useRef(null);
-  const binsRef = useRef(null);
+
+  // Compute the static wave once per note.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const real = await computeWaveFromAudio(url);
+      if (cancelled) return;
+      setWave(real || seededWave(hashSeed(String(url) + String(msgId || ""))));
+    })();
+    return () => { cancelled = true; };
+  }, [url, msgId]);
 
   const toggle = (e) => {
     e.stopPropagation();
     if (!audioRef.current) return;
-    if (analyserRef.current?.ac && analyserRef.current.ac.state === "suspended") {
-      analyserRef.current.ac.resume().catch(() => {});
-    }
     if (playing) audioRef.current.pause();
     else { onPlayStart?.(msgId); audioRef.current.play().catch(() => setError(true)); }
-  };
-
-  // Hook the <audio> element up to a Web Audio analyser so we can build a real
-  // waveform from the actual audio samples while it plays. This works for m4a
-  // (native recordings) which decodeAudioData cannot read. MediaElementSource
-  // may only be created once per element, so this runs a single time.
-  useEffect(() => {
-    if (!audioRef.current || analyserRef.current) return;
-    try {
-      const ac = new (window.AudioContext || window.webkitAudioContext)();
-      const src = ac.createMediaElementSource(audioRef.current);
-      const an = ac.createAnalyser();
-      an.fftSize = 512;
-      an.smoothingTimeConstant = 0.2;
-      src.connect(an);
-      an.connect(ac.destination);
-      analyserRef.current = { ac, an };
-      binsRef.current = new Float32Array(40);
-    } catch { /* analyser unsupported — fall back to placeholder wave */ }
-  }, []);
-
-  const stopSampling = () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null; };
-
-  const startSampling = () => {
-    stopSampling();
-    if (analyserRef.current?.ac && analyserRef.current.ac.state === "suspended") {
-      analyserRef.current.ac.resume().catch(() => {});
-    }
-    const loop = () => {
-      const audio = audioRef.current;
-      const analyser = analyserRef.current;
-      if (analyser && audio && !audio.paused && !audio.ended) {
-        const data = new Float32Array(analyser.an.fftSize);
-        analyser.an.getFloatTimeDomainData(data);
-        let peak = 0;
-        for (let i = 0; i < data.length; i++) {
-          const v = Math.abs(data[i]);
-          if (v > peak) peak = v;
-        }
-        const dur = audio.duration || 0;
-        if (dur > 0) {
-          const idx = Math.min(39, Math.floor((audio.currentTime / dur) * 40));
-          binsRef.current[idx] = Math.max(binsRef.current[idx] || 0, Math.min(1, peak * 2.8 || 0.35));
-          setWave(Array.from(binsRef.current));
-        }
-      }
-      rafRef.current = requestAnimationFrame(loop);
-    };
-    rafRef.current = requestAnimationFrame(loop);
   };
 
   // Auto-advance: when the parent flags this note as the next one to play and
@@ -335,9 +337,6 @@ function VoicePlayer({ url, duration, mine, t, msgId, onEnded, autoPlayToken, is
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nowPlayingId, msgId]);
-
-  // Stop the sampler when playback stops.
-  useEffect(() => () => { stopSampling(); analyserRef.current?.ac.close?.().catch(() => {}); }, []);
 
   const seekTo = (fraction) => {
     if (!audioRef.current || !totalDuration) return;
@@ -380,9 +379,9 @@ function VoicePlayer({ url, duration, mine, t, msgId, onEnded, autoPlayToken, is
       <audio
         ref={audioRef}
         src={url}
-        onPlay={() => { setPlaying(true); startSampling(); }}
-        onPause={() => { setPlaying(false); stopSampling(); }}
-        onEnded={() => { setPlaying(false); stopSampling(); onPlayStart?.(null); playVoicePing(); onEnded?.(msgId); }}
+        onPlay={() => { setPlaying(true); }}
+        onPause={() => { setPlaying(false); }}
+        onEnded={() => { setPlaying(false); onPlayStart?.(null); playVoicePing(); onEnded?.(msgId); }}
         onError={() => setError(true)}
         onLoadedMetadata={() => { if (audioRef.current) setTotalDuration(audioRef.current.duration || duration || 0); }}
         onTimeUpdate={() => { if (!dragging.current && audioRef.current) setCurrentTime(audioRef.current.currentTime); }}
@@ -457,7 +456,7 @@ function ScheduleSendSheet({ t, onClose, onSchedule }) {
 }
 
 export default function ConversationScreen({ myUid, chatId: initialChatId, otherUid, contact, onBack, onOpenProfile, onOpenGroupInfo, openSettings = false, showScrollDownSetting = true, animatedScrollEntry = false }) {
-  const { t, chatTextScale, setChatTextScale, composerHeight } = useTheme();
+  const { t, chatTextScale, setChatTextScale, composerHeight, messageWidth } = useTheme();
   const globalSettings = useGlobalSettings();
   const isGroup = !!contact?.isGroup;
   const [chatId, setChatId] = useState(initialChatId);
@@ -480,9 +479,22 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const openAttach = () => { setAttachClosing(false); setAttachRendered(true); setShowAttach(true); };
   const closeAttach = () => {
     if (!attachRendered) return;
+    setGalleryActive(false);
     setAttachClosing(true);
     setTimeout(() => { setAttachRendered(false); setShowAttach(false); setAttachClosing(false); }, 150);
   };
+
+  // The gallery button stays highlighted (galleryActive) while the system file
+  // picker is open. Android's WebView does NOT reliably fire the file input's
+  // "cancel" event when the user backs out without choosing a file, which left
+  // the icon stuck highlighted. Clearing it whenever the window regains focus
+  // covers that case (picker closes → focus returns), and onCancel handles the
+  // few browsers that do fire it.
+  useEffect(() => {
+    const onWinFocus = () => setGalleryActive(false);
+    window.addEventListener("focus", onWinFocus);
+    return () => window.removeEventListener("focus", onWinFocus);
+  }, []);
 
   // ── Share location ─────────────────────────────────────────────
   const openLocationSheet = () => {
@@ -1219,13 +1231,17 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
           src.connect(analyser);
           recAudioCtxRef.current = actx;
           recAnalyserRef.current = analyser;
-          const buf = new Uint8Array(analyser.frequencyBinCount);
+          const buf = new Float32Array(analyser.fftSize);
           recLevelTimerRef.current = setInterval(() => {
             try {
-              analyser.getByteFrequencyData(buf);
+              // Time-domain RMS tracks spoken amplitude the way a real voice
+              // waveform looks. (getByteFrequencyData would draw a spiky,
+              // nonsensical spectrum instead of a clean speech envelope.)
+              analyser.getFloatTimeDomainData(buf);
               let sum = 0;
-              for (let i = 0; i < buf.length; i++) sum += buf[i];
-              updateRecLevel(sum / buf.length / 80);
+              for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+              const rms = Math.sqrt(sum / buf.length);
+              updateRecLevel(Math.min(1, rms * 9));
             } catch {}
           }, 80);
           return;
@@ -1948,7 +1964,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
               )}
               <div className="nextext-message-in" style={{ display: "flex", justifyContent: isMine ? "flex-end" : "flex-start", marginTop: groupedWithPrev ? 2 : 12 }}>
                 <div onClick={() => !m.deletedForEveryone && setActiveMsg(m)} style={{
-                  position: "relative", maxWidth: "74%", padding: "8px 12px", cursor: "pointer", boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+                  position: "relative", maxWidth: (messageWidth === "compact" ? "58%" : messageWidth === "standard" ? "74%" : "90%"), padding: "8px 12px", cursor: "pointer", boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
                   background: isMine ? t.bubbleMe : t.bubbleThem, color: isMine ? t.bubbleMeText : t.bubbleThemText,
                   borderRadius: `${groupedWithPrev ? 6 : 14}px ${groupedWithPrev ? 6 : 14}px ${groupedWithNext ? 6 : 14}px ${groupedWithNext ? 6 : 14}px`,
                 }}>

@@ -1,9 +1,11 @@
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 import { app } from "./config";
 import { doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { db } from "./config";
+
+const NextextNative = registerPlugin("NextextNative");
 
 const VAPID_KEY = "BDPG3EWg1tJKh1nN_yOnWgK3BYJjQ-fpYTk1NQrGqU0EHTRZWMWhOUNyANHv52BnUvPBmZFK8ssfsOKWLtqJasA";
 
@@ -52,17 +54,11 @@ export async function initNotifications(myUid) {
   if (!myUid) return null;
   try {
     if (Capacitor.isNativePlatform()) {
-      let perm = await PushNotifications.checkPermissions();
-      if (perm.receive === "prompt" || perm.receive === "denied") {
-        perm = await PushNotifications.requestPermissions();
-      }
-      if (perm.receive !== "granted") return null;
-
-      // Create a notification channel (required on Android 8+) with default
-      // importance so incoming FCM messages actually show a visible
-      // notification. Without a channel, the OS silently drops the
-      // notification even though the plugin fires the JS event — the cause
-      // of "notifications don't work on my Android 11 phone".
+      // Create the notification channel FIRST, regardless of permission state.
+      // On Android < 13 there is no runtime prompt (notifications are granted
+      // automatically), but the channel still has to exist or FCM signals are
+      // silently dropped. Creating it even when permission is missing is a
+      // no-op and harmless.
       try {
         await PushNotifications.createChannel({
           id: "nextext-messages",
@@ -75,6 +71,12 @@ export async function initNotifications(myUid) {
           vibrationPattern: [200, 100, 200],
         });
       } catch { /* older plugin versions may not support createChannel */ }
+
+      let perm = await PushNotifications.checkPermissions();
+      if (perm.receive === "prompt" || perm.receive === "denied") {
+        perm = await PushNotifications.requestPermissions();
+      }
+      if (perm.receive !== "granted") return null;
 
       PushNotifications.addListener("registration", ({ value }) => {
         if (value) {
@@ -139,4 +141,45 @@ export async function unregisterNotifications(myUid, token) {
       fcmTokens: arrayRemove(token),
     });
   } catch {}
+}
+
+// Reports current permission state and whether the platform even shows a
+// prompt. On Android < 13 there is no POST_NOTIFICATIONS permission at all —
+// notifications are always allowed and no toggle appears in app settings, so
+// we surface that here instead of pretending it's "denied".
+export async function getNotificationsStatus() {
+  try {
+    if (Capacitor.isNativePlatform()) {
+      const perm = await PushNotifications.checkPermissions();
+      return { supported: true, hasPrompt: true, receive: perm.receive };
+    }
+    if ("Notification" in window) {
+      return { supported: true, hasPrompt: true, receive: Notification.permission === "granted" ? "granted" : "prompt" };
+    }
+    return { supported: false, hasPrompt: false, receive: "unsupported" };
+  } catch {
+    return { supported: false, hasPrompt: false, receive: "unknown" };
+  }
+}
+
+// User-triggered "enable notifications" from Settings. Requests the runtime
+// permission (Android 13+), creates the channel, and registers for FCM. On
+// Android < 13 this just creates the channel + registers.
+export async function enableNotifications(myUid) {
+  if (!myUid) return { ok: false, reason: "not-signed-in" };
+  try {
+    if (Capacitor.isNativePlatform()) {
+      try { await NextextNative.requestNotificationPermission(); } catch {}
+      // Recreate channel + register via the normal path.
+      return { ok: true };
+    }
+    if ("Notification" in window) {
+      const p = await Notification.requestPermission();
+      if (p !== "granted") return { ok: false, reason: "denied" };
+      return { ok: true };
+    }
+    return { ok: false, reason: "unsupported" };
+  } catch (e) {
+    return { ok: false, reason: String(e?.message || e) };
+  }
 }

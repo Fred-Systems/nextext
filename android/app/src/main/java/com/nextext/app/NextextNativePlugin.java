@@ -36,7 +36,8 @@ import java.net.URL;
             Manifest.permission.READ_MEDIA_VIDEO,
             Manifest.permission.READ_MEDIA_AUDIO,
             Manifest.permission.READ_EXTERNAL_STORAGE
-        }, alias = "media")
+        }, alias = "media"),
+        @Permission(strings = { Manifest.permission.POST_NOTIFICATIONS }, alias = "notifications")
     }
 )
 public class NextextNativePlugin extends Plugin {
@@ -57,6 +58,58 @@ public class NextextNativePlugin extends Plugin {
                 call.reject("Unable to open app settings");
             }
         }
+    }
+
+    @PluginMethod
+    public void openExternalUrl(PluginCall call) {
+        // Opens a URL in the device's system browser via an Android intent.
+        // window.open("_system") inside the WebView is unreliable on some
+        // devices (returns a truthy handle but opens nothing), so downloads and
+        // share fallbacks go through this instead.
+        final String url = call.getString("url");
+        if (url == null || url.trim().isEmpty()) {
+            call.reject("No URL provided");
+            return;
+        }
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getActivity().startActivity(intent);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Couldn't open URL: " + (e.getMessage() == null ? String.valueOf(e) : e.getMessage()));
+        }
+    }
+
+    @PluginMethod
+    public void requestNotificationPermission(PluginCall call) {
+        // Android 13+ (API 33) requires a runtime prompt for POST_NOTIFICATIONS.
+        // On older Android the permission is granted automatically and no prompt
+        // exists (and none should be shown).
+        if (android.os.Build.VERSION.SDK_INT < 33) {
+            JSObject ret = new JSObject();
+            ret.put("granted", true);
+            ret.put("status", "granted");
+            call.resolve(ret);
+            return;
+        }
+        if (getContext().checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            JSObject ret = new JSObject();
+            ret.put("granted", true);
+            ret.put("status", "granted");
+            call.resolve(ret);
+            return;
+        }
+        requestPermissionForAlias("notifications", call, "notifPermsCallback");
+    }
+
+    @PermissionCallback
+    private void notifPermsCallback(PluginCall call) {
+        JSObject ret = new JSObject();
+        boolean granted = getContext().checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+        ret.put("granted", granted);
+        ret.put("status", granted ? "granted" : "denied");
+        call.resolve(ret);
     }
 
     @PluginMethod
@@ -252,11 +305,6 @@ public class NextextNativePlugin extends Plugin {
                 if (!dir.exists()) dir.mkdirs();
                 apk = new File(dir, "nextext-update.apk");
                 HttpURLConnection conn = openFollowingRedirects(url);
-                conn.setConnectTimeout(15000);
-                conn.setReadTimeout(120000);
-                conn.setRequestProperty("Accept", "application/vnd.android.package-archive");
-                conn.setRequestProperty("User-Agent", "NexText-Android/" + android.os.Build.VERSION.RELEASE);
-                conn.connect();
                 int code = conn.getResponseCode();
                 if (code >= 400) {
                     call.reject("Download failed (HTTP " + code + ")");
@@ -323,12 +371,22 @@ public class NextextNativePlugin extends Plugin {
      * follow cross-host redirects by default (e.g. github.com →
      * objects.githubusercontent.com), so this helper is mandatory for
      * downloading GitHub release assets over S3-backed redirects.
+     *
+     * IMPORTANT: request properties and timeouts are applied to EVERY
+     * connection BEFORE its request is made (before getResponseCode() is ever
+     * called). Applying them to the returned connection would throw
+     * "cannot set request property after request is made", because the redirect
+     * loop below already made the request to detect the redirect.
      */
     private HttpURLConnection openFollowingRedirects(String url) throws java.io.IOException {
         String current = url;
         for (int i = 0; i < 5; i++) {
             HttpURLConnection conn = (HttpURLConnection) new URL(current).openConnection();
             conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(15000);
+            conn.setReadTimeout(120000);
+            conn.setRequestProperty("Accept", "application/vnd.android.package-archive");
+            conn.setRequestProperty("User-Agent", "NexText-Android/" + android.os.Build.VERSION.RELEASE);
             int code = conn.getResponseCode();
             if (code == HttpURLConnection.HTTP_MOVED_PERM
                     || code == HttpURLConnection.HTTP_MOVED_TEMP
@@ -362,11 +420,6 @@ public class NextextNativePlugin extends Plugin {
                 if (!dir.exists()) dir.mkdirs();
                 temp = new File(dir, "nextext-download.apk");
                 HttpURLConnection conn = openFollowingRedirects(url);
-                conn.setConnectTimeout(15000);
-                conn.setReadTimeout(120000);
-                conn.setRequestProperty("Accept", "application/vnd.android.package-archive");
-                conn.setRequestProperty("User-Agent", "NexText-Android/" + android.os.Build.VERSION.RELEASE);
-                conn.connect();
                 int code = conn.getResponseCode();
                 if (code >= 400) {
                     call.reject("Download failed (HTTP " + code + ")");

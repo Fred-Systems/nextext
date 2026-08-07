@@ -29,7 +29,7 @@ import { useSystemConfigHook, requestAIAccess, setAIPersonality, PERSONALITIES }
 import AppLockScreen from "./screens/AppLockScreen";
 import StatusScreen from "./screens/StatusScreen";
 import GroupInfoScreen from "./screens/GroupInfoScreen";
-import { initNotifications, setNotificationTapHandler, showLocalNotification } from "./firebase/notifications";
+import { initNotifications, setNotificationTapHandler, showLocalNotification, getNotificationsStatus, enableNotifications } from "./firebase/notifications";
 import { App as CapApp } from "@capacitor/app";
 import PermissionsScreen from "./screens/PermissionsScreen";
 import UpdatePrompt from "./components/UpdatePrompt";
@@ -263,8 +263,54 @@ function PhoneNumberSetting({ myUid }) {
   );
 }
 
+function SettingsRow({ icon, label, sub, onClick, t }) {
+  return (
+    <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 0", cursor: onClick ? "pointer" : "default", borderBottom: `1px solid ${t.border}` }}>
+      <div style={{ width: 36, height: 36, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{icon}</div>
+      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600, color: t.text, fontSize: 15 }}>{label}</div>{sub && <div style={{ fontSize: 12.5, color: t.textMuted, marginTop: 1 }}>{sub}</div>}</div>
+    </div>
+  );
+}
+
+function NotificationsRow({ myUid, t }) {
+  const [status, setStatus] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const refresh = async () => {
+    try { setStatus(await getNotificationsStatus()); } catch { setStatus({ supported: false, hasPrompt: false, receive: "unknown" }); }
+  };
+  useEffect(() => { refresh(); }, []);
+  // On Android < 13 there is no prompt/toggle at all — notifications are
+  // granted automatically and there's nothing to "enable". Surfacing that
+  // here so the user doesn't expect a permission pop-up that will never come.
+  const hasPrompt = status?.hasPrompt;
+  const granted = status?.receive === "granted";
+  return (
+    <SettingsRow
+      t={t}
+      icon={granted ? <Bell size={18} color={t.primary} /> : <BellOff size={18} color={t.primary} />}
+      label="Notifications"
+      sub={
+        !status ? "Checking…" :
+        !status.supported ? "Not supported on this device" :
+        hasPrompt === false ? "Enabled automatically on this device (no prompt needed)" :
+        granted ? "Allowed — you'll get message notifications" :
+        "Tap to allow message notifications"
+      }
+      onClick={hasPrompt === false || granted ? undefined : async () => {
+        if (busy) return;
+        setBusy(true);
+        try {
+          const res = await enableNotifications(myUid);
+          if (res?.ok) { await initNotifications(myUid).catch(() => {}); }
+          await refresh();
+        } finally { setBusy(false); }
+      }}
+    />
+  );
+}
+
 function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiScale, showScrollDown, setShowScrollDown, animatedScrollEntry, setAnimatedScrollEntry, compactList, setCompactList, onBack, onNavigate, onLogout, userDoc, navConfig, setNavConfig, aiSidebarOn, setAiSidebarOn, showSplash, setShowSplash, searchMode, setSearchMode, topBarVisible, setTopBarVisible, onCheckUpdate, checkingUpdate, updateStatus, animateOnTap, setAnimateOnTap, swipeAnimationOn, setSwipeAnimationOn, swipeSpeed, setSwipeSpeed, onShowTour, searchBarScale, setSearchBarScale, setLiveUserDoc }) {
-  const { t, hideNav, setHideNav, chatTextScale, setChatTextScale, appFontId, setAppFontId, composerHeight, setComposerHeight } = useTheme();
+  const { t, hideNav, setHideNav, chatTextScale, setChatTextScale, appFontId, setAppFontId, composerHeight, setComposerHeight, messageWidth, setMessageWidth } = useTheme();
   const wallpaperInputRef = useRef(null);
   const profilePhotoRef = useRef(null);
   const [wallpaperSaved, setWallpaperSaved] = useState(false);
@@ -632,6 +678,38 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
                 Default
               </label>
             </div>
+
+            {/* Message bubble width */}
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontWeight: 600, color: t.text, fontSize: 15, marginBottom: 4 }}>Message width</div>
+              <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 8 }}>How much of the screen each message fills.</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {[
+                  { id: "compact", label: "Compact" },
+                  { id: "standard", label: "Standard" },
+                  { id: "wide", label: "Wide" },
+                ].map((opt) => (
+                  <div
+                    key={opt.id}
+                    onClick={() => setMessageWidth(opt.id)}
+                    style={{
+                      flex: 1,
+                      padding: "7px 0",
+                      textAlign: "center",
+                      borderRadius: 8,
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      background: messageWidth === opt.id ? t.primary : t.bg,
+                      color: messageWidth === opt.id ? t.bubbleMeText : t.text,
+                      border: `1px solid ${messageWidth === opt.id ? t.primary : t.border}`,
+                    }}
+                  >
+                    {opt.label}
+                  </div>
+                ))}
+              </div>
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
               <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: t.text }}>Pinch to zoom chat text</span>
               <Toggle on={pinchZoomOn} onClick={() => { const next = !pinchZoomOn; setPinchZoomOn(next); localStorage.setItem("nextext_pinch_zoom", next ? "true" : "false"); }} />
@@ -871,6 +949,7 @@ function SettingsScreen({ myUid, isAdmin, themeKey, onOpenTheme, uiScale, setUiS
         <SectionCard title="Account" emoji="⚙️" sectionKey="accountActions">
           <Row icon={<MessageSquare size={18} color={t.primary} />} label="Send Feedback" sub="Message the admin directly" onClick={() => onNavigate("feedback")} />
           <Row icon={<Compass size={18} color={t.primary} />} label="Replay Welcome Tour" sub="See the first-run guide again" onClick={onShowTour} />
+          <NotificationsRow myUid={myUid} t={t} />
           {isAdmin && <Row icon={<ShieldCheck size={18} color={t.primary} />} label="Admin Dashboard" sub="Users, reports, broadcasts" onClick={() => onNavigate("admin")} />}
 
           <div style={{ padding: "13px 0" }}>
@@ -1034,7 +1113,7 @@ function TourOverlay({ step, total, onNext, onSkip }) {
   const s = TOUR_STEPS[step];
   if (!s) return null;
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 999997, background: "#0B141A", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 28px" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 2147483647, background: "#0B141A", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 28px" }}>
       <div style={{ fontSize: 56, marginBottom: 18 }}>{s.emoji}</div>
       <div style={{ fontWeight: 800, fontSize: 22, color: "#fff", marginBottom: 10, textAlign: "center" }}>{s.title}</div>
       <div style={{ fontSize: 14.5, color: "rgba(255,255,255,0.85)", lineHeight: 1.6, textAlign: "center", maxWidth: 300, marginBottom: 34 }}>{s.body}</div>

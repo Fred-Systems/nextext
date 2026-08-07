@@ -3,7 +3,7 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 const GITHUB_REPO = "Fred-Systems/nextext";
 const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPO}/releases`;
 const LAST_SEEN_KEY = "nextext_last_seen_release";
-const APP_VERSION = "1.1.21";
+const APP_VERSION = "1.1.22";
 
 const NextextNative = registerPlugin("NextextNative");
 
@@ -76,8 +76,16 @@ export async function checkForUpdate() {
 
 export function openDownloadUrl(url) {
   if (!url) return;
-  // Try _system first (opens via Android intent / default handler).
-  // Fall back to _blank, then to direct navigation.
+  // On Android, window.open("_system") can silently no-op (returns a truthy
+  // window handle without opening anything). Route through the native plugin
+  // instead, which launches the real system browser via an Android intent.
+  if (Capacitor.isNativePlatform()) {
+    try {
+      NextextNative.openExternalUrl({ url });
+      return;
+    } catch { /* fall through to web fallbacks */ }
+  }
+  // Web / fallback: try _system, then _blank, then direct navigation.
   try {
     const w = window.open(url, "_system");
     if (w) return;

@@ -28,6 +28,7 @@ const HIDE_NAV_KEY = "nextext_hide_nav";
 const CHAT_TEXT_SCALE_KEY = "nextext_chat_text_scale";
 const APP_FONT_KEY = "nextext_app_font";
 const COMPOSER_HEIGHT_KEY = "nextext_composer_height";
+const MESSAGE_WIDTH_KEY = "nextext_message_width";
 
 const FONTS = [
   { id: "system", label: "System Default", value: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif" },
@@ -68,6 +69,9 @@ export function ThemeProvider({ children }) {
   const [chatTextScale, setChatTextScaleState] = useState(() => Number(localStorage.getItem(CHAT_TEXT_SCALE_KEY)) || 1);
   const [appFontId, setAppFontIdState] = useState(() => localStorage.getItem(APP_FONT_KEY) || "system");
   const [composerHeight, setComposerHeightState] = useState(() => Number(localStorage.getItem(COMPOSER_HEIGHT_KEY)) || 1);
+  // "compact" (~58%), "standard" (~74%), "wide" (~90%). Default "wide" so each
+  // message takes up most of the screen by default, with the option to switch.
+  const [messageWidth, setMessageWidthState] = useState(() => localStorage.getItem(MESSAGE_WIDTH_KEY) || "wide");
 
   const setThemeKey = (key) => {
     setThemeKeyState(key);
@@ -106,6 +110,11 @@ export function ThemeProvider({ children }) {
     localStorage.setItem(COMPOSER_HEIGHT_KEY, String(val));
   };
 
+  const setMessageWidth = (val) => {
+    setMessageWidthState(val);
+    localStorage.setItem(MESSAGE_WIDTH_KEY, val);
+  };
+
   const appFont = FONTS.find((f) => f.id === appFontId)?.value || FONTS[0].value;
 
   // Auto-rotation: picks a random theme (excluding "custom") once the
@@ -130,7 +139,7 @@ export function ThemeProvider({ children }) {
   const t = themeKey === "custom" && customTheme ? customTheme : (themes[themeKey] || themes.emeraldNight);
 
   return (
-    <ThemeContext.Provider value={{ t, themeKey, setThemeKey, customTheme, setCustomThemeColors, rotateDays, setRotateDays, hideNav, setHideNav, chatTextScale, setChatTextScale, appFontId, setAppFontId, appFont, composerHeight, setComposerHeight }}>
+    <ThemeContext.Provider value={{ t, themeKey, setThemeKey, customTheme, setCustomThemeColors, rotateDays, setRotateDays, hideNav, setHideNav, chatTextScale, setChatTextScale, appFontId, setAppFontId, appFont, composerHeight, setComposerHeight, messageWidth, setMessageWidth }}>
       {children}
     </ThemeContext.Provider>
   );
