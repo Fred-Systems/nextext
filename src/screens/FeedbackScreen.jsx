@@ -38,10 +38,10 @@ export default function FeedbackScreen({ myUid, myUsername, onBack }) {
 
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40 }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
-        <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
-        <MessageSquare size={18} color="#fff" />
-        <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>Send Feedback</span>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.surface, flexShrink: 0, borderBottom: `1px solid ${t.border}` }}>
+        <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
+        <MessageSquare size={18} color={t.text} />
+        <span style={{ color: t.text, fontWeight: 700, fontSize: 17 }}>Send Feedback</span>
       </div>
       <div style={{ flex: 1, padding: "18px 16px" }}>
         {error && <div style={{ color: "#FF3B30", fontSize: 12.5, marginBottom: 10 }}>{error}</div>}

@@ -136,6 +136,53 @@ public class NextextNativePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getDeviceContacts(final PluginCall call) {
+        // Reads names + phone numbers from the device's contacts so the app can
+        // match them against NexText users and offer invite/share for the rest.
+        new Thread(() -> {
+            JSObject ret = new JSObject();
+            if (!contactsGranted()) {
+                ret.put("granted", false);
+                call.resolve(ret);
+                return;
+            }
+            org.json.JSONArray list = new org.json.JSONArray();
+            try {
+                android.content.Context ctx = getContext();
+                android.net.Uri uri = android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI;
+                String[] projection = new String[] {
+                    android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                    android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER
+                };
+                android.database.Cursor cur = ctx.getContentResolver().query(
+                    uri, projection, null, null, android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " COLLATE NOCASE ASC");
+                if (cur != null) {
+                    java.util.HashSet<String> seen = new java.util.HashSet<>();
+                    while (cur.moveToNext()) {
+                        String name = cur.getString(0);
+                        String number = cur.getString(1);
+                        String digits = number == null ? "" : number.replaceAll("[^0-9+]", "");
+                        String key = (name == null ? "" : name) + "|" + digits;
+                        if (name == null || digits.length() < 6 || !seen.add(key)) continue;
+                        org.json.JSONObject c = new org.json.JSONObject();
+                        c.put("name", name);
+                        c.put("phone", digits);
+                        list.put(c);
+                    }
+                    cur.close();
+                }
+                ret.put("granted", true);
+                ret.put("contacts", list);
+            } catch (Exception e) {
+                ret.put("granted", true);
+                ret.put("contacts", list);
+                ret.put("error", String.valueOf(e));
+            }
+            call.resolve(ret);
+        }).start();
+    }
+
+    @PluginMethod
     public void requestMedia(PluginCall call) {
         if (mediaGranted()) {
             resolveGranted(call, true);
@@ -207,6 +254,7 @@ public class NextextNativePlugin extends Plugin {
                 conn.setConnectTimeout(15000);
                 conn.setReadTimeout(120000);
                 conn.setRequestProperty("Accept", "application/vnd.android.package-archive");
+                conn.setRequestProperty("User-Agent", "NexText-Android/" + android.os.Build.VERSION.RELEASE);
                 conn.connect();
                 int code = conn.getResponseCode();
                 if (code >= 400) {
@@ -229,6 +277,22 @@ public class NextextNativePlugin extends Plugin {
                 conn.disconnect();
                 if (total == 0 || apk.length() == 0) {
                     call.reject("Downloaded file is empty");
+                    return;
+                }
+                // Android 8+ requires the user to allow "Install unknown apps"
+                // for THIS app before the package installer will accept it. If
+                // it's not granted, route them to the permission screen instead
+                // of silently failing with a confusing installer error.
+                if (android.os.Build.VERSION.SDK_INT >= 26 && !getContext().getPackageManager().canRequestPackageInstalls()) {
+                    Intent settingsIntent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+                    settingsIntent.setData(Uri.parse("package:" + getContext().getPackageName()));
+                    settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    try {
+                        getActivity().startActivity(settingsIntent);
+                    } catch (Exception ignored) {
+                        // No settings screen available — let the installer try anyway.
+                    }
+                    call.reject("REQUIRES_INSTALL_PERMISSION");
                     return;
                 }
                 Uri contentUri = FileProvider.getUriForFile(
@@ -300,6 +364,7 @@ public class NextextNativePlugin extends Plugin {
                 conn.setConnectTimeout(15000);
                 conn.setReadTimeout(120000);
                 conn.setRequestProperty("Accept", "application/vnd.android.package-archive");
+                conn.setRequestProperty("User-Agent", "NexText-Android/" + android.os.Build.VERSION.RELEASE);
                 conn.connect();
                 int code = conn.getResponseCode();
                 if (code >= 400) {

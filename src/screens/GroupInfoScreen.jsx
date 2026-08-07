@@ -62,9 +62,9 @@ export default function GroupInfoScreen({ myUid, chatId, onBack, onOpenChat, onO
   if (!group) {
     return (
       <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 12px", background: t.primary, flexShrink: 0 }}>
-          <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
-          <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>Group Info</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 12px", background: t.surface, flexShrink: 0, borderBottom: `1px solid ${t.border}` }}>
+          <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
+          <span style={{ color: t.text, fontWeight: 700, fontSize: 16 }}>Group Info</span>
         </div>
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: t.textMuted, fontSize: 14 }}>Loading…</div>
       </div>
@@ -126,10 +126,10 @@ export default function GroupInfoScreen({ myUid, chatId, onBack, onOpenChat, onO
 
   return (
       <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 12px", background: t.primary, flexShrink: 0 }}>
-          <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
-        <span style={{ color: "#fff", fontWeight: 700, fontSize: 16, flex: 1 }}>Group Info</span>
-        {isAdmin && <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: 600 }}>Admin</span>}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 12px", background: t.surface, flexShrink: 0, borderBottom: `1px solid ${t.border}` }}>
+          <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
+        <span style={{ color: t.text, fontWeight: 700, fontSize: 16, flex: 1 }}>Group Info</span>
+        {isAdmin && <span style={{ color: t.textMuted, fontSize: 12, fontWeight: 600 }}>Admin</span>}
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>

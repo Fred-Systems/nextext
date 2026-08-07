@@ -3,7 +3,7 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 const GITHUB_REPO = "Fred-Systems/nextext";
 const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPO}/releases`;
 const LAST_SEEN_KEY = "nextext_last_seen_release";
-const APP_VERSION = "1.1.19";
+const APP_VERSION = "1.1.20";
 
 const NextextNative = registerPlugin("NextextNative");
 
@@ -99,6 +99,13 @@ export async function downloadUpdate(url) {
       await NextextNative.downloadAndInstallApk({ url });
       return true;
     } catch (e) {
+      if (e?.message?.includes("REQUIRES_INSTALL_PERMISSION")) {
+        // The native layer already opened the "Install unknown apps" settings
+        // screen — tell the caller why so the UI can show guidance.
+        const err = new Error("Allow NexText to install apps in the screen that just opened, then tap Update again.");
+        err.code = "INSTALL_PERMISSION";
+        throw err;
+      }
       console.error("[updater] native APK download failed, falling back to browser:", e);
     }
   }

@@ -43,9 +43,9 @@ export default function NewGroupScreen({ myUid, contacts, onBack, onCreated }) {
 
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 45 }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
-        <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
-        <span style={{ color: "#fff", fontWeight: 700, fontSize: 18 }}>New Group</span>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.surface, flexShrink: 0, borderBottom: `1px solid ${t.border}` }}>
+        <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
+        <span style={{ color: t.text, fontWeight: 700, fontSize: 18 }}>New Group</span>
       </div>
       <div style={{ padding: 16, display: "flex", alignItems: "center", gap: 14 }}>
         <div onClick={() => photoInputRef.current?.click()} style={{ position: "relative", cursor: "pointer", flexShrink: 0 }}>

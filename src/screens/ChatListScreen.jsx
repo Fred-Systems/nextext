@@ -119,6 +119,10 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
   const [broadcastMsg, setBroadcastMsg] = useState("");
   const [broadcastBusy, setBroadcastBusy] = useState(false);
   const [broadcastStatus, setBroadcastStatus] = useState("");
+  // Declared before the lockedContactUids computation below (which references
+  // it) to avoid a temporal dead zone crash on render.
+  const [lockedChatsUnlocked, setLockedChatsUnlocked] = useState(false);
+  const lockedChatsPassword = localStorage.getItem("nextext_locked_chats_password") || "";
 
   // A contact whose direct chat is locked is hidden from the contacts list
   // so the user can't bypass the lock by tapping the chat icon next to their
@@ -234,9 +238,6 @@ export default function ChatListScreen({ myUid, userDoc, onOpenChat, onOpenGroup
   };
 
   const aiApproved = userDoc?.aiApproved && !sysConfig?.aiGloballyDisabled && !sysConfig?.hideAiEverywhere && userDoc?.restrictions?.blockAI !== true;
-
-  const [lockedChatsUnlocked, setLockedChatsUnlocked] = useState(false);
-  const lockedChatsPassword = localStorage.getItem("nextext_locked_chats_password") || "";
 
   const tabFiltered = (() => {
     let base = notArchived.filter((c) => !c.lockedBy?.[myUid] || lockedChatsUnlocked);

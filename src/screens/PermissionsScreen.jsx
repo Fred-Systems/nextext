@@ -205,10 +205,10 @@ export default function PermissionsScreen({ myUid, onBack }) {
 
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40, display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px", background: t.primary, flexShrink: 0 }}>
-        <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
-        <span style={{ color: "#fff", fontWeight: 700, fontSize: 18, flex: 1 }}>Permissions</span>
-        <RefreshCw size={17} color="#fff" style={{ cursor: "pointer", opacity: refreshing ? 0.5 : 1 }} onClick={refresh} />
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px", background: t.surface, flexShrink: 0, borderBottom: `1px solid ${t.border}` }}>
+        <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
+        <span style={{ color: t.text, fontWeight: 700, fontSize: 18, flex: 1 }}>Permissions</span>
+        <RefreshCw size={17} color={t.text} style={{ cursor: "pointer", opacity: refreshing ? 0.5 : 1 }} onClick={refresh} />
       </div>
 
       <div className="nx-scroll" style={{ flex: 1, minHeight: 0, padding: "6px 16px 40px", overflowY: "auto" }}>

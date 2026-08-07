@@ -69,10 +69,10 @@ export default function PrivacyScreen({ myUid, onBack }) {
 
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40 }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
-        <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
-        <Lock size={18} color="#fff" />
-        <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>Privacy</span>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.surface, flexShrink: 0, borderBottom: `1px solid ${t.border}` }}>
+        <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
+        <Lock size={18} color={t.text} />
+        <span style={{ color: t.text, fontWeight: 700, fontSize: 17 }}>Privacy</span>
       </div>
       <div className="nx-scroll" style={{ padding: 16 }}>
         {saveError && <div style={{ color: "#FF3B30", fontSize: 12.5, marginBottom: 10 }}>{saveError}</div>}

@@ -366,9 +366,9 @@ export default function AdminDashboard({ myUid, onBack }) {
   if (selectedUser) {
     return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 46 }}>
-        <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
-          <ChevronLeft size={22} color="#fff" onClick={() => setSelectedUser(null)} style={{ cursor: "pointer" }} />
-          <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>{selectedUser.displayName}</span>
+        <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.surface, flexShrink: 0, borderBottom: `1px solid ${t.border}` }}>
+          <ChevronLeft size={22} color={t.text} onClick={() => setSelectedUser(null)} style={{ cursor: "pointer" }} />
+          <span style={{ color: t.text, fontWeight: 700, fontSize: 17 }}>{selectedUser.displayName}</span>
         </div>
         <div className="nx-scroll" style={{ padding: 16 }}>
           <div style={{ background: t.surface, borderRadius: 14, padding: 16, marginBottom: 14 }}>
@@ -433,10 +433,10 @@ export default function AdminDashboard({ myUid, onBack }) {
 
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 46 }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
-        <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
-        <ShieldCheck size={18} color="#fff" />
-        <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>Admin Dashboard</span>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.surface, flexShrink: 0, borderBottom: `1px solid ${t.border}` }}>
+        <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
+        <ShieldCheck size={18} color={t.text} />
+        <span style={{ color: t.text, fontWeight: 700, fontSize: 17 }}>Admin Dashboard</span>
       </div>
       <div style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid ${t.border}`, flexShrink: 0, WebkitOverflowScrolling: "touch" }}>
         {[["users", "Users"], ["directory", "Directory"], ["groups", "Groups"], ["reports", "Reports"], ["feedback", "Feedback"], ["broadcast", "Broadcast"], ["system", "System"], ["ai", "AI"]].map(([key, label]) => (

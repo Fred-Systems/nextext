@@ -638,6 +638,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
   const recordedChunksRef = useRef([]);
   const recordTimerRef = useRef(null);
   const recordingNativeRef = useRef(false);
+  const recordStartTsRef = useRef(null);
   const recordHoldStartRef = useRef(null);
   const recordHoldCancelRef = useRef(false);
   const recordingRef = useRef(false);
@@ -1180,6 +1181,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
             return;
           }
           recordingNativeRef.current = true;
+          recordStartTsRef.current = Date.now();
           setRecording(true);
           setRecordingPaused(false);
           setRecordSeconds(0);
@@ -1227,6 +1229,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
       // dataavailable ordering — the cause of silent-wave voice notes.
       recorder.start(250);
       mediaRecorderRef.current = recorder;
+      recordStartTsRef.current = Date.now();
       setRecording(true);
       setRecordingPaused(false);
       setRecordSeconds(0);
@@ -1269,6 +1272,11 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     clearInterval(recordTimerRef.current);
     stopVoiceHeartbeat();
     const finalDuration = recordSeconds;
+    // Android MediaRecorder frequently writes a corrupt/empty MP4 when the
+    // recording is stopped within the first ~half second, so a sub-second tap
+    // is treated as a cancel rather than a broken note being uploaded.
+    const elapsedMs = recordStartTsRef.current ? Date.now() - recordStartTsRef.current : 0;
+    recordStartTsRef.current = null;
     let blob = null;
     try {
       if (recordingNativeRef.current) {
@@ -1304,6 +1312,10 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
     recordingNativeRef.current = false;
     resetRecordingUi();
     if (!send) return;
+    if (elapsedMs < 500) {
+      setSendError("Hold the mic a little longer — the recording was too short to save.");
+      return;
+    }
     if (!blob || !chatId || blob.size === 0) {
       // The user pressed Send and we ended up with no audio data.
       // Surface a clear, specific error instead of silently dropping the note
@@ -1712,7 +1724,7 @@ export default function ConversationScreen({ myUid, chatId: initialChatId, other
           ) : (
             <Avatar
               photoURL={isGroup ? null : (contact?.profile?.photoURL || otherUserPhoto)}
-              name={isGroup ? "👥" : (contact?.profile?.displayName || "…")}
+              name={isGroup ? (myGroupNickname || chatMeta?.groupName || "Group") : (contact?.profile?.displayName || "…")}
               uid={isGroup ? null : otherUid}
               size={38}
               hasActiveStatus={!isGroup && hasOtherActiveStatus}

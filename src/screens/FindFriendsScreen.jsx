@@ -1,83 +1,226 @@
-import React, { useState } from "react";
-import { ChevronLeft, Users, Smartphone, RefreshCw } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { ChevronLeft, Users, RefreshCw, Smartphone, Share2 } from "lucide-react";
 import { useTheme } from "../theme/ThemeContext";
-import { collection, query, where, getDocs, limit as fbLimit } from "firebase/firestore";
+import { collection, query, getDocs } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { sendContactRequest } from "../firebase/contacts";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 
-export default function FindFriendsScreen({ myUid, onBack, onStartChat }) {
+const NextextNative = registerPlugin("NextextNative");
+
+function normalizePhone(raw) {
+  return String(raw || "").replace(/[^\d]/g, "");
+}
+
+// Match a NexText user's stored number against a device contact. Both sides
+// are reduced to digits; a match counts when the full number matches or the
+// last 10 digits match (handles country-code differences).
+function phonesMatch(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length > 9 && b.length > 9) return a.slice(-10) === b.slice(-10);
+  return false;
+}
+
+export default function FindFriendsScreen({ myUid, onBack }) {
   const { t } = useTheme();
   const [matches, setMatches] = useState([]);
+  const [otherContacts, setOtherContacts] = useState([]);
   const [checked, setChecked] = useState(false);
-  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const [sentTo, setSentTo] = useState([]);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+  const [invited, setInvited] = useState([]);
+
+  const ensurePermission = async () => {
+    if (!Capacitor.isNativePlatform()) return true;
+    try {
+      const res = await NextextNative.requestContacts();
+      return !!(res && res.granted);
+    } catch {
+      return false;
+    }
+  };
+
+  const readDeviceContacts = async () => {
+    if (!Capacitor.isNativePlatform()) return [];
+    try {
+      const res = await NextextNative.getDeviceContacts();
+      if (!res || res.granted === false) {
+        setPermissionDenied(true);
+        return null;
+      }
+      return res.contacts || [];
+    } catch {
+      return [];
+    }
+  };
+
+  const handleShare = (name, phone) => {
+    const link = `https://nextext.app/invite?r=${encodeURIComponent(myUid || "")}`;
+    const text = `Hey${name ? " " + name : ""}! Let's chat on NexText — a fast, private messaging app. Sign up here: ${link}`;
+    if (navigator.share) {
+      navigator.share({ text }).catch(() => {});
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        setInvited((s) => [...s, phone]);
+      }).catch(() => {});
+    } else {
+      window.open(`sms:${phone}?body=${encodeURIComponent(text)}`, "_system");
+    }
+  };
 
   const checkAllContacts = async () => {
     setError("");
     setBusy(true);
+    setChecked(false);
     try {
-      const q = query(
-        collection(db, "users"),
-        where("phoneNumberNormalized", "!=", null),
-        fbLimit(50)
+      const granted = await ensurePermission();
+      if (!granted) {
+        setPermissionDenied(true);
+        setBusy(false);
+        return;
+      }
+      const deviceContacts = await readDeviceContacts();
+      if (deviceContacts === null) {
+        setBusy(false);
+        return;
+      }
+
+      // All NexText users who have a phone number on file.
+      const usersSnap = await getDocs(
+        query(collection(db, "users"))
       );
-      const snap = await getDocs(q);
+      const usersByPhone = new Map();
+      usersSnap.forEach((d) => {
+        const data = d.data() || {};
+        if (d.id === myUid) return;
+        const num = normalizePhone(data.phoneNumberNormalized || data.phoneNumber);
+        if (!num) return;
+        usersByPhone.set(num, { uid: d.id, displayName: data.displayName || data.username || "NexText user", username: data.username || "", phone: num });
+      });
+
       const found = [];
-      snap.forEach((d) => {
-        if (d.id !== myUid) {
-          found.push({ uid: d.id, ...d.data() });
+      const notFound = [];
+      const seenUser = new Set();
+      deviceContacts.forEach((c) => {
+        const cNum = normalizePhone(c.phone);
+        let user = null;
+        for (const [stored, u] of usersByPhone) {
+          if (phonesMatch(stored, cNum)) { user = u; break; }
+        }
+        if (user) {
+          if (!seenUser.has(user.uid)) {
+            seenUser.add(user.uid);
+            found.push(user);
+          }
+        } else if (cNum.length >= 6) {
+          notFound.push({ name: c.name || "Contact", phone: cNum });
         }
       });
+
       setMatches(found);
+      setOtherContacts(notFound);
       setChecked(true);
     } catch (e) {
-      setError("Couldn't check contacts: " + e.message);
+      setError("Couldn't check contacts: " + (e?.message || "unknown error"));
     }
     setBusy(false);
   };
+
+  useEffect(() => {
+    checkAllContacts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleAdd = async (uid) => {
     try {
       await sendContactRequest(myUid, uid);
       setSentTo((s) => [...s, uid]);
     } catch (e) {
-      setError("Couldn't send request: " + e.message);
+      setError("Couldn't send request: " + (e?.message || "unknown error"));
     }
   };
 
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40 }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
-        <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
-        <Users size={18} color="#fff" />
-        <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>Find Friends</span>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.surface, flexShrink: 0, borderBottom: `1px solid ${t.border}` }}>
+        <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
+        <Users size={18} color={t.text} />
+        <span style={{ color: t.text, fontWeight: 700, fontSize: 17 }}>Find Friends</span>
       </div>
       <div className="nx-scroll" style={{ padding: 16 }}>
         <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16, lineHeight: 1.5 }}>
-          Find other NexText users who have a phone number set on their profile.
+          We compare your device contacts against NexText users so you can add friends who are already here — and invite everyone else.
         </div>
         {error && <div style={{ color: "#FF3B30", fontSize: 12.5, marginBottom: 10 }}>{error}</div>}
-        <button onClick={checkAllContacts} disabled={busy} style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 15, cursor: busy ? "wait" : "pointer", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: busy ? 0.6 : 1 }}>
-          <RefreshCw size={16} style={busy ? { animation: "nextext-spin 0.9s linear infinite" } : {}} />
-          {busy ? "Checking…" : "Check all contacts"}
-        </button>
-
-        {checked && matches.length === 0 && (
-          <div style={{ textAlign: "center", color: t.textMuted, fontSize: 13, padding: 20 }}>No NexText users found with phone numbers.</div>
-        )}
-        {matches.map((u) => (
-          <div key={u.uid} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 4px", borderBottom: `1px solid ${t.border}` }}>
-            <div style={{ width: 40, height: 40, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: t.primary }}>{u.displayName?.[0]}</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14.5, color: t.text }}>{u.displayName}</div>
-              <div style={{ fontSize: 12, color: t.textMuted }}>@{u.username}</div>
+        {permissionDenied && (
+          <div style={{ background: t.primaryLight, borderRadius: 12, padding: 14, marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <Smartphone size={16} color={t.primary} />
+              <span style={{ fontWeight: 700, color: t.text, fontSize: 13.5 }}>Contacts access is off</span>
             </div>
-            <button disabled={sentTo.includes(u.uid)} onClick={() => handleAdd(u.uid)} style={{ padding: "7px 14px", borderRadius: 16, border: "none", background: sentTo.includes(u.uid) ? t.border : t.primary, color: sentTo.includes(u.uid) ? t.textMuted : t.bubbleMeText, fontSize: 12.5, fontWeight: 700, cursor: sentTo.includes(u.uid) ? "default" : "pointer" }}>
-              {sentTo.includes(u.uid) ? "Sent" : "Add"}
+            <div style={{ fontSize: 12.5, color: t.text, lineHeight: 1.5, marginBottom: 10 }}>
+              Allow NexText to read your contacts to find friends who use the app.
+            </div>
+            <button onClick={checkAllContacts} disabled={busy} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 13, cursor: busy ? "wait" : "pointer" }}>
+              {busy ? "Checking…" : "Grant access"}
             </button>
           </div>
-        ))}
+        )}
+        {!permissionDenied && (
+          <button onClick={checkAllContacts} disabled={busy} style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: t.primary, color: t.bubbleMeText, fontWeight: 700, fontSize: 15, cursor: busy ? "wait" : "pointer", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: busy ? 0.6 : 1 }}>
+            <RefreshCw size={16} style={busy ? { animation: "nextext-spin 0.9s linear infinite" } : {}} />
+            {busy ? "Checking contacts…" : "Check my contacts"}
+          </button>
+        )}
+
+        {checked && !busy && (
+          <>
+            <div style={{ fontWeight: 700, color: t.text, fontSize: 14, marginBottom: 8 }}>
+              On NexText{matches.length > 0 ? ` (${matches.length})` : ""}
+            </div>
+            {matches.length === 0 && (
+              <div style={{ textAlign: "center", color: t.textMuted, fontSize: 13, padding: "8px 0 20px" }}>
+                None of your contacts use NexText yet.
+              </div>
+            )}
+            {matches.map((u) => (
+              <div key={u.uid} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 4px", borderBottom: `1px solid ${t.border}` }}>
+                <div style={{ width: 40, height: 40, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: t.primary }}>{u.displayName?.[0] || "?"}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14.5, color: t.text }}>{u.displayName}</div>
+                  <div style={{ fontSize: 12, color: t.textMuted }}>@{u.username}</div>
+                </div>
+                <button disabled={sentTo.includes(u.uid)} onClick={() => handleAdd(u.uid)} style={{ padding: "7px 14px", borderRadius: 16, border: "none", background: sentTo.includes(u.uid) ? t.border : t.primary, color: sentTo.includes(u.uid) ? t.textMuted : t.bubbleMeText, fontSize: 12.5, fontWeight: 700, cursor: sentTo.includes(u.uid) ? "default" : "pointer" }}>
+                  {sentTo.includes(u.uid) ? "Sent" : "Add"}
+                </button>
+              </div>
+            ))}
+
+            {otherContacts.length > 0 && (
+              <>
+                <div style={{ fontWeight: 700, color: t.text, fontSize: 14, marginBottom: 8, marginTop: 18 }}>
+                  Not on NexText yet ({otherContacts.length})
+                </div>
+                {otherContacts.map((c) => (
+                  <div key={c.phone} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 4px", borderBottom: `1px solid ${t.border}` }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", background: t.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: t.primary }}>{c.name?.[0] || "?"}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14.5, color: t.text }}>{c.name}</div>
+                      <div style={{ fontSize: 12, color: t.textMuted }}>{c.phone}</div>
+                    </div>
+                    <button onClick={() => handleShare(c.name, c.phone)} style={{ padding: "7px 12px", borderRadius: 16, border: "1px solid", borderColor: t.primary, background: "transparent", color: t.primary, fontSize: 12.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                      <Share2 size={13} />
+                      {invited.includes(c.phone) ? "Invited" : "Invite"}
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

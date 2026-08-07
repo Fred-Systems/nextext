@@ -1030,7 +1030,7 @@ const TOUR_STEPS = [
   { emoji: "🤖", title: "NexText AI", body: "Ask the AI assistant anything, switch between 8 personalities (including the new Debater), analyze images, or summarize any of your chats from the AI conversation." },
 ];
 
-function TourOverlay({ step, total, onNext, onSkip, t }) {
+function TourOverlay({ step, total, onNext, onSkip }) {
   const s = TOUR_STEPS[step];
   if (!s) return null;
   return (
@@ -1207,8 +1207,6 @@ function AppShell({ appLocked, setAppLocked }) {
   // Using transform translate3d with this curve yields iOS-feel smooth swiping.
   const swipeBezier = () => "cubic-bezier(0.16, 1, 0.3, 1)";
 
-  const swipeTransition = () => (swipeAnimationEnabled() ? `transform ${swipeDuration()}s ${swipeBezier()}` : "none");
-
   // Tap navigation transitions — by default OFF (instant page jump).
   // The "Animate tab taps (animateOnTap)" Setting overrides this so that
   // tapping a bottom or top bar nav button uses the same slide animation
@@ -1239,14 +1237,15 @@ function AppShell({ appLocked, setAppLocked }) {
     return () => clearTimeout(t);
   }, [myUid]);
 
-  // First-run welcome tour: shown once per user on first sign-in (skippable),
-  // unless the admin has disabled tours globally. Re-takeable from Settings.
+  // First-run welcome tour: shown once per installed version (so an update
+  // brings it back so users can see what's new), skippable, unless the admin
+  // has disabled tours globally. Re-takeable from Settings.
   useEffect(() => {
     if (!myUid || !auth.userDoc?.profileComplete) return;
     if (sysConfig?.tourDisabled) return;
     const seenKey = `nextext_tour_seen_${myUid}`;
-    if (localStorage.getItem(seenKey) === "true") return;
-    localStorage.setItem(seenKey, "true");
+    if (localStorage.getItem(seenKey) === getCurrentVersion()) return;
+    localStorage.setItem(seenKey, getCurrentVersion());
     const t = setTimeout(() => { startTour(); }, 1200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1408,6 +1407,7 @@ function AppShell({ appLocked, setAppLocked }) {
 
   const handleDownloadUpdate = async () => {
     setDownloadingUpdate(true);
+    setUpdateStatus("");
     try {
       const url = pendingUpdate?.downloadUrl;
       if (url) {
@@ -1416,10 +1416,16 @@ function AppShell({ appLocked, setAppLocked }) {
         openDownloadUrl(pendingUpdate.releaseUrl);
       }
       if (pendingUpdate?.version) setLastSeenRelease(pendingUpdate.version);
+    } catch (err) {
+      // e.g. install-unknown-apps permission not yet granted — keep the prompt
+      // open and explain what to do instead of silently closing it.
+      setUpdateStatus(err?.message || "Download failed.");
+      return;
     } finally {
-      setShowUpdatePrompt(false);
       setDownloadingUpdate(false);
     }
+    setUpdateStatus("");
+    setShowUpdatePrompt(false);
   };
 
   const handleDismissUpdate = () => {
@@ -1990,7 +1996,6 @@ function AppShell({ appLocked, setAppLocked }) {
         <TourOverlay
           step={tourStep}
           total={TOUR_STEPS.length}
-          t={t}
           onNext={() => { if (tourStep >= TOUR_STEPS.length - 1) finishTour(); else setTourStep((s) => s + 1); }}
           onSkip={finishTour}
         />
@@ -2019,6 +2024,7 @@ function AppShell({ appLocked, setAppLocked }) {
           downloading={downloadingUpdate}
           saving={savingUpdate}
           onSaveToDevice={handleSaveApkToDevice}
+          error={updateStatus || null}
         />
       )}
     </div>

@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { AlertTriangle } from "lucide-react";
 
-export default function Toast({ message, onDismiss, t }) {
+export default function Toast({ message, onDismiss }) {
   useEffect(() => {
     if (!message) return;
     const timer = setTimeout(onDismiss, 3500);

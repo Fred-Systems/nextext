@@ -157,11 +157,11 @@ export default function ParentalControlsScreen({ myUid, onBack }) {
   if (!restrictions.pinHash && !settingUpPin) {
     return (
       <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40 }}>
-        <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
-          <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
-          <Shield size={18} color="#fff" />
-          <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>Parental Controls</span>
-        </div>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.surface, flexShrink: 0, borderBottom: `1px solid ${t.border}` }}>
+        <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
+        <Shield size={18} color={t.text} />
+        <span style={{ color: t.text, fontWeight: 700, fontSize: 17 }}>Parental Controls</span>
+      </div>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 30, textAlign: "center" }}>
           <Shield size={40} color={t.primary} style={{ marginBottom: 16 }} />
           <div style={{ fontWeight: 700, fontSize: 17, color: t.text, marginBottom: 8 }}>Set up a PIN first</div>
@@ -179,11 +179,11 @@ export default function ParentalControlsScreen({ myUid, onBack }) {
   if (settingUpPin || (restrictions.pinHash && !unlocked)) {
     return (
       <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40 }}>
-        <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
-          <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
-          <Shield size={18} color="#fff" />
-          <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>Parental Controls</span>
-        </div>
+      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.surface, flexShrink: 0, borderBottom: `1px solid ${t.border}` }}>
+        <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
+        <Shield size={18} color={t.text} />
+        <span style={{ color: t.text, fontWeight: 700, fontSize: 17 }}>Parental Controls</span>
+      </div>
         {settingUpPin ? (
           <PinPad t={t} title={firstPinEntry === null ? "Choose a PIN" : "Confirm your PIN"} subtitle={firstPinEntry === null ? "Enter a 4-digit PIN" : "Enter it again to confirm"} onSubmit={handlePinSetup} error={pinError} />
         ) : (
@@ -202,11 +202,11 @@ export default function ParentalControlsScreen({ myUid, onBack }) {
 
   return (
     <div className="nx-screen" style={{ position: "absolute", inset: 0, background: t.bg, zIndex: 40 }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.primary, flexShrink: 0 }}>
-        <ChevronLeft size={22} color="#fff" onClick={onBack} style={{ cursor: "pointer" }} />
-        <Shield size={18} color="#fff" />
-        <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>Parental Controls</span>
-      </div>
+        <div style={{ display: "flex", alignItems: "center", padding: "16px", gap: 12, background: t.surface, flexShrink: 0, borderBottom: `1px solid ${t.border}` }}>
+          <ChevronLeft size={22} color={t.text} onClick={onBack} style={{ cursor: "pointer" }} />
+          <Shield size={18} color={t.text} />
+          <span style={{ color: t.text, fontWeight: 700, fontSize: 17 }}>Parental Controls</span>
+        </div>
       <div className="nx-scroll" style={{ padding: 16 }}>
         <div style={{ color: t.textMuted, fontSize: 13, marginBottom: 16, lineHeight: 1.5 }}>
           Media/voice/status blocks are enforced server-side. Unlocked with your PIN for this session.

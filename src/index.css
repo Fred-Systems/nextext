@@ -37,6 +37,9 @@ p {
 .nextext-message-in {
   animation: nextext-message-slide-in 0.22s ease-out;
 }
+@keyframes nextext-spin {
+  to { transform: rotate(360deg); }
+}
 @keyframes nextext-typing-bounce {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.6; }
   30% { transform: translateY(-4px); opacity: 1; }

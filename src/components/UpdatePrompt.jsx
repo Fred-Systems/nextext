@@ -1,7 +1,7 @@
 import React from "react";
 import { Download, X, Sparkles, Save } from "lucide-react";
 
-export default function UpdatePrompt({ update, onDownload, onDismiss, downloading, saving, onSaveToDevice }) {
+export default function UpdatePrompt({ update, onDownload, onDismiss, downloading, saving, onSaveToDevice, error }) {
   if (!update) return null;
 
   const changelogLines = update.body
@@ -108,6 +108,11 @@ export default function UpdatePrompt({ update, onDownload, onDismiss, downloadin
           {saving && (
             <div style={{ fontSize: 12.5, color: "#4FC3E8", fontWeight: 600, marginTop: 10, textAlign: "center" }}>
               Saving APK to your Downloads folder…
+            </div>
+          )}
+          {error && (
+            <div style={{ fontSize: 12.5, color: "#FFB74D", fontWeight: 600, marginTop: 10, textAlign: "center", lineHeight: 1.5 }}>
+              {error}
             </div>
           )}
         </div>

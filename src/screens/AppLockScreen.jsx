@@ -1,18 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Lock, Eye, EyeOff } from "lucide-react";
-import { useTheme } from "../theme/ThemeContext";
+import { Lock, EyeOff } from "lucide-react";
 
 export default function AppLockScreen({ onUnlock }) {
-  const { t } = useTheme();
   const [pass, setPass] = useState("");
   const [error, setError] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const stored = localStorage.getItem("nextext_app_lock_pass") || "";
 
-  useEffect(() => { 
+  useEffect(() => {
     const input = document.getElementById("app-lock-input");
-    if (input) input.focus(); 
+    if (input) input.focus();
   }, []);
 
   const submit = () => {
@@ -20,15 +18,6 @@ export default function AppLockScreen({ onUnlock }) {
     setError(true);
     setPass("");
     setTimeout(() => setError(false), 1500);
-  };
-
-  const showBiometric = typeof window.PublicKeyCredential !== "undefined";
-
-  const handleBiometric = async () => {
-    try {
-      const cred = await navigator.credentials.get({ publicKey: { challenge: new Uint8Array(32), timeout: 60000 } });
-      if (cred) onUnlock();
-    } catch {}
   };
 
   const lockScreen = (
